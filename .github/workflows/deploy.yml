@@ -1,0 +1,47 @@
+name: Deploy to Hostinger
+
+# Trigger: jab bhi main branch pe push hoga
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:   # GitHub Actions tab se manually bhi chala sakte hain
+
+jobs:
+  ftp-deploy:
+    name: Sync changed files to Hostinger
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy via FTP (only changed files)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          protocol: ftp                       # Hostinger shared = plain FTP on port 21
+          port: 21
+          # In files ko upload se exclude karein (server pe rahein, overwrite na ho):
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.github/**
+            **/node_modules/**
+            **/vendor/**
+            **/.env
+            **/.env.*
+            **/storage/logs/**
+            **/storage/framework/cache/**
+            **/storage/framework/sessions/**
+            **/storage/framework/views/**
+            **/storage/app/public/uploads/**
+            **/public/uploads/**
+            **/public/storage/**
+            **/bootstrap/cache/**
+            **/*.log
+            **/.DS_Store
+            **/Thumbs.db

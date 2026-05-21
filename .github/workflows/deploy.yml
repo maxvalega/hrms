@@ -25,6 +25,10 @@ jobs:
           server-dir: ${{ secrets.FTP_SERVER_DIR }}
           protocol: ftp                       # Hostinger shared = plain FTP on port 21
           port: 21
+          log-level: standard
+          security: loose                     # Hostinger FTP TLS handshake issues fix
+          timeout: 120000                     # 2 min per-operation timeout
+          dangerous-clean-slate: false        # NEVER delete server files we're not aware of
           # In files ko upload se exclude karein (server pe rahein, overwrite na ho):
           exclude: |
             **/.git*

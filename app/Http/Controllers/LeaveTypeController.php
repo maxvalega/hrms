@@ -5,11 +5,62 @@ namespace App\Http\Controllers;
 use App\Models\Leave;
 use App\Models\LeaveType;
 use App\Traits\AddressMasterTrait;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 
 class LeaveTypeController extends Controller
 {
     use AddressMasterTrait;
+
+    /**
+     * Assign optional leave policy columns only when they exist in DB.
+     * Keeps create/edit working on servers that have not run the policy migration yet.
+     */
+    protected function assignPolicyFields(LeaveType $leavetype, Request $request): void
+    {
+        $fields = [
+            'policy_code' => $request->input('policy_code'),
+            'credit_frequency' => $request->input('credit_frequency'),
+            'is_prorata' => $request->boolean('is_prorata', true),
+            'eligible_employee_types' => array_values(array_filter((array) $request->input('eligible_employee_types', []))),
+            'min_notice_days' => $request->input('min_notice_days'),
+            'max_consecutive_days' => $request->input('max_consecutive_days'),
+            'monthly_limit' => $request->input('monthly_limit'),
+            'max_encash_on_exit' => $request->input('max_encash_on_exit'),
+            'requires_family_relation' => $request->boolean('requires_family_relation'),
+            'is_as_earned' => $request->boolean('is_as_earned'),
+            // OLD: global leave_carry_forward settings only (see LeaveController)
+            'is_carry_forward' => $request->boolean('is_carry_forward') ? 1 : 0,
+            'max_carry_forward' => $request->input('max_carry_forward'),
+            'is_encashable' => $request->boolean('is_encashable') ? 1 : 0,
+            'policy_notes' => $request->input('policy_notes'),
+        ];
+
+        foreach ($fields as $column => $value) {
+            if (Schema::hasColumn('leave_types', $column)) {
+                $leavetype->{$column} = $value;
+            }
+        }
+    }
+
+    protected function saveLeaveType(LeaveType $leavetype)
+    {
+        try {
+            $leavetype->save();
+        } catch (QueryException $e) {
+            if (str_contains($e->getMessage(), 'Unknown column')) {
+                return redirect()->back()->with(
+                    'error',
+                    __('Leave type could not be saved. Run database migration on the server: php artisan migrate --force')
+                );
+            }
+
+            throw $e;
+        }
+
+        return null;
+    }
 
     public function index()
     {
@@ -75,25 +126,15 @@ class LeaveTypeController extends Controller
             $leavetype->monthly_credit = round($monthlyCredit, 2);
             $leavetype->annual_credit = round($annualCredit, 2);
             $leavetype->approval_requirement = $request->approval_requirement ?? 'na';
-            $leavetype->policy_code = $request->input('policy_code');
-            $leavetype->credit_frequency = $request->input('credit_frequency');
-            $leavetype->is_prorata = $request->boolean('is_prorata', true);
-            $leavetype->eligible_employee_types = array_values(array_filter((array) $request->input('eligible_employee_types', [])));
-            $leavetype->min_notice_days = $request->input('min_notice_days');
-            $leavetype->max_consecutive_days = $request->input('max_consecutive_days');
-            $leavetype->monthly_limit = $request->input('monthly_limit');
-            $leavetype->max_encash_on_exit = $request->input('max_encash_on_exit');
-            $leavetype->requires_family_relation = $request->boolean('requires_family_relation');
-            $leavetype->is_as_earned = $request->boolean('is_as_earned');
-            $leavetype->is_carry_forward = $request->boolean('is_carry_forward') ? 1 : 0;
-            $leavetype->max_carry_forward = $request->input('max_carry_forward');
-            $leavetype->is_encashable = $request->boolean('is_encashable') ? 1 : 0;
-            $leavetype->policy_notes = $request->input('policy_notes');
+            $this->assignPolicyFields($leavetype, $request);
             $leavetype->country = $request->input('country');
             $leavetype->state = $request->input('state');
             $leavetype->city = $request->input('city');
             $leavetype->created_by = \Auth::user()->creatorId();
-            $leavetype->save();
+
+            if ($error = $this->saveLeaveType($leavetype)) {
+                return $error;
+            }
 
             return redirect()->route('leavetype.index')->with('success', __('LeaveType  successfully created.'));
         }
@@ -164,24 +205,14 @@ class LeaveTypeController extends Controller
                 $leavetype->monthly_credit = round($monthlyCredit, 2);
                 $leavetype->annual_credit = round($annualCredit, 2);
                 $leavetype->approval_requirement = $request->approval_requirement ?? 'na';
-                $leavetype->policy_code = $request->input('policy_code');
-                $leavetype->credit_frequency = $request->input('credit_frequency');
-                $leavetype->is_prorata = $request->boolean('is_prorata', true);
-                $leavetype->eligible_employee_types = array_values(array_filter((array) $request->input('eligible_employee_types', [])));
-                $leavetype->min_notice_days = $request->input('min_notice_days');
-                $leavetype->max_consecutive_days = $request->input('max_consecutive_days');
-                $leavetype->monthly_limit = $request->input('monthly_limit');
-                $leavetype->max_encash_on_exit = $request->input('max_encash_on_exit');
-                $leavetype->requires_family_relation = $request->boolean('requires_family_relation');
-                $leavetype->is_as_earned = $request->boolean('is_as_earned');
-                $leavetype->is_carry_forward = $request->boolean('is_carry_forward') ? 1 : 0;
-                $leavetype->max_carry_forward = $request->input('max_carry_forward');
-                $leavetype->is_encashable = $request->boolean('is_encashable') ? 1 : 0;
-                $leavetype->policy_notes = $request->input('policy_notes');
+                $this->assignPolicyFields($leavetype, $request);
                 $leavetype->country = $request->input('country');
                 $leavetype->state = $request->input('state');
                 $leavetype->city = $request->input('city');
-                $leavetype->save();
+
+                if ($error = $this->saveLeaveType($leavetype)) {
+                    return $error;
+                }
 
                 return redirect()->route('leavetype.index')->with('success', __('LeaveType successfully updated.'));
             }

@@ -13,6 +13,22 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('leave_types', function (Blueprint $table) {
+            // Per-type carry forward / encashment (used by LeaveTypeController; additive)
+            if (!Schema::hasColumn('leave_types', 'is_carry_forward')) {
+                $table->boolean('is_carry_forward')->default(0);
+            }
+            if (!Schema::hasColumn('leave_types', 'max_carry_forward')) {
+                $table->decimal('max_carry_forward', 5, 2)->nullable();
+            }
+            if (!Schema::hasColumn('leave_types', 'is_encashable')) {
+                $table->boolean('is_encashable')->default(0);
+            }
+            if (!Schema::hasColumn('leave_types', 'encash_rate_per_day')) {
+                $table->decimal('encash_rate_per_day', 10, 2)->nullable();
+            }
+            if (!Schema::hasColumn('leave_types', 'encash_basis')) {
+                $table->string('encash_basis', 50)->nullable();
+            }
             if (!Schema::hasColumn('leave_types', 'policy_code')) {
                 $table->string('policy_code', 50)->nullable()->index();
             }
@@ -59,6 +75,11 @@ return new class extends Migration
     {
         Schema::table('leave_types', function (Blueprint $table) {
             $cols = [
+                'is_carry_forward',
+                'max_carry_forward',
+                'is_encashable',
+                'encash_rate_per_day',
+                'encash_basis',
                 'policy_code',
                 'credit_frequency',
                 'is_prorata',

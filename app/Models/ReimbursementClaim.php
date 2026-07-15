@@ -11,6 +11,7 @@ class ReimbursementClaim extends Model
     protected $fillable = [
         'employee_id',
         'component_id',
+        'component_name',
         'claim_month',
         'amount',
         'status',

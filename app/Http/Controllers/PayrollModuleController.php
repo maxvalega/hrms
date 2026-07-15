@@ -1775,7 +1775,8 @@ class PayrollModuleController extends Controller
         $creatorId = \Auth::user()->creatorId();
         $data = $request->validate([
             'employee_id' => 'required|integer',
-            'component_id' => 'required|integer',
+            // OLD: 'component_id' => 'required|integer',
+            'component_name' => 'required|string|max:120',
             'claim_month' => 'required|string|size:7',
             'amount' => 'required|numeric|min:0',
             'remarks' => 'nullable|string|max:255',
@@ -1798,13 +1799,23 @@ class PayrollModuleController extends Controller
 
         $payload = [
             'employee_id' => (int) $data['employee_id'],
-            'component_id' => (int) $data['component_id'],
+            // OLD: 'component_id' => (int) $data['component_id'],
+            'component_id' => null,
             'claim_month' => $data['claim_month'],
             'amount' => (float) $data['amount'],
             'status' => 'pending',
             'remarks' => $data['remarks'] ?? null,
             'created_by' => $creatorId,
         ];
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('reimbursement_claims', 'component_name')) {
+            $payload['component_name'] = trim($data['component_name']);
+        } else {
+            // Fallback when column not migrated yet: keep text in remarks
+            $label = trim($data['component_name']);
+            $payload['remarks'] = trim(($payload['remarks'] ? $payload['remarks'] . ' | ' : '') . 'Component: ' . $label);
+            $payload['component_id'] = 0;
+        }
 
         // Only set attachment when column exists (older live DBs before migration)
         if (\Illuminate\Support\Facades\Schema::hasColumn('reimbursement_claims', 'attachment')) {

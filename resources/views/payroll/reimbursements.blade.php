@@ -24,11 +24,17 @@
                         </div>
                         <div class="mb-2">
                             <label class="form-label">{{ __('Component') }}</label>
+                            {{-- OLD dropdown (salary components with category=reimbursement):
                             <select name="component_id" class="form-control" required>
                                 @foreach($components as $component)
                                     <option value="{{ $component->id }}">{{ $component->name }}</option>
                                 @endforeach
                             </select>
+                            --}}
+                            <input type="text" name="component_name" class="form-control" value="{{ old('component_name') }}" placeholder="{{ __('e.g. Travel, Food, Medical') }}" required>
+                            @error('component_name')
+                                <div class="text-danger small mt-1">{{ $message }}</div>
+                            @enderror
                         </div>
                         <div class="mb-2"><label class="form-label">{{ __('Claim Month') }}</label><input type="month" name="claim_month" class="form-control" required></div>
                         <div class="mb-2"><label class="form-label">{{ __('Amount') }}</label><input type="number" step="0.01" name="amount" class="form-control" required></div>
@@ -55,6 +61,7 @@
                             <thead>
                                 <tr>
                                     <th>{{ __('Employee ID') }}</th>
+                                    <th>{{ __('Component') }}</th>
                                     <th>{{ __('Month') }}</th>
                                     <th>{{ __('Amount') }}</th>
                                     <th>{{ __('Receipt') }}</th>
@@ -66,6 +73,7 @@
                                 @forelse($claims as $claim)
                                     <tr>
                                         <td>{{ $claim->employee_id }}</td>
+                                        <td>{{ $claim->component_name ?: ('#' . $claim->component_id) }}</td>
                                         <td>{{ $claim->claim_month }}</td>
                                         <td>{{ $claim->amount }}</td>
                                         <td>
@@ -98,7 +106,7 @@
                                         </td>
                                     </tr>
                                 @empty
-                                    <tr><td colspan="6">{{ __('No claims found.') }}</td></tr>
+                                    <tr><td colspan="7">{{ __('No claims found.') }}</td></tr>
                                 @endforelse
                             </tbody>
                         </table>

@@ -293,7 +293,9 @@ class SalaryCalculator
         $sum   = 0.0;
         foreach ($claims as $claim) {
             $items[] = [
-                'name'      => 'Reimbursement #' . $claim->id,
+                'name'      => !empty($claim->component_name)
+                    ? $claim->component_name
+                    : ('Reimbursement #' . $claim->id),
                 'amount'    => round((float)$claim->amount * 12, 2),
                 'frequency' => 'one-time',
             ];

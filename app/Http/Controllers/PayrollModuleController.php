@@ -1779,17 +1779,39 @@ class PayrollModuleController extends Controller
             'claim_month' => 'required|string|size:7',
             'amount' => 'required|numeric|min:0',
             'remarks' => 'nullable|string|max:255',
+            // NEW: receipt attachment (JPEG / PDF). Keep optional so pending claims without files still work.
+            'attachment' => 'nullable|file|mimes:jpeg,jpg,pdf|max:5120',
         ]);
 
-        ReimbursementClaim::create([
-            'employee_id' => (int)$data['employee_id'],
-            'component_id' => (int)$data['component_id'],
+        $attachmentPath = null;
+        if ($request->hasFile('attachment')) {
+            try {
+                $file = $request->file('attachment');
+                $fileName = time() . '_' . $file->getClientOriginalName();
+                $attachmentPath = $file->storeAs('payroll/reimbursements', $fileName, 'public');
+            } catch (\Exception $e) {
+                \Log::error('Failed to upload reimbursement receipt: ' . $e->getMessage());
+
+                return back()->with('error', __('Failed to upload receipt. Please try again.'));
+            }
+        }
+
+        $payload = [
+            'employee_id' => (int) $data['employee_id'],
+            'component_id' => (int) $data['component_id'],
             'claim_month' => $data['claim_month'],
-            'amount' => (float)$data['amount'],
+            'amount' => (float) $data['amount'],
             'status' => 'pending',
             'remarks' => $data['remarks'] ?? null,
             'created_by' => $creatorId,
-        ]);
+        ];
+
+        // Only set attachment when column exists (older live DBs before migration)
+        if (\Illuminate\Support\Facades\Schema::hasColumn('reimbursement_claims', 'attachment')) {
+            $payload['attachment'] = $attachmentPath;
+        }
+
+        ReimbursementClaim::create($payload);
 
         return back()->with('success', __('Reimbursement claim submitted.'));
     }

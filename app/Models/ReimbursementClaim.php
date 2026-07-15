@@ -15,6 +15,7 @@ class ReimbursementClaim extends Model
         'amount',
         'status',
         'remarks',
+        'attachment',
         'approved_by',
         'approved_at',
         'created_by',

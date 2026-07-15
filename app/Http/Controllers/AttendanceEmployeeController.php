@@ -289,7 +289,8 @@ class AttendanceEmployeeController extends Controller
                 }
 
                 $attendanceEmployee = $attendanceEmployee->orderByDesc('date')->orderByDesc('id')
-                    ->with(['employee.shift', 'employee.reportingManager'])->get();
+                    ->with($this->attendanceIndexEagerLoads())
+                    ->get();
             } else {
                 $employee = Employee::select('id')->where('created_by', \Auth::user()->creatorId());
 
@@ -352,7 +353,8 @@ class AttendanceEmployeeController extends Controller
                 }
 
                 $attendanceEmployee = $attendanceEmployee->orderByDesc('date')->orderByDesc('id')
-                    ->with(['employee.shift', 'employee.reportingManager'])->get();
+                    ->with($this->attendanceIndexEagerLoads())
+                    ->get();
             }
 
             $latestRequestByAttendance = collect();
@@ -477,12 +479,17 @@ class AttendanceEmployeeController extends Controller
 
             // Load synced payroll attendance data for this month
             $syncedAttendance = [];
-            if ($resolvedFilterType === 'monthly' && $resolvedFilterMonth) {
-                $syncedAttendance = PayrollAttendanceSync::where('month', $resolvedFilterMonth)
-                    ->where('created_by', \Auth::user()->creatorId())
-                    ->get()
-                    ->keyBy('employee_id')
-                    ->toArray();
+            if ($resolvedFilterType === 'monthly' && $resolvedFilterMonth && Schema::hasTable('payroll_attendance_sync')) {
+                try {
+                    $syncedAttendance = PayrollAttendanceSync::where('month', $resolvedFilterMonth)
+                        ->where('created_by', \Auth::user()->creatorId())
+                        ->get()
+                        ->keyBy('employee_id')
+                        ->toArray();
+                } catch (\Throwable $e) {
+                    \Log::warning('payroll_attendance_sync query failed: ' . $e->getMessage());
+                    $syncedAttendance = [];
+                }
             }
 
             return view('attendance.index', compact(
@@ -513,6 +520,24 @@ class AttendanceEmployeeController extends Controller
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
+    }
+
+    /**
+     * Safe eager-loads for attendance index (skip relations when live DB is missing tables/columns).
+     */
+    protected function attendanceIndexEagerLoads(): array
+    {
+        $with = ['employee'];
+
+        if (Schema::hasTable('shifts') && Schema::hasColumn('employees', 'shift_id')) {
+            $with[] = 'employee.shift';
+        }
+
+        if (Schema::hasColumn('employees', 'reporting_manager_id')) {
+            $with[] = 'employee.reportingManager';
+        }
+
+        return $with;
     }
 
     /**

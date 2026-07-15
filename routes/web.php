@@ -1207,6 +1207,8 @@ Route::group(['middleware' => ['verified']], function () {
     Route::post('attendance/sync-for-payroll', [AttendanceEmployeeController::class, 'syncForPayroll'])->name('attendance.sync-for-payroll')->middleware(['auth', 'XSS']);
     Route::get('attendance/export-monthly-excel', [AttendanceEmployeeController::class, 'exportMonthlyExcel'])->name('attendance.export-monthly-excel')->middleware(['auth', 'XSS']);
     Route::post('attendance/reapply-policy', [AttendanceEmployeeController::class, 'reapplyAttendancePolicy'])->name('attendance.reapply-policy')->middleware(['auth', 'XSS']);
+    // Used by Mark Attendance page (Excel/CSV upload form in attendance/index.blade.php)
+    Route::post('attendance/upload-excel', [AttendanceEmployeeController::class, 'uploadExcelAttendance'])->name('attendance.upload-excel')->middleware(['auth', 'XSS']);
 
     //import attendance
     // Route::get('import/attendance/file', [AttendanceEmployeeController::class, 'importFile'])->name('attendance.file.import');

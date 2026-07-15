@@ -252,10 +252,12 @@
             {!! NoCaptcha::renderJs() !!}
         @else
             <script src="https://www.google.com/recaptcha/api.js?render={{ $settings['google_recaptcha_key'] }}"></script>
+            <div id="login-recaptcha-config" class="d-none" data-key="{{ $settings['google_recaptcha_key'] ?? '' }}"></div>
             <script>
                 $(document).ready(function() {
+                    var recaptchaKey = document.getElementById('login-recaptcha-config').getAttribute('data-key');
                     grecaptcha.ready(function() {
-                        grecaptcha.execute('{{ $settings['google_recaptcha_key'] }}', {
+                        grecaptcha.execute(recaptchaKey, {
                             action: 'submit'
                         }).then(function(token) {
                             $('#g-recaptcha-response').val(token);

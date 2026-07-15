@@ -13,6 +13,14 @@ use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Lab404\Impersonate\Models\Impersonate;
 use Laravel\Sanctum\HasApiTokens;
 
+/**
+ * IDE / Intelephense hints (runtime unchanged).
+ *
+ * @method bool can(\BackedEnum|\UnitEnum|string $ability, array|mixed $arguments = [])
+ * @method bool cannot(\BackedEnum|\UnitEnum|string $ability, array|mixed $arguments = [])
+ * @method \Laravel\Sanctum\NewAccessToken createToken(string $name, array $abilities = ['*'], \DateTimeInterface|null $expiresAt = null)
+ * @property-read \Illuminate\Database\Eloquent\Relations\MorphMany $tokens
+ */
 class User extends Authenticatable implements MustVerifyEmail
 {
     use HasApiTokens, Notifiable;

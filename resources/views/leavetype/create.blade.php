@@ -51,6 +51,99 @@
                 {{ Form::select('approval_requirement', ['subordinate' => __('Subordinate Approval'), 'na' => __('NA')], 'na', ['class' => 'form-control']) }}
             </div>
         </div>
+
+        {{-- Policy matrix fields (new) --}}
+        <div class="col-md-6">
+            <div class="form-group">
+                {{ Form::label('policy_code', __('Policy Code'), ['class' => 'form-label']) }}
+                {{ Form::text('policy_code', null, ['class' => 'form-control', 'placeholder' => 'sick / pl / cl / wfh / ...']) }}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                {{ Form::label('credit_frequency', __('Credit Frequency'), ['class' => 'form-label']) }}
+                {{ Form::select('credit_frequency', [
+                    'monthly' => __('Monthly'),
+                    'annual' => __('Annual'),
+                    'earned' => __('As earned'),
+                    'monthly_cap' => __('Monthly cap'),
+                ], 'monthly', ['class' => 'form-control', 'placeholder' => __('Select')]) }}
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="form-group form-check mt-4">
+                {{ Form::checkbox('is_prorata', 1, true, ['class' => 'form-check-input', 'id' => 'is_prorata']) }}
+                <label class="form-check-label" for="is_prorata">{{ __('Prorata on joining') }}</label>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="form-group form-check mt-4">
+                {{ Form::checkbox('is_carry_forward', 1, false, ['class' => 'form-check-input', 'id' => 'is_carry_forward']) }}
+                <label class="form-check-label" for="is_carry_forward">{{ __('Carry Forward') }}</label>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="form-group form-check mt-4">
+                {{ Form::checkbox('is_encashable', 1, false, ['class' => 'form-check-input', 'id' => 'is_encashable']) }}
+                <label class="form-check-label" for="is_encashable">{{ __('Encashable') }}</label>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                {{ Form::label('max_carry_forward', __('Max Carry Forward'), ['class' => 'form-label']) }}
+                {{ Form::number('max_carry_forward', null, ['class' => 'form-control', 'min' => '0', 'step' => '0.01']) }}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                {{ Form::label('max_encash_on_exit', __('Max Encash on Exit'), ['class' => 'form-label']) }}
+                {{ Form::number('max_encash_on_exit', null, ['class' => 'form-control', 'min' => '0', 'step' => '0.01']) }}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                {{ Form::label('min_notice_days', __('Min Notice (calendar days)'), ['class' => 'form-label']) }}
+                {{ Form::number('min_notice_days', null, ['class' => 'form-control', 'min' => '0']) }}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                {{ Form::label('monthly_limit', __('Monthly Limit'), ['class' => 'form-label']) }}
+                {{ Form::number('monthly_limit', null, ['class' => 'form-control', 'min' => '0', 'step' => '0.5']) }}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                {{ Form::label('max_consecutive_days', __('Max Consecutive Days'), ['class' => 'form-label']) }}
+                {{ Form::number('max_consecutive_days', null, ['class' => 'form-control', 'min' => '0', 'step' => '0.5']) }}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group form-check mt-4">
+                {{ Form::checkbox('requires_family_relation', 1, false, ['class' => 'form-check-input', 'id' => 'requires_family_relation']) }}
+                <label class="form-check-label" for="requires_family_relation">{{ __('Requires immediate family') }}</label>
+            </div>
+        </div>
+        <div class="col-md-12">
+            <div class="form-group">
+                {{ Form::label('eligible_employee_types', __('Eligible Employment Types'), ['class' => 'form-label']) }}
+                <select name="eligible_employee_types[]" class="form-control" multiple>
+                    <option value="full_time">{{ __('Full-time') }}</option>
+                    <option value="intern">{{ __('Intern') }}</option>
+                    <option value="part_time">{{ __('Part-time') }}</option>
+                    <option value="consultant">{{ __('Consultant') }}</option>
+                    <option value="mgmt_trainee">{{ __('Management Trainee') }}</option>
+                </select>
+                <small class="text-muted">{{ __('Leave empty for all employees') }}</small>
+            </div>
+        </div>
+        <div class="col-md-12">
+            <div class="form-group">
+                {{ Form::label('policy_notes', __('Policy Notes'), ['class' => 'form-label']) }}
+                {{ Form::textarea('policy_notes', null, ['class' => 'form-control', 'rows' => 2]) }}
+            </div>
+        </div>
+
         <div class="col-md-4"><div class="form-group"><label class="form-label">{{ __('Country') }}</label><select name="country" class="form-control addr-country"><option value="">{{ __('Select Country') }}</option></select></div></div>
         <div class="col-md-4"><div class="form-group"><label class="form-label">{{ __('State') }}</label><select name="state" class="form-control addr-state"><option value="">{{ __('Select State') }}</option></select></div></div>
         <div class="col-md-4"><div class="form-group"><label class="form-label">{{ __('City') }}</label><select name="city" class="form-control addr-city"><option value="">{{ __('Select City') }}</option></select></div></div>

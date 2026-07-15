@@ -21,9 +21,15 @@ use App\Exports\LeaveExport;
 use App\Models\User;
 use Maatwebsite\Excel\Facades\Excel;
 use Spatie\GoogleCalendar\Event as GoogleEvent;
+use App\Services\LeavePolicyService;
 
 class LeaveController extends Controller
 {
+    protected function leavePolicy(): LeavePolicyService
+    {
+        return app(LeavePolicyService::class);
+    }
+
     public function index()
     {
 
@@ -114,7 +120,7 @@ class LeaveController extends Controller
                         'available' => $available,
                         'credit_mode' => $allowance['credit_mode'] ?? 'lump_sum',
                         'carry_forward' => $allowance['carry_forward'] ?? 0,
-                        'encashable_leave' => $this->calculateEncashableLeave($available),
+                        'encashable_leave' => $this->calculateEncashableLeave($available, $leaveType),
                     ];
                 }
             }
@@ -260,6 +266,20 @@ class LeaveController extends Controller
                 return redirect()->back()->with('error', $this->getProbationLeaveNotAllowedMessage($employee));
             }
 
+            // NEW: per-type policy matrix (eligibility, notice, WFH caps, bereavement family)
+            $policyError = $this->leavePolicy()->validateApplication(
+                $leave_type,
+                $employee,
+                $request->start_date,
+                $request->end_date,
+                (float) $total_leave_days,
+                $request->input('family_relation'),
+                date('Y-m-d')
+            );
+            if ($policyError) {
+                return redirect()->back()->with('error', $policyError);
+            }
+
             $usage = $this->getLeaveUsageByCycle((int) $employee->id, (int) $leave_type->id, $date);
             $leaves_used = $usage['used'];
             $leaves_pending = $usage['pending'];
@@ -270,11 +290,21 @@ class LeaveController extends Controller
 
             $allowance = $this->getLeaveAllowanceDetails($leave_type, $employee, $date);
             $available = $this->calculateAvailableLeaveByCreditMode($allowance, $usage);
-            if ($total_leave_days > $available) {
+
+            // Comp-off / as-earned: use compensatory claim flow rather than normal balance quota
+            $isAsEarned = !empty($leave_type->is_as_earned) || ($leave_type->credit_frequency === 'earned');
+            $isMonthlyCap = ($leave_type->credit_frequency === 'monthly_cap');
+            if (!$isAsEarned && !$isMonthlyCap && $total_leave_days > $available) {
                 return redirect()->back()->with('error', __('You cannot apply leave more than your available balance.'));
             }
+            // WFH monthly_cap: balance enforced via LeavePolicyService monthly_limit (not cycle pool)
 
-            if ($leave_type->days >= $total_leave_days) {
+            // OLD: if ($leave_type->days >= $total_leave_days) {
+            // NEW: allow as-earned or when within type max days (or unlimited max when days=0 and as-earned)
+            $maxDaysAllowed = (float) $leave_type->days;
+            $withinMax = $isAsEarned || $maxDaysAllowed <= 0 || $maxDaysAllowed >= $total_leave_days;
+
+            if ($withinMax) {
 
                 $leave    = new LocalLeave();
                 if (\Auth::user()->type == "employee") {
@@ -299,6 +329,10 @@ class LeaveController extends Controller
                 }
                 $leave->total_leave_days = $total_leave_days;
                 $leave->leave_reason     = $request->leave_reason;
+                if ($request->filled('family_relation')) {
+                    // Append family relation for bereavement audit (keep leave_reason intact)
+                    $leave->leave_reason = trim($leave->leave_reason . ' [Family: ' . $request->family_relation . ']');
+                }
                 $leave->status = 'Pending';
                 
                 // Handle medical certificate upload
@@ -1128,7 +1162,34 @@ class LeaveController extends Controller
     protected function getLeaveAllowanceDetails(LeaveType $leaveType, ?Employee $employee, array $cycleDates, bool $includeCarryForward = true): array
     {
         $settings = Utility::settings();
-        $creditMode = $settings['leave_credit_mode'] ?? 'lump_sum';
+
+        // NEW: per-type credit frequency from policy matrix
+        // OLD (kept for fallback when policy_code / credit_frequency not set):
+        // $creditMode = $settings['leave_credit_mode'] ?? 'lump_sum';
+        $typeFrequency = $leaveType->credit_frequency ?? null;
+        if ($typeFrequency === 'annual') {
+            $creditMode = 'lump_sum';
+        } elseif (in_array($typeFrequency, ['monthly', 'monthly_cap'], true)) {
+            $creditMode = 'monthly';
+        } elseif ($typeFrequency === 'earned') {
+            $creditMode = 'earned';
+        } else {
+            $creditMode = $settings['leave_credit_mode'] ?? 'lump_sum';
+        }
+
+        // As-earned types (comp-off) have no normal annual quota
+        if ($creditMode === 'earned' || !empty($leaveType->is_as_earned)) {
+            return [
+                'allowed' => 0,
+                'total_annual' => 0,
+                'monthly_accrual' => 0,
+                'eligible_months' => 0,
+                'credited_months' => 0,
+                'credit_mode' => 'earned',
+                'carry_forward' => 0,
+            ];
+        }
+
         $annualCredit = (float) ($leaveType->annual_credit ?? 0);
         if ($annualCredit <= 0) {
             $annualCredit = (float) ($leaveType->days ?? 0);
@@ -1138,12 +1199,21 @@ class LeaveController extends Controller
             ? round($annualCredit / 12, 2)
             : (float) ($leaveType->monthly_credit ?? 0);
 
+        // WFH: monthly pool of monthly_limit (default 2), not annual/12 from days
+        if ($typeFrequency === 'monthly_cap' && !empty($leaveType->monthly_limit)) {
+            $monthlyAccrual = (float) $leaveType->monthly_limit;
+            // Annual tracking still uses annual_credit / days for reports
+        }
+
         $normalizedCycle = $this->normalizeCycleDates($cycleDates);
         $cycleStart = Carbon::parse($normalizedCycle['start_date'])->startOfMonth();
         $cycleEnd = Carbon::parse($normalizedCycle['end_date'])->startOfMonth();
 
         $accrualStart = $cycleStart->copy();
-        if (!empty($employee) && !empty($employee->company_doj)) {
+        // NEW: prorata only when leave type allows it (default true)
+        // OLD: always prorated from join month
+        $useProrata = !isset($leaveType->is_prorata) || (bool) $leaveType->is_prorata;
+        if ($useProrata && !empty($employee) && !empty($employee->company_doj)) {
             $joinMonth = Carbon::parse($employee->company_doj)->startOfMonth();
             if ($joinMonth->greaterThan($accrualStart)) {
                 $accrualStart = $joinMonth;
@@ -1179,8 +1249,14 @@ class LeaveController extends Controller
             $accruedToDate = round($monthlyAccrual * $creditedMonths, 2);
             $allowed = min($accruedToDate, round($monthlyAccrual * $eligibleMonths, 2));
         }
-        
-        $proratedTotal = round($monthlyAccrual * $eligibleMonths, 2);
+
+        // monthly_cap (WFH): available is current month's limit residual handled in validate; allowance still accrues
+        if ($typeFrequency === 'monthly_cap' && !empty($leaveType->monthly_limit)) {
+            $allowed = (float) $leaveType->monthly_limit;
+            $proratedTotal = (float) ($leaveType->annual_credit ?? ($leaveType->monthly_limit * 12));
+        } else {
+            $proratedTotal = round($monthlyAccrual * $eligibleMonths, 2);
+        }
 
         if (!empty($employee) && $this->isEmployeeInProbation($employee)) {
             if (($settings['probation_leave_accumulation'] ?? 'during') === 'after') {
@@ -1189,14 +1265,25 @@ class LeaveController extends Controller
         }
 
         $carryForward = 0.0;
-        if ($includeCarryForward && ($settings['leave_carry_forward'] ?? 'off') === 'on') {
+        // NEW: prefer per-type is_carry_forward
+        // OLD (company-wide only):
+        // if ($includeCarryForward && ($settings['leave_carry_forward'] ?? 'off') === 'on') { ... }
+        $typeAllowsCf = isset($leaveType->is_carry_forward)
+            ? ((int) $leaveType->is_carry_forward === 1)
+            : (($settings['leave_carry_forward'] ?? 'off') === 'on');
+
+        if ($includeCarryForward && $typeAllowsCf) {
             $previousCycle = $this->getPreviousCycleDates($cycleDates);
             if (!empty($previousCycle)) {
                 $previousAllowance = $this->getLeaveAllowanceDetails($leaveType, $employee, $previousCycle, false);
                 $previousUsage = $this->getLeaveUsageByCycle($employee ? (int) $employee->id : null, (int) $leaveType->id, $previousCycle);
                 $previousAvailable = max(0, round(($previousAllowance['allowed'] ?? 0) - ($previousUsage['used'] ?? 0) - ($previousUsage['pending'] ?? 0), 2));
 
-                $carryForwardMax = (float) ($settings['leave_carry_forward_max'] ?? 0);
+                // Prefer type max_carry_forward, else company setting
+                $carryForwardMax = (float) ($leaveType->max_carry_forward ?? 0);
+                if ($carryForwardMax <= 0) {
+                    $carryForwardMax = (float) ($settings['leave_carry_forward_max'] ?? 0);
+                }
                 $carryForward = $carryForwardMax > 0 ? min($previousAvailable, $carryForwardMax) : $previousAvailable;
                 $allowed = round($allowed + $carryForward, 2);
             }
@@ -1229,7 +1316,7 @@ class LeaveController extends Controller
             'available' => $available,
             'credit_mode' => $allowance['credit_mode'] ?? 'lump_sum',
             'carry_forward' => $allowance['carry_forward'] ?? 0,
-            'encashable_leave' => $this->calculateEncashableLeave($available),
+            'encashable_leave' => $this->calculateEncashableLeave($available, $leaveType),
         ];
     }
 
@@ -1243,9 +1330,24 @@ class LeaveController extends Controller
         return max(0, round($allowed - $used - $pending, 2));
     }
 
-    protected function calculateEncashableLeave(float $available): float
+    protected function calculateEncashableLeave(float $available, ?LeaveType $leaveType = null): float
     {
         $settings = Utility::settings();
+
+        // NEW: per-type encash (e.g. PL on exit max 30)
+        // OLD company-wide only:
+        // if (($settings['leave_encashment'] ?? 'off') !== 'on') { return 0; }
+        if ($leaveType && isset($leaveType->is_encashable)) {
+            if ((int) $leaveType->is_encashable !== 1) {
+                return 0;
+            }
+            $max = (float) ($leaveType->max_encash_on_exit ?? 0);
+            if ($max > 0) {
+                return max(0, round(min($available, $max), 2));
+            }
+            return max(0, round($available, 2));
+        }
+
         if (($settings['leave_encashment'] ?? 'off') !== 'on') {
             return 0;
         }
@@ -1564,7 +1666,9 @@ class LeaveController extends Controller
             $request->all(),
             [
                 'employee_id' => 'required|integer|exists:employees,id',
-                'days' => 'required|numeric|min:0.5',
+                // OLD: 'days' => 'required|numeric|min:0.5',
+                'days' => 'nullable|numeric|min:0.5',
+                'hours' => 'nullable|numeric|min:0',
                 'earned_date' => 'required|date',
                 'reason' => 'required|string|max:500',
             ]
@@ -1579,6 +1683,30 @@ class LeaveController extends Controller
             return redirect()->back()->with('error', __('Permission denied.'));
         }
 
+        // NEW matrix: 4 hrs = 1/2 day, 8 hrs = Full day (falls back to days if provided)
+        $days = null;
+        if ($request->filled('hours')) {
+            $days = LeavePolicyService::hoursToCompOffDays((float) $request->hours);
+            if ($days <= 0) {
+                return redirect()->back()->with('error', __('Comp-off requires at least 4 hours (half day) or 8 hours (full day).'));
+            }
+        } elseif ($request->filled('days')) {
+            $days = (float) $request->days;
+        } else {
+            return redirect()->back()->with('error', __('Please provide hours (preferred) or days for compensatory leave.'));
+        }
+
+        // Eligibility: Intern + Full time
+        $compType = LeaveType::where('created_by', \Auth::user()->creatorId())
+            ->where('policy_code', 'comp_off')
+            ->first();
+        if ($compType) {
+            $eligError = $this->leavePolicy()->validateEligibility($compType, $employee);
+            if ($eligError) {
+                return redirect()->back()->with('error', $eligError);
+            }
+        }
+
         try {
             $settings = Utility::settings();
             $compOffValidity = $settings['compensatory_leave_validity'] ?? 30;
@@ -1586,7 +1714,7 @@ class LeaveController extends Controller
 
             $compLeave = new \App\Models\CompensatoryLeave();
             $compLeave->employee_id = $request->employee_id;
-            $compLeave->days = $request->days;
+            $compLeave->days = $days;
             $compLeave->earned_date = $request->earned_date;
             $compLeave->expiry_date = $expiryDate;
             $compLeave->reason = $request->reason;

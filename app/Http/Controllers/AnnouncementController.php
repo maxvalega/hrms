@@ -12,7 +12,7 @@ use App\Models\Utility;
 use App\Models\Webhook;
 use Illuminate\Support\Facades\Auth;
 
-use function App\Models\WebhookCall;
+// WebhookCall lives on Utility::WebhookCall() — used below
 
 class AnnouncementController extends Controller
 {

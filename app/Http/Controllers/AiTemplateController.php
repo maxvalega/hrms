@@ -155,6 +155,7 @@ class AiTemplateController extends Controller
             }
 
             $counter = 1;
+            $text = '';
             $prompt = "please correct grammar mistakes and spelling mistakes in this: . $request->description .";
             $is_tone = 1;
             $ai_token = strlen($request->description);

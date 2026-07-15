@@ -154,6 +154,7 @@ class AuthorizeNetController extends Controller
             $response   = $controller->executeWithApiResponse(\net\authorize\api\constants\ANetEnvironment::SANDBOX); // change SANDBOX to PRODUCTION in live mode
         }
 
+        /** @var AnetAPI\CreateTransactionResponse|null $response */
         if ($response != null) {
             if ($response->getMessages()->getResultCode() == "Ok") {
                 $tresponse = $response->getTransactionResponse();

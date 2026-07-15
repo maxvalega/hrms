@@ -41,7 +41,14 @@
                 <select name="leave_type_id" id="leave_type_id" class="form-control select" required>
                     <option value="">{{ __('Select Leave Type') }}</option>
                     @foreach ($leavetypes as $leave)
-                        <option value="{{ $leave->id }}" data-title="{{ $leave->title }}" data-approval="{{ $leave->approval_requirement ?? 'na' }}">
+                        @if (str_starts_with($leave->title ?? '', '[OLD]'))
+                            {{-- Keep old types visible but clearly marked; prefer policy_code types --}}
+                        @endif
+                        <option value="{{ $leave->id }}"
+                            data-title="{{ $leave->title }}"
+                            data-approval="{{ $leave->approval_requirement ?? 'na' }}"
+                            data-policy="{{ $leave->policy_code ?? '' }}"
+                            data-requires-family="{{ !empty($leave->requires_family_relation) ? '1' : '0' }}">
                             {{ $leave->title }}
                         </option>
                     @endforeach
@@ -113,6 +120,22 @@
             <div class="form-group">
                 {{ Form::label('leave_reason', __('Leave Reason'), ['class' => 'col-form-label']) }}<x-required></x-required>
                 {{ Form::textarea('leave_reason', null, ['class' => 'form-control', 'required' => 'required', 'placeholder' => __('Leave Reason'), 'rows' => '3']) }}
+            </div>
+        </div>
+    </div>
+
+    <div class="row" id="family-relation-row" style="display:none;">
+        <div class="col-md-12">
+            <div class="form-group">
+                {{ Form::label('family_relation', __('Immediate Family Relation'), ['class' => 'col-form-label']) }}
+                {{ Form::select('family_relation', [
+                    '' => __('Select relation'),
+                    'spouse' => __('Spouse'),
+                    'parent' => __('Parent'),
+                    'child' => __('Child'),
+                    'sibling' => __('Sibling'),
+                ], null, ['class' => 'form-control', 'id' => 'family_relation']) }}
+                <small class="text-muted">{{ __('Required for Bereavement Leave — immediate family only.') }}</small>
             </div>
         </div>
     </div>
@@ -245,6 +268,16 @@
                 $('#medical-certificate-row').hide();
                 $('#medical_certificate').prop('required', false).val('');
                 $('#medical-error-msg').text('');
+            }
+
+            var requiresFamily = String(selectedOption.data('requires-family') || '0') === '1'
+                || /bereavement/.test(titleLower);
+            if (requiresFamily) {
+                $('#family-relation-row').show();
+                $('#family_relation').prop('required', true);
+            } else {
+                $('#family-relation-row').hide();
+                $('#family_relation').prop('required', false).val('');
             }
         }
 

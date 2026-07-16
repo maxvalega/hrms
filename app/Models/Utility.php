@@ -1986,10 +1986,16 @@ class Utility extends Model
     {
         $settings = self::settings();
         $cycle = $settings['leave_cycle'] ?? 'calendar';
+        $tz = !empty($settings['timezone']) ? $settings['timezone'] : 'Asia/Kolkata';
+        try {
+            $now = \Carbon\Carbon::now($tz);
+        } catch (\Throwable $e) {
+            $now = \Carbon\Carbon::now('Asia/Kolkata');
+        }
 
         if ($cycle === 'financial') {
-            $year = (int) date('Y');
-            $month = (int) date('n');
+            $year = (int) $now->format('Y');
+            $month = (int) $now->format('n');
             if ($month < 4) {
                 $startYear = $year - 1;
                 $endYear = $year;
@@ -1997,20 +2003,30 @@ class Utility extends Model
                 $startYear = $year;
                 $endYear = $year + 1;
             }
-            $start_date = $startYear . '-04-01';
-            $end_date = $endYear . '-03-31';
+            $cycleStart = $startYear . '-04-01';
+            $cycleEnd = $endYear . '-03-31';
+            $displayYear = (string) $startYear;
+            $displayLabel = $startYear . '-' . substr((string) $endYear, -2);
         } else {
-            $start_date = date('Y') . '-01-01';
-            $end_date = date('Y') . '-12-31';
+            $calendarYear = (int) $now->format('Y');
+            $cycleStart = $calendarYear . '-01-01';
+            $cycleEnd = $calendarYear . '-12-31';
+            $displayYear = (string) $calendarYear;
+            $displayLabel = (string) $calendarYear;
         }
 
-        $start_date = date('Y-m-d', strtotime($start_date . ' -1 day'));
-        $end_date = date('Y-m-d', strtotime($end_date . ' +1 day'));
+        // Padded bounds for exclusive-range style queries (keep existing behavior)
+        $start_date = date('Y-m-d', strtotime($cycleStart . ' -1 day'));
+        $end_date = date('Y-m-d', strtotime($cycleEnd . ' +1 day'));
 
-        $date['start_date'] = $start_date;
-        $date['end_date']   = $end_date;
-
-        return $date;
+        return [
+            'start_date' => $start_date,
+            'end_date' => $end_date,
+            'cycle_start' => $cycleStart,
+            'cycle_end' => $cycleEnd,
+            'year' => $displayYear,
+            'label' => $displayLabel,
+        ];
     }
 
     // start for (plans) storage limit - for file upload size

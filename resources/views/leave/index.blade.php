@@ -58,7 +58,7 @@
                 <div class="card">
                     <div class="card-header d-flex align-items-center justify-content-between bg-light">
                         <h5 class="card-title mb-0">{{ __('Leave Balance Summary') }}</h5>
-                        <small class="text-muted">{{ __('Current Year') }} | {{ \Carbon\Carbon::parse($date['start_date'] ?? date('Y-m-d'))->format('Y') }}</small>
+                        <small class="text-muted">{{ __('Current Year') }} | {{ $date['label'] ?? $date['year'] ?? date('Y') }}</small>
                     </div>
                     <div class="card-body">
                         <div class="row">

@@ -48,12 +48,6 @@
                         <span class="badge {{ !empty($leavePolicy['encashment']) ? 'bg-success' : 'bg-secondary' }}">
                             {{ __('Encashment') }}: {{ !empty($leavePolicy['encashment']) ? __('Enabled') : __('Disabled') }}
                         </span>
-                        @if (!empty($leavePolicy['carry_forward']) && !empty($leavePolicy['carry_forward_max']) && $leavePolicy['carry_forward_max'] > 0)
-                            <small class="text-muted">{{ __('Max carry forward') }}: {{ $leavePolicy['carry_forward_max'] }} {{ __('days') }}</small>
-                        @endif
-                        @if (!empty($leavePolicy['encashment']) && isset($leavePolicy['encashment_min_balance']))
-                            <small class="text-muted">{{ __('Encashment min balance to keep') }}: {{ $leavePolicy['encashment_min_balance'] }} {{ __('days') }}</small>
-                        @endif
                     </div>
                 </div>
             </div>

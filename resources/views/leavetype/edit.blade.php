@@ -100,10 +100,26 @@
                 {{ Form::number('max_encash_on_exit', $leavetype->max_encash_on_exit ?? null, ['class' => 'form-control', 'min' => '0', 'step' => '0.01']) }}
             </div>
         </div>
+        @php
+            $noticePresets = \App\Services\LeavePolicyService::noticeRulePresets();
+            $selectedNoticePresets = \App\Services\LeavePolicyService::selectedNoticeRulePresetKeys($leavetype->notice_rules ?? null);
+        @endphp
+        <div class="col-md-12">
+            <div class="form-group">
+                {{ Form::label('notice_rule_presets', __('Notice Requirements'), ['class' => 'form-label']) }}
+                <select name="notice_rule_presets[]" class="form-control" multiple size="5">
+                    @foreach($noticePresets as $key => $preset)
+                        <option value="{{ $key }}" @selected(in_array($key, $selectedNoticePresets, true))>{{ __($preset['label']) }}</option>
+                    @endforeach
+                </select>
+                <small class="text-muted">{{ __('Optional. Hold Ctrl/Cmd to select multiple bands.') }}</small>
+            </div>
+        </div>
         <div class="col-md-6">
             <div class="form-group">
                 {{ Form::label('min_notice_days', __('Min Notice (calendar days)'), ['class' => 'form-label']) }}
                 {{ Form::number('min_notice_days', $leavetype->min_notice_days ?? null, ['class' => 'form-control', 'min' => '0']) }}
+                <small class="text-muted">{{ __('Used only when no notice bands are selected above.') }}</small>
             </div>
         </div>
         <div class="col-md-6">

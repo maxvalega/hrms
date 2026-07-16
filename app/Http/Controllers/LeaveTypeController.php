@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Leave;
 use App\Models\LeaveType;
+use App\Services\LeavePolicyService;
 use App\Traits\AddressMasterTrait;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -25,6 +26,7 @@ class LeaveTypeController extends Controller
             'is_prorata' => $request->boolean('is_prorata', true),
             'eligible_employee_types' => array_values(array_filter((array) $request->input('eligible_employee_types', []))),
             'min_notice_days' => $request->input('min_notice_days'),
+            'notice_rules' => $this->resolveNoticeRules($request),
             'max_consecutive_days' => $request->input('max_consecutive_days'),
             'monthly_limit' => $request->input('monthly_limit'),
             'max_encash_on_exit' => $request->input('max_encash_on_exit'),
@@ -42,6 +44,27 @@ class LeaveTypeController extends Controller
                 $leavetype->{$column} = $value;
             }
         }
+    }
+
+    /**
+     * Build notice_rules JSON from optional multi-select of preset bands.
+     */
+    protected function resolveNoticeRules(Request $request): ?array
+    {
+        $presets = LeavePolicyService::noticeRulePresets();
+        $selected = array_values(array_filter((array) $request->input('notice_rule_presets', [])));
+        if ($selected === []) {
+            return null;
+        }
+
+        $rules = [];
+        foreach ($selected as $key) {
+            if (isset($presets[$key]['rule'])) {
+                $rules[] = $presets[$key]['rule'];
+            }
+        }
+
+        return $rules !== [] ? $rules : null;
     }
 
     protected function saveLeaveType(LeaveType $leavetype)

@@ -30,6 +30,87 @@ class LeavePolicyService
     ];
 
     /**
+     * Optional notice bands selectable on Create/Edit Leave Type.
+     * Stored as leave_types.notice_rules JSON and enforced by validateNotice().
+     */
+    public static function noticeRulePresets(): array
+    {
+        return [
+            '1_2_days' => [
+                'label' => '1–2 days of leave: Requires 3 working days\' notice.',
+                'rule' => ['min' => 1, 'max' => 2, 'working_days' => 3],
+            ],
+            '3_5_days' => [
+                'label' => '3–5 days of leave: Requires 1 week\'s notice.',
+                'rule' => ['min' => 3, 'max' => 5, 'calendar_days' => 7],
+            ],
+            'more_5_days' => [
+                'label' => 'More than 5 days of leave: Requires 3 weeks\' notice.',
+                'rule' => ['min' => 5.01, 'max' => null, 'calendar_days' => 21],
+            ],
+            '5_10_days' => [
+                'label' => '5–10 days of leave: Require 4 weeks\' notice.',
+                'rule' => ['min' => 5, 'max' => 10, 'calendar_days' => 28],
+            ],
+            'over_10_days' => [
+                'label' => 'Over 10 days of leave: Require 6 weeks\' notice.',
+                'rule' => ['min' => 10.01, 'max' => null, 'calendar_days' => 42],
+            ],
+        ];
+    }
+
+    /**
+     * Map stored notice_rules back to preset keys for edit form selection.
+     */
+    public static function selectedNoticeRulePresetKeys(?array $rules): array
+    {
+        if (empty($rules) || !is_array($rules)) {
+            return [];
+        }
+
+        $selected = [];
+        foreach (self::noticeRulePresets() as $key => $preset) {
+            foreach ($rules as $rule) {
+                if (!is_array($rule)) {
+                    continue;
+                }
+                if (self::noticeRulesMatch($preset['rule'], $rule)) {
+                    $selected[] = $key;
+                    break;
+                }
+            }
+        }
+
+        return $selected;
+    }
+
+    protected static function noticeRulesMatch(array $a, array $b): bool
+    {
+        $aWorking = !empty($a['working_days']) ? (int) $a['working_days'] : null;
+        $bWorking = !empty($b['working_days']) ? (int) $b['working_days'] : null;
+        $aCalendar = !empty($a['calendar_days']) ? (int) $a['calendar_days'] : null;
+        $bCalendar = !empty($b['calendar_days']) ? (int) $b['calendar_days'] : null;
+
+        $sameNotice = ($aWorking !== null && $aWorking === $bWorking)
+            || ($aCalendar !== null && $aCalendar === $bCalendar);
+
+        if (!$sameNotice) {
+            return false;
+        }
+
+        $aMin = (float) ($a['min'] ?? 0);
+        $bMin = (float) ($b['min'] ?? 0);
+        $aMax = array_key_exists('max', $a) ? $a['max'] : null;
+        $bMax = array_key_exists('max', $b) ? $b['max'] : null;
+
+        $minClose = abs($aMin - $bMin) < 1.0;
+        $maxSame = ($aMax === null && $bMax === null)
+            || ($aMax !== null && $bMax !== null && abs((float) $aMax - (float) $bMax) < 0.5);
+
+        return $minClose && $maxSame;
+    }
+
+    /**
      * Canonical policies from HR matrix. Old global leave settings remain as fallback.
      */
     public static function policyDefinitions(): array

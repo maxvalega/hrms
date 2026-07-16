@@ -788,6 +788,7 @@
                                         data-bs-toggle="tooltip" title="{{ __('Reset') }}">
                                         <i class="ti ti-refresh text-white-off"></i>
                                     </a>
+                                    @if(in_array(\Auth::user()->type, ['super admin', 'company']))
                                     <a href="#" data-url="{{ route('attendance.file.import') }}"
                                         data-ajax-popup="true" data-title="{{ __('Import  Attendance CSV File') }}"
                                         data-bs-toggle="tooltip" title="{{ __('Import') }}" class="btn btn-sm btn-primary">
@@ -808,6 +809,7 @@
                                         <i class="ti ti-refresh me-1"></i>{{ __('Sync for Payroll') }}
                                     </button>
                                     @endif
+                                    @endif
                                 </div>
                             </div>
 
@@ -819,7 +821,7 @@
         </div>
 
         {{-- Reapply Policy & Sync for Payroll forms (outside filter form to avoid nested forms) --}}
-        @if(($resolvedFilterType ?? 'monthly') === 'monthly')
+        @if(in_array(\Auth::user()->type, ['super admin', 'company']) && ($resolvedFilterType ?? 'monthly') === 'monthly')
         <form method="POST" action="{{ route('attendance.reapply-policy') }}" id="reapplyPolicyForm" class="d-none">
             @csrf
             <input type="hidden" name="month" value="{{ $resolvedFilterMonth }}">
@@ -829,6 +831,7 @@
             <input type="hidden" name="month" value="{{ $resolvedFilterMonth }}">
         </form>
         @endif
+        @if(in_array(\Auth::user()->type, ['super admin', 'company']))
         <form method="POST" action="{{ route('attendance.upload-excel') }}" id="attendanceExcelUploadForm" class="d-none" enctype="multipart/form-data">
             @csrf
             <input type="hidden" name="month" value="{{ $resolvedFilterMonth ?? date('Y-m') }}">
@@ -837,6 +840,7 @@
             <input type="hidden" name="manager_employee_id" value="{{ request('manager_employee_id', request('employee_id', '')) }}">
             <input type="file" name="attendance_file" id="attendanceExcelUploadInput" accept=".xlsx,.xls,.csv,.txt">
         </form>
+        @endif
 
         <div class="col-xl-12">
             @if (!empty($pendingSwipeRequests) && $pendingSwipeRequests->count() > 0)
@@ -1882,25 +1886,6 @@
                             <input type="date" class="form-control" name="request_date" id="swipe_request_date">
                         </div>
 
-                        <div class="mb-2">
-                            <label class="form-label">{{ __('Detected Type') }}</label>
-                            <input type="text" class="form-control" id="swipe_issue_type" readonly>
-                        </div>
-
-                        <div class="mb-2">
-                            <label class="form-label">{{ __('Request Type') }}</label>
-                            <select class="form-control" name="requested_status" id="swipe_requested_status">
-                                <option value="">{{ __('Select Type') }}</option>
-                                <option value="Present">{{ __('Present') }}</option>
-                                <option value="Half Day">{{ __('Half Day') }}</option>
-                                <option value="Leave">{{ __('Full Day Leave') }}</option>
-                                <option value="Absent">{{ __('Absent') }}</option>
-                                <option value="Late Mark">{{ __('Late Mark') }}</option>
-                                <option value="Early Leaving">{{ __('Early Out') }}</option>
-                                <option value="Early After Leave">{{ __('Early After Leave') }}</option>
-                            </select>
-                        </div>
-
                         <div class="row">
                             <div class="col-6 mb-2">
                                 <label class="form-label">{{ __('Requested In') }}</label>
@@ -2015,14 +2000,12 @@
             const form = document.getElementById('swipeRequestForm');
             const attendanceInput = document.getElementById('swipe_attendance_employee_id');
             const requestDateInput = document.getElementById('swipe_request_date');
-            const issueTypeInput = document.getElementById('swipe_issue_type');
-            const statusInput = document.getElementById('swipe_requested_status');
             const inInput = document.getElementById('swipe_requested_clock_in');
             const outInput = document.getElementById('swipe_requested_clock_out');
             const reasonInput = document.getElementById('swipe_reason');
             const submitBtn = document.getElementById('swipeSubmitBtn');
 
-            if (!form || !attendanceInput || !requestDateInput || !issueTypeInput || !statusInput || !reasonInput || !submitBtn) {
+            if (!form || !attendanceInput || !requestDateInput || !reasonInput || !submitBtn) {
                 return;
             }
 
@@ -2031,9 +2014,7 @@
                     const openMode = button.getAttribute('data-open-mode') || 'row';
                     const attendanceId = button.getAttribute('data-attendance-id') || '';
                     const attendanceDate = button.getAttribute('data-attendance-date') || '';
-                    const issueType = button.getAttribute('data-issue-type') || 'Present';
                     const requestStatus = button.getAttribute('data-request-status') || '';
-                    const requestType = button.getAttribute('data-request-type') || issueType;
                     const requestReason = button.getAttribute('data-request-reason') || '';
                     const requestClockIn = button.getAttribute('data-request-clock-in') || '';
                     const requestClockOut = button.getAttribute('data-request-clock-out') || '';
@@ -2042,10 +2023,8 @@
 
                     attendanceInput.value = attendanceId;
                     requestDateInput.value = attendanceDate;
-                    issueTypeInput.value = issueType;
-                    statusInput.value = requestType;
-                    inInput.value = requestClockIn;
-                    outInput.value = requestClockOut;
+                    if (inInput) inInput.value = requestClockIn;
+                    if (outInput) outInput.value = requestClockOut;
                     reasonInput.value = requestReason;
 
                     if (openMode === 'top') {

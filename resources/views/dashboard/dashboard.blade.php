@@ -529,7 +529,12 @@
 @section('content')
     @php
         $authUser   = \Auth::user();
-        $heroHour   = (int) now()->format('H');
+        $heroTz     = \App\Models\Utility::getValByName('timezone') ?: 'Asia/Kolkata';
+        if ($heroTz === '') {
+            $heroTz = 'Asia/Kolkata';
+        }
+        $heroNow    = \Carbon\Carbon::now($heroTz);
+        $heroHour   = (int) $heroNow->format('H');
         $heroGreet  = $heroHour < 12 ? __('Good Morning') : ($heroHour < 17 ? __('Good Afternoon') : __('Good Evening'));
         $heroIcon   = $heroHour < 12 ? 'ti-sun' : ($heroHour < 17 ? 'ti-sun-high' : 'ti-moon-stars');
         $heroName   = $authUser->name ?? __('there');
@@ -591,8 +596,8 @@
                 <div class="hero-date-pill">
                     <i class="ti ti-calendar-event" style="font-size:1.3rem;"></i>
                     <div>
-                        <div class="hd-day">{{ now()->format('d') }} {{ now()->format('M') }}</div>
-                        <div class="hd-meta">{{ now()->format('l') }} · <span id="dashHeroClock">{{ now()->format('h:i A') }}</span></div>
+                        <div class="hd-day">{{ $heroNow->format('d') }} {{ $heroNow->format('M') }}</div>
+                        <div class="hd-meta">{{ $heroNow->format('l') }} · <span id="dashHeroClock" data-tz="{{ $heroTz }}">{{ $heroNow->format('h:i A') }}</span></div>
                     </div>
                 </div>
                 @if(\Route::has('grievances.create'))
@@ -2705,14 +2710,16 @@
     (function () {
         const el = document.getElementById('dashHeroClock');
         if (!el) return;
+        const heroTz = el.dataset.tz || 'Asia/Kolkata';
         function tick() {
-            const d = new Date();
-            let h = d.getHours(), m = d.getMinutes();
-            const ampm = h >= 12 ? 'PM' : 'AM';
-            h = h % 12 || 12;
-            el.textContent = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+            el.textContent = new Date().toLocaleTimeString('en-IN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true,
+                timeZone: heroTz,
+            });
         }
-        setInterval(tick, 30000);  // refresh every 30s — minute precision is enough
+        setInterval(tick, 30000);
         tick();
     })();
     </script>

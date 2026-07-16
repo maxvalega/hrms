@@ -139,7 +139,7 @@
                                             <span class="btn-inner--icon"><i
                                                     class="ti ti-refresh text-white-off "></i></span>
                                         </a>
-                                        @if(!empty($_GET['branch']) && !empty($_GET['department']))
+                                        @if(in_array(\Auth::user()->type, ['super admin', 'company']) && !empty($_GET['branch']) && !empty($_GET['department']))
                                         <a href="{{ route('attendanceemployee.bulkattendance.template', ['branch' => $_GET['branch'] ?? '', 'department' => $_GET['department'] ?? '', 'date' => $_GET['date'] ?? date('Y-m-d')]) }}"
                                             class="btn btn-sm btn-info text-white" data-bs-toggle="tooltip" title=""
                                             data-bs-original-title="{{ __('Download Excel template to fill offline') }}">

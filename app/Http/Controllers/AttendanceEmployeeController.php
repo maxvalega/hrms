@@ -32,6 +32,15 @@ class AttendanceEmployeeController extends Controller
     /** Minimum saved image size (bytes) to reject empty/corrupt camera captures */
     private const MIN_ATTENDANCE_PHOTO_BYTES = 500;
 
+    private function denyUnlessAttendanceAdmin()
+    {
+        if (!in_array(Auth::user()->type, ['super admin', 'company'])) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        return null;
+    }
+
     /**
      * Convert a local app URL (e.g. http://localhost/hrms/storage/...) to readable filesystem path.
      */
@@ -2110,6 +2119,10 @@ class AttendanceEmployeeController extends Controller
     public function bulkAttendanceImport(Request $request)
     {
         try {
+            if ($denied = $this->denyUnlessAttendanceAdmin()) {
+                return $denied;
+            }
+
             if (!\Auth::user()->can('Create Attendance')) {
                 return redirect()->back()->with('error', __('Permission denied.'));
             }
@@ -2201,8 +2214,8 @@ class AttendanceEmployeeController extends Controller
     public function uploadExcelAttendance(Request $request)
     {
         try {
-            if (!\Auth::user()->can('Manage Attendance') && !\Auth::user()->can('Create Attendance')) {
-                return redirect()->back()->with('error', __('Permission denied.'));
+            if ($denied = $this->denyUnlessAttendanceAdmin()) {
+                return $denied;
             }
 
             $request->validate([
@@ -2410,6 +2423,10 @@ class AttendanceEmployeeController extends Controller
     public function bulkAttendanceExport(Request $request)
     {
         try {
+            if ($denied = $this->denyUnlessAttendanceAdmin()) {
+                return $denied;
+            }
+
             if (!\Auth::user()->can('Create Attendance')) {
                 return redirect()->back()->with('error', __('Permission denied.'));
             }
@@ -2777,6 +2794,10 @@ class AttendanceEmployeeController extends Controller
 
     public function importFile()
     {
+        if ($denied = $this->denyUnlessAttendanceAdmin()) {
+            return $denied;
+        }
+
         return view('attendance.import');
     }
 
@@ -2909,6 +2930,10 @@ class AttendanceEmployeeController extends Controller
 
     public function attendanceImportdata(Request $request)
     {
+        if ($denied = $this->denyUnlessAttendanceAdmin()) {
+            return $denied;
+        }
+
         session_start();
         $html = '<h3 class="text-danger text-center">Below data is not inserted</h3></br>';
         $flag = 0;
@@ -3087,6 +3112,10 @@ class AttendanceEmployeeController extends Controller
      */
     public function reapplyAttendancePolicy(Request $request)
     {
+        if ($denied = $this->denyUnlessAttendanceAdmin()) {
+            return $denied;
+        }
+
         $request->validate(['month' => 'required|string|size:7']);
 
         $user = \Auth::user();
@@ -3166,6 +3195,10 @@ class AttendanceEmployeeController extends Controller
      */
     public function syncForPayroll(Request $request)
     {
+        if ($denied = $this->denyUnlessAttendanceAdmin()) {
+            return $denied;
+        }
+
         $request->validate(['month' => 'required|string|size:7']);
 
         $user = \Auth::user();
@@ -3331,6 +3364,10 @@ class AttendanceEmployeeController extends Controller
 
     public function exportMonthlyExcel(Request $request)
     {
+        if ($denied = $this->denyUnlessAttendanceAdmin()) {
+            return $denied;
+        }
+
         if (!\Auth::user()->can('Manage Attendance')) {
             return redirect()->back()->with('error', __('Permission denied.'));
         }

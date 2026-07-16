@@ -102,14 +102,19 @@
         </div>
         @php $noticePresets = \App\Services\LeavePolicyService::noticeRulePresets(); @endphp
         <div class="col-md-12">
-            <div class="form-group">
+            <div class="form-group" data-checkbox-group="notice">
                 {{ Form::label('notice_rule_presets', __('Notice Requirements'), ['class' => 'form-label']) }}
-                <select name="notice_rule_presets[]" class="form-control" multiple size="5">
-                    @foreach($noticePresets as $key => $preset)
-                        <option value="{{ $key }}">{{ __($preset['label']) }}</option>
-                    @endforeach
-                </select>
-                <small class="text-muted">{{ __('Optional. Hold Ctrl/Cmd to select multiple bands.') }}</small>
+                <div class="form-check mb-2">
+                    <input type="checkbox" class="form-check-input js-select-all" id="notice_select_all_create">
+                    <label class="form-check-label fw-bold" for="notice_select_all_create">{{ __('Select All') }}</label>
+                </div>
+                @foreach($noticePresets as $key => $preset)
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input js-group-item" name="notice_rule_presets[]" value="{{ $key }}" id="notice_{{ $key }}_create">
+                        <label class="form-check-label" for="notice_{{ $key }}_create">{{ __($preset['label']) }}</label>
+                    </div>
+                @endforeach
+                <small class="text-muted">{{ __('Optional') }}</small>
             </div>
         </div>
         <div class="col-md-6">
@@ -137,17 +142,29 @@
                 <label class="form-check-label" for="requires_family_relation">{{ __('Requires immediate family') }}</label>
             </div>
         </div>
+        @php
+            $employmentTypes = [
+                'full_time' => __('Full-time'),
+                'intern' => __('Intern'),
+                'part_time' => __('Part-time'),
+                'consultant' => __('Consultant'),
+                'mgmt_trainee' => __('Management Trainee'),
+            ];
+        @endphp
         <div class="col-md-12">
-            <div class="form-group">
+            <div class="form-group" data-checkbox-group="eligible">
                 {{ Form::label('eligible_employee_types', __('Eligible Employment Types'), ['class' => 'form-label']) }}
-                <select name="eligible_employee_types[]" class="form-control" multiple>
-                    <option value="full_time">{{ __('Full-time') }}</option>
-                    <option value="intern">{{ __('Intern') }}</option>
-                    <option value="part_time">{{ __('Part-time') }}</option>
-                    <option value="consultant">{{ __('Consultant') }}</option>
-                    <option value="mgmt_trainee">{{ __('Management Trainee') }}</option>
-                </select>
-                <small class="text-muted">{{ __('Leave empty for all employees') }}</small>
+                <div class="form-check mb-2">
+                    <input type="checkbox" class="form-check-input js-select-all" id="eligible_select_all_create">
+                    <label class="form-check-label fw-bold" for="eligible_select_all_create">{{ __('Select All') }}</label>
+                </div>
+                @foreach($employmentTypes as $value => $label)
+                    <div class="form-check form-check-inline">
+                        <input type="checkbox" class="form-check-input js-group-item" name="eligible_employee_types[]" value="{{ $value }}" id="eligible_{{ $value }}_create">
+                        <label class="form-check-label" for="eligible_{{ $value }}_create">{{ $label }}</label>
+                    </div>
+                @endforeach
+                <div><small class="text-muted">{{ __('Leave empty for all employees') }}</small></div>
             </div>
         </div>
         <div class="col-md-12">
@@ -231,6 +248,15 @@
                 syncFromMonthly(daysInput, monthlyInput, annualInput);
             }
             isSyncing = false;
+        });
+
+        $(document).off('change.ltCheckAll').on('change.ltCheckAll', '.js-select-all', function() {
+            $(this).closest('[data-checkbox-group]').find('.js-group-item').prop('checked', this.checked);
+        });
+        $(document).off('change.ltCheckItem').on('change.ltCheckItem', '.js-group-item', function() {
+            var $group = $(this).closest('[data-checkbox-group]');
+            var $items = $group.find('.js-group-item');
+            $group.find('.js-select-all').prop('checked', $items.length > 0 && $items.filter(':checked').length === $items.length);
         });
     })();
 </script>

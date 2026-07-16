@@ -46,11 +46,13 @@
             <i class="ti ti-speakerphone me-1"></i>{{ __('Shoutouts') }}
         </a>
     </li>
+    @if(Auth::user()->type == 'company' || Auth::user()->type == 'hr')
     <li class="nav-item">
         <a class="nav-link {{ request()->routeIs('growth-review.sync-ups*') ? 'active' : '' }}" href="{{ route('growth-review.sync-ups') }}">
             <i class="ti ti-messages me-1"></i>{{ __('Sync Ups') }}
         </a>
     </li>
+    @endif
     <li class="nav-item">
         <a class="nav-link {{ request()->routeIs('growth-review.comeback*') ? 'active' : '' }}" href="{{ route('growth-review.comeback') }}">
             <i class="ti ti-arrow-back-up me-1"></i>{{ __('Comeback Plans') }}

@@ -388,9 +388,11 @@
                     <li class="dash-item {{ request()->routeIs('growth-review.shoutouts*') ? 'active' : '' }}">
                         <a class="dash-link" href="{{ route('growth-review.shoutouts') }}">{{ __('Shoutouts') }}</a>
                     </li>
+                    @if(Auth::user()->type == 'company' || Auth::user()->type == 'hr')
                     <li class="dash-item {{ request()->routeIs('growth-review.sync-ups*') ? 'active' : '' }}">
                         <a class="dash-link" href="{{ route('growth-review.sync-ups') }}">{{ __('Sync Ups') }}</a>
                     </li>
+                    @endif
                     <li class="dash-item {{ request()->routeIs('growth-review.comeback*') ? 'active' : '' }}">
                         <a class="dash-link" href="{{ route('growth-review.comeback') }}">{{ __('Comeback Plans') }}</a>
                     </li>

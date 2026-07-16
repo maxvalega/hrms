@@ -598,22 +598,17 @@ class GrowthReviewController extends Controller
 
     public function syncUps(Request $request)
     {
-        $cid = $this->creatorId();
-        $emp = $this->currentEmployee();
-        $isAdmin = $this->isAdmin();
-
-        $query = GrSyncUp::with('employee', 'manager')->where('created_by', $cid);
-
-        if (!$isAdmin && $emp) {
-            $managedIds = $this->managedEmployeeIds();
-            $query->where(function ($q) use ($emp, $managedIds) {
-                $q->where('employee_id', $emp->id)
-                  ->orWhere('manager_id', $emp->id)
-                  ->orWhereIn('employee_id', $managedIds);
-            });
+        if (!$this->isAdmin()) {
+            return redirect()->route('growth-review.dashboard')->with('error', __('Permission denied.'));
         }
 
-        $syncUps = $query->orderByDesc('meeting_date')->paginate(20);
+        $cid = $this->creatorId();
+        $isAdmin = true;
+
+        $syncUps = GrSyncUp::with('employee', 'manager')
+            ->where('created_by', $cid)
+            ->orderByDesc('meeting_date')
+            ->paginate(20);
         $employees = Employee::where('created_by', $cid)->get();
         $cycles = PerformanceCycle::where('created_by', $cid)->orderByDesc('start_date')->get();
 
@@ -622,6 +617,10 @@ class GrowthReviewController extends Controller
 
     public function syncUpStore(Request $request)
     {
+        if (!$this->isAdmin()) {
+            return redirect()->route('growth-review.dashboard')->with('error', __('Permission denied.'));
+        }
+
         $data = $request->validate([
             'employee_id' => 'required|exists:employees,id',
             'meeting_date' => 'required|date',
@@ -649,7 +648,15 @@ class GrowthReviewController extends Controller
 
     public function syncUpUpdate(Request $request, $id)
     {
+        if (!$this->isAdmin()) {
+            return redirect()->route('growth-review.dashboard')->with('error', __('Permission denied.'));
+        }
+
         $syncUp = GrSyncUp::findOrFail($id);
+        if ((int) $syncUp->created_by !== (int) $this->creatorId()) {
+            return redirect()->route('growth-review.dashboard')->with('error', __('Permission denied.'));
+        }
+
         $data = $request->validate([
             'notes' => 'nullable|string',
             'discussion_points' => 'nullable|string',
@@ -669,7 +676,16 @@ class GrowthReviewController extends Controller
 
     public function syncUpDelete($id)
     {
-        GrSyncUp::findOrFail($id)->delete();
+        if (!$this->isAdmin()) {
+            return redirect()->route('growth-review.dashboard')->with('error', __('Permission denied.'));
+        }
+
+        $syncUp = GrSyncUp::findOrFail($id);
+        if ((int) $syncUp->created_by !== (int) $this->creatorId()) {
+            return redirect()->route('growth-review.dashboard')->with('error', __('Permission denied.'));
+        }
+
+        $syncUp->delete();
         return back()->with('success', __('Sync Up deleted.'));
     }
 

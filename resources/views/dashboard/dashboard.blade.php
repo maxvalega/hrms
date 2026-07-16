@@ -970,10 +970,7 @@
                                     <span class="dash-stats-icon"><i class="ti ti-users"></i></span>
                                 </div>
                                 <div class="d-flex justify-content-between align-items-end mt-3">
-                                    <span class="dash-stats-value">{{ $countUser + $countEmployee }}</span>
-                                    @if(!empty($staffBreakdown))
-                                        <small class="text-muted">{{ array_sum(array_column($staffBreakdown, 'count')) }} {{ __('employees') }}</small>
-                                    @endif
+                                    <span class="dash-stats-value">{{ $totalStaff ?? $countEmployee }}</span>
                                 </div>
                                 @if(!empty($staffBreakdown))
                                     <div class="staff-mini-grid">

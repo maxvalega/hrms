@@ -297,9 +297,9 @@ class HomeController extends Controller
                         $staffBreakdown[] = ['code' => 'OTH', 'name' => __('Untyped'), 'count' => $unset];
                     }
                 }
-                // Note: company users (HR/admin) are intentionally NOT included in the
-                // breakdown grid — only employee-type buckets are shown. The headline
-                // "Total Staff" number above still includes users for backwards-compat.
+                // Total Staff = employees only (not HR/company login users).
+                $totalStaff = Employee::where('created_by', \Auth::user()->creatorId())->count();
+
                 $countTicket      = Ticket::where('created_by', '=', \Auth::user()->creatorId())->count();
                 $countOpenTicket  = Ticket::where('status', '=', 'open')->where('created_by', '=', \Auth::user()->creatorId())->count();
                 $countCloseTicket = Ticket::where('status', '=', 'close')->where('created_by', '=', \Auth::user()->creatorId())->count();
@@ -469,7 +469,7 @@ class HomeController extends Controller
                         : 0.0;
                 }
 
-                return view('dashboard.dashboard', compact('arrEvents', 'announcements', 'employees', 'activeJob', 'inActiveJOb', 'meetings', 'countEmployee', 'countUser', 'countTicket', 'countOpenTicket', 'countCloseTicket', 'notClockIns', 'accountBalance', 'totalPayee', 'totalPayer', 'users', 'plan', 'storage_limit', 'pendingLeaveApprovals', 'currentLoginDetail', 'lastLogoutDetail', 'employeeAttendance', 'officeTime', 'todaySessions', 'showAttendanceCard', 'monthlyEmployeeData', 'monthlyEmployeeTotal', 'staffBreakdown', 'dailyAttendanceByDept', 'teamDistribution', 'attritionRate', 'attritionLeft', 'attritionAvgHc'));
+                return view('dashboard.dashboard', compact('arrEvents', 'announcements', 'employees', 'activeJob', 'inActiveJOb', 'meetings', 'countEmployee', 'countUser', 'totalStaff', 'countTicket', 'countOpenTicket', 'countCloseTicket', 'notClockIns', 'accountBalance', 'totalPayee', 'totalPayer', 'users', 'plan', 'storage_limit', 'pendingLeaveApprovals', 'currentLoginDetail', 'lastLogoutDetail', 'employeeAttendance', 'officeTime', 'todaySessions', 'showAttendanceCard', 'monthlyEmployeeData', 'monthlyEmployeeTotal', 'staffBreakdown', 'dailyAttendanceByDept', 'teamDistribution', 'attritionRate', 'attritionLeft', 'attritionAvgHc'));
             }
         } else {
             if (!file_exists(storage_path() . "/installed")) {

@@ -344,9 +344,11 @@
                     <i class="ti ti-alert-triangle" style="font-size:2.5rem;color:#d97706;"></i>
                     <h5 class="mt-2 mb-1" style="color:#92400e;">{{ __('Salary Structure Not Configured') }}</h5>
                     <p class="text-muted mb-3">{{ __('CTC has not been set for this employee in the Payroll module. Configure it to see the full salary breakdown.') }}</p>
-                    <a href="{{ route('payroll.employee.salary') }}" class="btn btn-sm btn-warning">
-                        <i class="ti ti-settings"></i> {{ __('Configure Employee Salary') }}
-                    </a>
+                    @if(in_array(\Auth::user()->type, ['company', 'super admin']))
+                        <a href="{{ route('payroll.employee.salary') }}" class="btn btn-sm btn-warning">
+                            <i class="ti ti-settings"></i> {{ __('Configure Employee Salary') }}
+                        </a>
+                    @endif
                 </div>
             </div>
         </div>
@@ -357,9 +359,11 @@
                     <i class="ti ti-calculator" style="font-size:2.5rem;color:#94a3b8;"></i>
                     <h5 class="mt-2 mb-1" style="color:#64748b;">{{ __('No Salary Structure Found') }}</h5>
                     <p class="text-muted mb-3">{{ __('Set up CTC and salary structure for this employee to view the full breakdown.') }}</p>
-                    <a href="{{ route('payroll.employee.salary') }}" class="btn btn-sm btn-primary">
-                        <i class="ti ti-plus"></i> {{ __('Setup Employee Salary') }}
-                    </a>
+                    @if(in_array(\Auth::user()->type, ['company', 'super admin']))
+                        <a href="{{ route('payroll.employee.salary') }}" class="btn btn-sm btn-primary">
+                            <i class="ti ti-plus"></i> {{ __('Setup Employee Salary') }}
+                        </a>
+                    @endif
                 </div>
             </div>
         </div>

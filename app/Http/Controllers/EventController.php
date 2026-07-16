@@ -15,9 +15,11 @@ use App\Models\Utility;
 use App\Imports\EventImport;
 use App\Exports\EventExport;
 use App\Models\AttendanceEmployee;
+use App\Models\AttendanceModificationRequest;
 use App\Models\Holiday;
 use App\Models\Webhook;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Schema;
 use Maatwebsite\Excel\Facades\Excel;
 use Spatie\GoogleCalendar\Event as GoogleEvent;
 
@@ -451,6 +453,15 @@ class EventController extends Controller
             return [];
         }
 
+        $swipeAttendanceIds = [];
+        if (Schema::hasTable('attendance_modification_requests')) {
+            $swipeAttendanceIds = AttendanceModificationRequest::whereIn(
+                'attendance_employee_id',
+                $records->pluck('id')->unique()->filter()->all()
+            )->pluck('attendance_employee_id')->map(fn ($id) => (int) $id)->unique()->all();
+            $swipeAttendanceIds = array_flip($swipeAttendanceIds);
+        }
+
         $grouped = $records->groupBy(fn ($a) => $a->employee_id . '|' . $a->date);
         $out = [];
 
@@ -476,6 +487,8 @@ class EventController extends Controller
             $mainRow = $rows->sortByDesc(fn ($r) => $priority($r->status))->first();
             $mainStatus = strtolower(trim((string) ($mainRow->status ?? 'present')));
 
+            $hasSwipeRequest = $rows->contains(fn ($r) => isset($swipeAttendanceIds[(int) $r->id]));
+
             $hasLate = $rows->contains(function ($r) {
                 if ((int) ($r->late_mark ?? 0) > 0) {
                     return true;
@@ -494,29 +507,36 @@ class EventController extends Controller
                 return $el !== '' && $el !== '00:00:00';
             });
 
-            $statusLabel = match ($mainStatus) {
-                'absent' => __('Absent'),
-                'leave' => __('Leave'),
-                'half day' => __('Half Day'),
-                default => __('Present'),
-            };
+            // Leave days tied to swipe requests (or Leave status from swipe flow)
+            // should show as Attendance Swipe Request on the calendar.
+            if ($hasSwipeRequest || $mainStatus === 'leave') {
+                $statusLabel = __('Attendance Swipe Request');
+            } else {
+                $statusLabel = match ($mainStatus) {
+                    'absent' => __('Absent'),
+                    'half day' => __('Half Day'),
+                    default => __('Present'),
+                };
+            }
 
             $parts = [$statusLabel];
-            if ($hasLate) {
-                $parts[] = __('Late in');
-            }
-            if ($hasEarly) {
-                $parts[] = __('Early out');
+            if (! $hasSwipeRequest && $mainStatus !== 'leave') {
+                if ($hasLate) {
+                    $parts[] = __('Late in');
+                }
+                if ($hasEarly) {
+                    $parts[] = __('Early out');
+                }
             }
 
             $title = $onlyEmployeeId !== null
                 ? implode(' · ', $parts)
                 : $empName . ': ' . implode(' · ', $parts);
 
-            $className = match ($mainStatus) {
-                'absent' => 'attn-cal-absent',
-                'leave' => 'attn-cal-leave',
-                'half day' => 'attn-cal-halfday',
+            $className = match (true) {
+                $hasSwipeRequest || $mainStatus === 'leave' => 'attn-cal-leave',
+                $mainStatus === 'absent' => 'attn-cal-absent',
+                $mainStatus === 'half day' => 'attn-cal-halfday',
                 default => $hasLate ? 'attn-cal-late' : 'attn-cal-present',
             };
 

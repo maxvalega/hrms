@@ -62,12 +62,16 @@
                         <li class="dash-item {{ request()->routeIs('report.reimbursement') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('report.reimbursement') }}">{{ __('Reimbursement Report') }}</a>
                         </li>
+                        {{-- Hidden from menu (code/routes kept): Income vs Expense
                         <li class="dash-item {{ request()->routeIs('report.income-expense') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('report.income-expense') }}">{{ __('Income vs Expense') }}</a>
                         </li>
+                        --}}
+                        {{-- Hidden from menu (code/routes kept): Account Statement
                         <li class="dash-item {{ request()->routeIs('report.account.statement') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('report.account.statement') }}">{{ __('Account Statement') }}</a>
                         </li>
+                        --}}
                         <li class="dash-item {{ request()->routeIs('report.timesheet') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('report.timesheet') }}">{{ __('Timesheet') }}</a>
                         </li>
@@ -328,8 +332,11 @@
                 </ul>
             </li>
 
+            {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
+            @php $hideModulesForSpectal = \App\Support\TenantHost::subdomainFromHost() === 'spectal'; @endphp
+
             <!-- Screen Monitor (top-level) -->
-            @if(\Auth::user()->type != 'super admin' && \Auth::user()->type != 'employee')
+            @if(!$hideModulesForSpectal && \Auth::user()->type != 'super admin' && \Auth::user()->type != 'employee')
             <li class="dash-item {{ Request::segment(1) == 'screen-monitor' ? 'active' : '' }}">
                 <a href="{{ route('screen-monitor.index') }}" class="dash-link">
                     <span class="dash-micon"><i class="ti ti-device-desktop-analytics"></i></span>
@@ -339,7 +346,7 @@
             @endif
 
             <!-- Screenshot Capture (top-level) -->
-            @if(\Auth::user()->type != 'super admin' && \Auth::user()->type != 'employee')
+            @if(!$hideModulesForSpectal && \Auth::user()->type != 'super admin' && \Auth::user()->type != 'employee')
             <li class="dash-item {{ Request::segment(1) == 'bg-screenshot' ? 'active' : '' }}">
                 <a href="{{ route('bg-screenshot.index') }}" class="dash-link">
                     <span class="dash-micon"><i class="ti ti-camera"></i></span>
@@ -349,7 +356,7 @@
             @endif
 
             <!-- performance-->
-            @if (Gate::check('Manage Indicator') || Gate::check('Manage Appraisal') || Gate::check('Manage Goal Tracking'))
+            @if (!$hideModulesForSpectal && (Gate::check('Manage Indicator') || Gate::check('Manage Appraisal') || Gate::check('Manage Goal Tracking')))
                 <li class="dash-item dash-hasmenu">
                     <a href="#!" class="dash-link"><span class="dash-micon"><i
                                 class="ti ti-3d-cube-sphere"></i></span><span
@@ -505,7 +512,8 @@
             <!-- /Exit Management -->
 
             <!-- Activity Tracker -->
-            @if(Auth::user() && Auth::user()->can('manage-activity-tracker') && Route::has('activity-tracker.index'))
+            {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
+            @if(!$hideModulesForSpectal && Auth::user() && Auth::user()->can('manage-activity-tracker') && Route::has('activity-tracker.index'))
             <li class="dash-item dash-hasmenu {{ request()->is('activity-tracker*') ? 'active dash-trigger' : '' }}">
                 <a href="#!" class="dash-link">
                     <span class="dash-micon"><i class="ti ti-device-desktop-analytics"></i></span>
@@ -534,12 +542,13 @@
             <!-- /Activity Tracker -->
 
             <!--fianance-->
-            @if (Gate::check('Manage Account List') ||
+            {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
+            @if (!$hideModulesForSpectal && (Gate::check('Manage Account List') ||
                     Gate::check('Manage Payee') ||
                     Gate::check('Manage Payer') ||
                     Gate::check('Manage Deposit') ||
                     Gate::check('Manage Expense') ||
-                    Gate::check('Manage Transfer Balance'))
+                    Gate::check('Manage Transfer Balance')))
                 <li class="dash-item dash-hasmenu">
                     <a href="#!" class="dash-link"><span class="dash-micon"><i
                                 class="ti ti-wallet"></i></span><span
@@ -594,7 +603,8 @@
             <!-- fianance-->
 
             <!--trainning-->
-            @if (Gate::check('Manage Trainer') || Gate::check('Manage Training'))
+            {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
+            @if (!$hideModulesForSpectal && (Gate::check('Manage Trainer') || Gate::check('Manage Training')))
                 <li
                     class="dash-item dash-hasmenu {{ Request::segment(1) == 'training' ? 'dash-trigger active' : '' }}">
                     <a href="#!" class="dash-link "><span class="dash-micon"><i
@@ -783,6 +793,8 @@
             @endif
             <!-- recruitment-->
             <!--contract-->
+            {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
+            @if (!$hideModulesForSpectal)
             @can('Manage Contract')
                 <li
                     class="dash-item {{ Request::route()->getName() == 'contract.index' || Request::route()->getName() == 'contract.show' ? 'active' : '' }}">
@@ -791,17 +803,21 @@
                             class="dash-mtext">{{ __('Contracts') }}</span></a>
                 </li>
             @endcan
+            @endif
 
             <!--end-->
 
 
             <!-- ticket-->
+            {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
+            @if (!$hideModulesForSpectal)
             @can('Manage Ticket')
                 <li class="dash-item {{ Request::segment(1) == 'ticket' ? 'active' : '' }}">
                     <a href="{{ route('ticket.index') }}" class="dash-link"><span class="dash-micon"><i
                                 class="ti ti-ticket"></i></span><span class="dash-mtext">{{ __('Ticket') }}</span></a>
                 </li>
             @endcan
+            @endif
 
             <!-- Event-->
             @can('Manage Event')
@@ -910,7 +926,8 @@
             @endif
 
 
-            @if (\Auth::user()->type == 'super admin')
+            {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
+            @if (!$hideModulesForSpectal && \Auth::user()->type == 'super admin')
                 <li class="dash-item dash-hasmenu  {{ Request::segment(1) == '' ? 'active' : '' }}">
                     <a href="{{ route('referral-program.index') }}" class="dash-link">
                         <span class="dash-micon"><i class="ti ti-discount-2"></i></span><span
@@ -930,7 +947,8 @@
                     </li>
                 @endif
             @endif
-            @if (\Auth::user()->type == 'super admin')
+            {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
+            @if (!$hideModulesForSpectal && \Auth::user()->type == 'super admin')
                 {{-- @if (Gate::check('Manage Order')) --}}
                 <li class="dash-item ">
                     <a href="{{ route('order.index') }}"
@@ -1176,7 +1194,8 @@ href="{{ route('competencies.index') }}">{{ __('Competencies') }}</a>
                             class="dash-mtext">{{ __('Settings') }}</span></a>
                 </li>
             @endif
-            @if (\Auth::user()->type == 'company' || \Auth::user()->type == 'super admin')
+            {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
+            @if (!$hideModulesForSpectal && (\Auth::user()->type == 'company' || \Auth::user()->type == 'super admin'))
                 <li class="dash-item {{ request()->routeIs('api-docs') ? 'active' : '' }}">
                     <a href="{{ route('api-docs') }}" class="dash-link"><span
                             class="dash-micon"><i class="ti ti-api"></i></span><span
@@ -1203,19 +1222,22 @@ href="{{ route('competencies.index') }}">{{ __('Competencies') }}</a>
                                         class="dash-link">{{ __('System Settings') }}</a>
                                 </li>
                             @endif
-                            @if (Gate::check('Manage Plan'))
+                            {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
+                            @if (!$hideModulesForSpectal && Gate::check('Manage Plan'))
                                 <li
                                     class="dash-item{{ Request::route()->getName() == 'plans.index' || Request::route()->getName() == 'stripe' ? ' active' : '' }}">
                                     <a href="{{ route('plans.index') }}"
                                         class="dash-link">{{ __('Setup Subscription Plan') }}</a>
                                 </li>
                             @endif
+                            @if (!$hideModulesForSpectal)
                             <li
                                 class="dash-item{{ Request::route()->getName() == 'referral-program.company' ? ' active' : '' }}">
                                 <a href="{{ route('referral-program.company') }}"
                                     class="dash-link">{{ __('Referral Program') }}</a>
                             </li>
-                            @if (\Auth::user()->type == 'super admin' || \Auth::user()->type == 'company')
+                            @endif
+                            @if (!$hideModulesForSpectal && (\Auth::user()->type == 'super admin' || \Auth::user()->type == 'company'))
                                 <li
                                     class="dash-item {{ Request::segment(1) == 'order' ? 'active' : '' }}">
                                     <a href="{{ route('order.index') }}"

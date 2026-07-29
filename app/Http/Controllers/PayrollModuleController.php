@@ -1729,11 +1729,16 @@ class PayrollModuleController extends Controller
 
         $monthOptions = $this->reimbursementMonthOptions();
         $lockedMonths = [];
-        if (\Illuminate\Support\Facades\Schema::hasTable('reimbursement_month_locks')) {
-            $lockedMonths = ReimbursementMonthLock::where('created_by', $creatorId)
-                ->orderByDesc('lock_month')
-                ->pluck('lock_month')
-                ->all();
+        try {
+            if (\Illuminate\Support\Facades\Schema::hasTable('reimbursement_month_locks')) {
+                $lockedMonths = ReimbursementMonthLock::where('created_by', $creatorId)
+                    ->orderByDesc('lock_month')
+                    ->pluck('lock_month')
+                    ->all();
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('Failed to load reimbursement month locks: ' . $e->getMessage());
+            $lockedMonths = [];
         }
 
         return view('payroll.reimbursements', compact(

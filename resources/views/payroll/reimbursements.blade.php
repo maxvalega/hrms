@@ -25,42 +25,55 @@
                     <small class="text-muted">{{ __('After approving claims, lock a month so the employee apply form moves to the calendar month. Previous month stays available via Previous Month.') }}</small>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ route('payroll.reimbursements.lock') }}" class="row g-2 align-items-end">
-                        @csrf
-                        <div class="col-md-4">
-                            <label class="form-label">{{ __('Month to lock') }}</label>
-                            <select name="lock_month" class="form-control" required>
-                                @foreach ($monthOptions as $value => $label)
-                                    <option value="{{ $value }}" {{ $value === date('Y-m', strtotime('first day of last month')) ? 'selected' : '' }}>
-                                        {{ $label }}
-                                        @if (in_array($value, $lockedMonths, true))
-                                            — {{ __('Locked') }}
-                                        @endif
-                                    </option>
-                                @endforeach
-                            </select>
-                        </div>
-                        <div class="col-md-auto">
-                            <button class="btn btn-warning">{{ __('Lock Month') }}</button>
-                        </div>
-                    </form>
+                    @php
+                        $monthOptions = $monthOptions ?? [];
+                        $lockedMonths = $lockedMonths ?? [];
+                        $canLock = \Illuminate\Support\Facades\Route::has('payroll.reimbursements.lock')
+                            && \Illuminate\Support\Facades\Route::has('payroll.reimbursements.unlock');
+                    @endphp
 
-                    @if (!empty($lockedMonths))
-                        <div class="mt-3">
-                            <label class="form-label">{{ __('Locked months') }}</label>
-                            <div class="d-flex flex-wrap gap-2">
-                                @foreach ($lockedMonths as $locked)
-                                    <form method="POST" action="{{ route('payroll.reimbursements.unlock') }}" class="d-inline">
-                                        @csrf
-                                        <input type="hidden" name="lock_month" value="{{ $locked }}">
-                                        <button class="btn btn-sm btn-outline-secondary"
-                                            onclick="return confirm('{{ __('Unlock :month?', ['month' => $locked]) }}')">
-                                            {{ \Carbon\Carbon::createFromFormat('Y-m', $locked)->format('M Y') }}
-                                            · {{ __('Unlock') }}
-                                        </button>
-                                    </form>
-                                @endforeach
+                    @if ($canLock)
+                        <form method="POST" action="{{ route('payroll.reimbursements.lock') }}" class="row g-2 align-items-end">
+                            @csrf
+                            <div class="col-md-4">
+                                <label class="form-label">{{ __('Month to lock') }}</label>
+                                <select name="lock_month" class="form-control" required>
+                                    @foreach ($monthOptions as $value => $label)
+                                        <option value="{{ $value }}" {{ $value === date('Y-m', strtotime('first day of last month')) ? 'selected' : '' }}>
+                                            {{ $label }}
+                                            @if (in_array($value, $lockedMonths, true))
+                                                — {{ __('Locked') }}
+                                            @endif
+                                        </option>
+                                    @endforeach
+                                </select>
                             </div>
+                            <div class="col-md-auto">
+                                <button class="btn btn-warning">{{ __('Lock Month') }}</button>
+                            </div>
+                        </form>
+
+                        @if (!empty($lockedMonths))
+                            <div class="mt-3">
+                                <label class="form-label">{{ __('Locked months') }}</label>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach ($lockedMonths as $locked)
+                                        <form method="POST" action="{{ route('payroll.reimbursements.unlock') }}" class="d-inline">
+                                            @csrf
+                                            <input type="hidden" name="lock_month" value="{{ $locked }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                                onclick="return confirm(@json(__('Unlock :month?', ['month' => $locked])))">
+                                                {{ date('M Y', strtotime($locked . '-01')) }}
+                                                · {{ __('Unlock') }}
+                                            </button>
+                                        </form>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+                    @else
+                        <div class="alert alert-warning mb-0">
+                            {{ __('Lock Month routes are not deployed yet. Please deploy the latest code and clear route cache.') }}
                         </div>
                     @endif
                 </div>

@@ -27,6 +27,9 @@
                     <h5 class="mb-0">{{ __('Apply Reimbursement') }}</h5>
                 </div>
                 <div class="card-body">
+                    @if (empty($monthWindow) || !is_array($monthWindow))
+                        <div class="alert alert-danger">{{ __('Reimbursement apply form is not available. Please contact admin.') }}</div>
+                    @else
                     <form method="POST" action="{{ route('payroll.my-reimbursements.store') }}" enctype="multipart/form-data" id="reimbursement-apply-form">
                         @csrf
                         <div class="mb-2">
@@ -46,29 +49,29 @@
                         <div class="mb-2">
                             <label class="form-label">{{ __('Current Month') }} <span class="text-danger">*</span></label>
                             <select name="current_month" id="current_month" class="form-control" required>
-                                @foreach ($monthWindow['current_month_options'] as $value => $label)
+                                @foreach (($monthWindow['current_month_options'] ?? []) as $value => $label)
                                     <option value="{{ $value }}"
-                                        {{ old('current_month', $monthWindow['default_current_month']) === $value ? 'selected' : '' }}>
+                                        {{ old('current_month', $monthWindow['default_current_month'] ?? '') === $value ? 'selected' : '' }}>
                                         {{ $label }}
                                     </option>
                                 @endforeach
                             </select>
-                            @if ($monthWindow['in_grace'] && !$monthWindow['previous_locked'])
+                            @if (!empty($monthWindow['in_grace']) && empty($monthWindow['previous_locked']))
                                 <small class="text-muted">{{ __('Until the 5th, previous month stays open unless HR locks it.') }}</small>
-                            @elseif ($monthWindow['previous_locked'])
+                            @elseif (!empty($monthWindow['previous_locked']))
                                 <small class="text-muted">{{ __('Previous month is locked by HR. Use Previous Month below to claim it.') }}</small>
                             @endif
                         </div>
 
-                        @if ($monthWindow['show_previous_dropdown'])
+                        @if (!empty($monthWindow['show_previous_dropdown']))
                             <div class="mb-2" id="previous_month_wrap">
                                 <label class="form-label">{{ __('Previous Month') }}</label>
                                 <select name="previous_month" id="previous_month" class="form-control">
                                     <option value="">{{ __('— Apply for current month —') }}</option>
                                     <option value="{{ $monthWindow['previous_month'] }}"
-                                        {{ old('previous_month') === $monthWindow['previous_month'] ? 'selected' : '' }}>
-                                        {{ \Carbon\Carbon::createFromFormat('Y-m', $monthWindow['previous_month'])->format('M Y') }}
-                                        @if ($monthWindow['previous_locked'])
+                                        {{ old('previous_month') === ($monthWindow['previous_month'] ?? null) ? 'selected' : '' }}>
+                                        {{ date('M Y', strtotime(($monthWindow['previous_month'] ?? date('Y-m', strtotime('first day of last month'))) . '-01')) }}
+                                        @if (!empty($monthWindow['previous_locked']))
                                             ({{ __('Locked — still allowed') }})
                                         @endif
                                     </option>
@@ -97,6 +100,7 @@
                         </div>
                         <button class="btn btn-primary w-100">{{ __('Submit Claim') }}</button>
                     </form>
+                    @endif
                 </div>
             </div>
         </div>

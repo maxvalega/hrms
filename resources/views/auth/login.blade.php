@@ -113,6 +113,79 @@
         .jl-trust-item i { color:#10b981; font-size:.85rem; }
 
         .jl-err { font-size:.75rem; color:#ef4444; margin-top:.4rem; display:flex; align-items:center; gap:.3rem; font-weight:500; }
+
+        .jl-portal {
+            margin: 0 0 1.35rem;
+            border-radius: 14px;
+            padding: 1.1rem 1.15rem 1.15rem;
+            border: 1.5px solid #bfdbfe;
+            background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+            box-shadow: 0 8px 24px -16px rgba(37, 99, 235, .45);
+            animation: jl-portal-in .35s ease;
+        }
+        .jl-portal.is-warning {
+            border-color: #fde68a;
+            background: linear-gradient(180deg, #fffbeb 0%, #fffdf5 100%);
+            box-shadow: 0 8px 24px -16px rgba(245, 158, 11, .4);
+        }
+        .jl-portal.is-admin {
+            border-color: #c7d2fe;
+            background: linear-gradient(180deg, #eef2ff 0%, #f8faff 100%);
+        }
+        @keyframes jl-portal-in {
+            from { opacity: 0; transform: translateY(-6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .jl-portal-top { display:flex; align-items:flex-start; gap:.75rem; margin-bottom:.85rem; }
+        .jl-portal-icon {
+            width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
+            display:flex; align-items:center; justify-content:center;
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+            color:#fff; font-size:1.15rem;
+            box-shadow: 0 6px 14px -6px rgba(37,99,235,.55);
+        }
+        .jl-portal.is-warning .jl-portal-icon {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            box-shadow: 0 6px 14px -6px rgba(245,158,11,.5);
+        }
+        .jl-portal.is-admin .jl-portal-icon {
+            background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%);
+        }
+        .jl-portal-kicker {
+            font-size:.68rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+            color:#2563eb; margin:0 0 .2rem;
+        }
+        .jl-portal.is-warning .jl-portal-kicker { color:#b45309; }
+        .jl-portal.is-admin .jl-portal-kicker { color:#4338ca; }
+        .jl-portal-title { font-size:1rem; font-weight:800; color:#0f172a; margin:0; letter-spacing:-.02em; line-height:1.25; }
+        .jl-portal-msg { font-size:.86rem; color:#475569; line-height:1.55; margin:0 0 .95rem; }
+        .jl-portal-url {
+            display:flex; align-items:center; gap:.55rem; flex-wrap:wrap;
+            background:#fff; border:1px solid #dbeafe; border-radius:10px;
+            padding:.65rem .8rem; margin-bottom:.9rem;
+        }
+        .jl-portal.is-warning .jl-portal-url { border-color:#fde68a; }
+        .jl-portal-url i { color:#2563eb; font-size:1rem; }
+        .jl-portal.is-warning .jl-portal-url i { color:#d97706; }
+        .jl-portal-url code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size:.8rem; color:#1e40af; font-weight:600; word-break:break-all;
+        }
+        .jl-portal-cta {
+            display:inline-flex; align-items:center; justify-content:center; gap:.45rem;
+            width:100%; padding:.85rem 1rem; border-radius:11px; text-decoration:none;
+            background:linear-gradient(135deg,#2563eb 0%,#1e40af 100%); color:#fff !important;
+            font-size:.9rem; font-weight:700; letter-spacing:.01em;
+            box-shadow: 0 10px 22px -10px rgba(37,99,235,.6);
+            transition: transform .15s, box-shadow .2s;
+        }
+        .jl-portal-cta:hover { transform:translateY(-1px); box-shadow: 0 14px 28px -10px rgba(37,99,235,.7); color:#fff !important; }
+        .jl-portal.is-warning .jl-portal-cta {
+            background:linear-gradient(135deg,#f59e0b 0%,#d97706 100%);
+            box-shadow: 0 10px 22px -10px rgba(245,158,11,.55);
+        }
+        .jl-portal-note { margin:.7rem 0 0; font-size:.72rem; color:#94a3b8; text-align:center; line-height:1.4; }
+
         @keyframes jl-spin { to { transform:rotate(360deg); } }
         .jl-spin { animation:jl-spin .8s linear infinite; }
         @media (max-width:480px) { .jl-card { padding:2rem 1.5rem 1.5rem; } .jl-title { font-size:1.55rem; } }
@@ -121,6 +194,53 @@
         <span class="jl-eyebrow"><i class="ti ti-shield-lock"></i> {{ __('Secure Sign In') }}</span>
         <h1 class="jl-title">{{ __('Welcome back') }} 👋</h1>
         <p class="jl-subtitle">{{ __('Sign in to your') }} {{ \App\Models\Utility::getValByName('title_text') ?: config('app.name') }} {{ __('account to continue.') }}</p>
+
+        @php
+            $portalNotice = session('tenant_portal_notice');
+            if (!is_array($portalNotice) && $errors->has('portal')) {
+                $portalNotice = [
+                    'variant' => 'company',
+                    'title' => __('Wrong portal'),
+                    'message' => $errors->first('portal'),
+                    'url' => null,
+                    'cta' => __('Continue'),
+                ];
+            }
+            $portalVariant = is_array($portalNotice) ? ($portalNotice['variant'] ?? 'company') : 'company';
+            $portalVariantClass = match ($portalVariant) {
+                'warning' => 'is-warning',
+                'admin' => 'is-admin',
+                default => '',
+            };
+        @endphp
+
+        @if (is_array($portalNotice))
+            <div class="jl-portal {{ $portalVariantClass }}" role="alert">
+                <div class="jl-portal-top">
+                    <div class="jl-portal-icon">
+                        <i class="ti {{ $portalVariant === 'warning' ? 'ti-alert-triangle' : ($portalVariant === 'admin' ? 'ti-shield-lock' : 'ti-building') }}"></i>
+                    </div>
+                    <div>
+                        <p class="jl-portal-kicker">{{ __('Secure access') }}</p>
+                        <h2 class="jl-portal-title">{{ $portalNotice['title'] ?? __('Wrong portal') }}</h2>
+                    </div>
+                </div>
+                <p class="jl-portal-msg">{{ $portalNotice['message'] ?? '' }}</p>
+                @if (!empty($portalNotice['host']) || !empty($portalNotice['url']))
+                    <div class="jl-portal-url">
+                        <i class="ti ti-world"></i>
+                        <code>{{ $portalNotice['host'] ?? preg_replace('#^https?://#', '', rtrim($portalNotice['url'], '/')) }}</code>
+                    </div>
+                @endif
+                @if (!empty($portalNotice['url']))
+                    <a class="jl-portal-cta" href="{{ rtrim($portalNotice['url'], '/') }}/login">
+                        {{ $portalNotice['cta'] ?? __('Continue to company portal') }}
+                        <i class="ti ti-arrow-right"></i>
+                    </a>
+                @endif
+                <p class="jl-portal-note">{{ __('Bookmark your company portal so you always land in the right place.') }}</p>
+            </div>
+        @endif
 
         <form method="POST" action="{{ route('login') }}" class="login-form" novalidate>
             @csrf

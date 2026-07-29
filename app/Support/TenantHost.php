@@ -157,10 +157,12 @@ class TenantHost
 
         if ($user->type === 'super admin') {
             if (!$isMain) {
-                throw ValidationException::withMessages([
-                    'email' => __('Super admin must sign in at :url', [
-                        'url' => 'https://' . self::baseDomain() . '/login',
-                    ]),
+                self::throwPortalNotice([
+                    'variant' => 'admin',
+                    'title' => __('Platform admin login'),
+                    'message' => __('Super admin accounts sign in on the main Jemini portal only.'),
+                    'url' => 'https://' . self::baseDomain() . '/login',
+                    'cta' => __('Go to Jemini login'),
                 ]);
             }
 
@@ -169,14 +171,21 @@ class TenantHost
 
         $company = self::companyForUser($user);
         $companySub = self::normalizeSubdomain($company?->subdomain);
+        $companyName = $company?->name ?: __('your company');
 
         if ($isMain) {
             if ($companySub) {
-                $portal = self::portalUrlForCompany($company);
-                throw ValidationException::withMessages([
-                    'email' => __('Please sign in at your company portal: :url', [
-                        'url' => $portal ?: ('https://' . $companySub . '.' . self::baseDomain()),
+                $portal = self::portalUrlForCompany($company) ?: ('https://' . $companySub . '.' . self::baseDomain());
+                self::throwPortalNotice([
+                    'variant' => 'company',
+                    'title' => __('Wrong portal'),
+                    'message' => __('This account belongs to :company. For security, company users must sign in on their own portal — not on jemini.co.in.', [
+                        'company' => $companyName,
                     ]),
+                    'url' => $portal,
+                    'host' => $companySub . '.' . self::baseDomain(),
+                    'company' => $companyName,
+                    'cta' => __('Continue to company portal'),
                 ]);
             }
 
@@ -185,27 +194,55 @@ class TenantHost
         }
 
         if ($subdomain === null) {
-            throw ValidationException::withMessages([
-                'email' => __('Invalid portal address. Please use your company subdomain.'),
+            self::throwPortalNotice([
+                'variant' => 'warning',
+                'title' => __('Invalid portal address'),
+                'message' => __('This address is not a valid company portal. Please use your company subdomain or contact your administrator.'),
+                'url' => 'https://' . self::baseDomain() . '/login',
+                'cta' => __('Go to main login'),
             ]);
         }
 
         if ($companySub === null) {
-            throw ValidationException::withMessages([
-                'email' => __('Your company portal is not configured yet. Please contact support or sign in at :url', [
-                    'url' => 'https://' . self::baseDomain() . '/login',
-                ]),
+            self::throwPortalNotice([
+                'variant' => 'warning',
+                'title' => __('Portal not configured'),
+                'message' => __('Your company portal has not been set up yet. Please contact support, or try the main portal if your administrator has not assigned a subdomain.'),
+                'url' => 'https://' . self::baseDomain() . '/login',
+                'cta' => __('Go to main login'),
             ]);
         }
 
         if ($companySub !== $subdomain) {
-            $portal = self::portalUrlForCompany($company);
-            throw ValidationException::withMessages([
-                'email' => __('This account belongs to another company. Please sign in at :url', [
-                    'url' => $portal ?: ('https://' . $companySub . '.' . self::baseDomain()),
+            $portal = self::portalUrlForCompany($company) ?: ('https://' . $companySub . '.' . self::baseDomain());
+            self::throwPortalNotice([
+                'variant' => 'company',
+                'title' => __('Wrong company portal'),
+                'message' => __('This account belongs to :company. You opened a different company portal by mistake.', [
+                    'company' => $companyName,
                 ]),
+                'url' => $portal,
+                'host' => $companySub . '.' . self::baseDomain(),
+                'company' => $companyName,
+                'cta' => __('Go to the correct portal'),
             ]);
         }
+    }
+
+    /**
+     * Flash structured portal notice for the login UI, then fail validation.
+     *
+     * @param  array{variant:string,title:string,message:string,url:string,cta:string,host?:string,company?:string}  $payload
+     *
+     * @throws ValidationException
+     */
+    protected static function throwPortalNotice(array $payload): void
+    {
+        session()->flash('tenant_portal_notice', $payload);
+
+        throw ValidationException::withMessages([
+            'portal' => $payload['message'],
+        ]);
     }
 
     /**
@@ -220,6 +257,11 @@ class TenantHost
         try {
             self::assertUserMayLoginOnHost($user, $request);
         } catch (ValidationException $e) {
+            $notice = session('tenant_portal_notice');
+            if (is_array($notice) && !empty($notice['message'])) {
+                return (string) $notice['message'];
+            }
+
             $message = collect($e->errors())->flatten()->first() ?: __('Permission denied.');
 
             return $message;

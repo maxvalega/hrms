@@ -23,7 +23,6 @@
                 <div class="form-icon-user">
                     {{ Form::text('name', null, ['class' => 'form-control', 'required' => 'required', 'placeholder' => __('Enter Document Name')]) }}
                 </div>
-
             </div>
         </div>
         <div class="col-lg-6 col-md-6 col-sm-6">
@@ -41,14 +40,32 @@
             </div>
         </div>
 
-        <div class="col-lg-6 col-md-6 col-sm-6">
-            <div class="form-group">
-                {{ Form::label('role', __('Role'), ['class' => 'form-label']) }}<x-required></x-required>
-                <div class="form-icon-user">
-                    {{ Form::select('role', $roles, null, ['class' => 'form-control', 'required' => 'required']) }}
+        @if (!empty($isHrViewer) && $isHrViewer)
+            <div class="col-lg-6 col-md-6 col-sm-6">
+                <div class="form-group">
+                    {{ Form::label('role', __('Role'), ['class' => 'form-label']) }}
+                    <div class="form-icon-user">
+                        {{ Form::select('role', $roles, null, ['class' => 'form-control', 'id' => 'document_role']) }}
+                    </div>
                 </div>
             </div>
-        </div>
+            <div class="col-lg-12 col-md-12 col-sm-12">
+                <div class="form-group">
+                    {{ Form::label('assigned_user_id', __('Assign To User'), ['class' => 'form-label']) }}
+                    <div class="form-icon-user">
+                        {{ Form::select('assigned_user_id', $users, null, ['class' => 'form-control', 'id' => 'assigned_user_id']) }}
+                    </div>
+                    <small class="text-muted">{{ __('If you select a user, only that user and HR will see this document. Leave empty to share by Role.') }}</small>
+                </div>
+            </div>
+        @else
+            <div class="col-lg-6 col-md-6 col-sm-6">
+                <div class="form-group">
+                    <label class="form-label">{{ __('Visibility') }}</label>
+                    <p class="mb-0 text-muted">{{ __('This document will be visible to you and HR automatically.') }}</p>
+                </div>
+            </div>
+        @endif
 
         <div class="col-lg-12 col-md-12 col-sm-12">
             <div class="form-group">

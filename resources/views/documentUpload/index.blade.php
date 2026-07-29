@@ -30,6 +30,8 @@
                                     <th>{{ __('Name') }}</th>
                                     <th>{{ __('Document') }}</th>
                                     <th>{{ __('Role') }}</th>
+                                    <th>{{ __('Uploaded By') }}</th>
+                                    <th>{{ __('Assigned To') }}</th>
                                     <th>{{ __('Description') }}</th>
                                     @if (Gate::check('Edit Document') || Gate::check('Delete Document'))
                                         <th width="200px">{{ __('Action') }}</th>
@@ -71,7 +73,9 @@
                                                 <p>-</p>
                                             @endif
                                         </td>
-                                        <td>{{ !empty($roles) ? $roles->name : 'All' }}</td>
+                                        <td>{{ !empty($roles) ? $roles->name : ($document->role == '-1' ? __('Private') : __('All')) }}</td>
+                                        <td>{{ $document->uploader->name ?? '-' }}</td>
+                                        <td>{{ $document->assignedUser->name ?? '-' }}</td>
                                         <td>
                                             <p
                                                 style="white-space: nowrap;

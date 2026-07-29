@@ -1794,46 +1794,124 @@ class PayrollModuleController extends Controller
 
     public function lockReimbursementMonth(Request $request)
     {
-        $user = \Auth::user();
-        if (!in_array($user->type, ['company', 'hr'], true)) {
-            return back()->with('error', __('Permission denied.'));
+        try {
+            $user = \Auth::user();
+            if (!$user || $user->type === 'employee') {
+                return back()->with('error', __('Permission denied.'));
+            }
+
+            $data = $request->validate([
+                'lock_month' => 'required|string|size:7|date_format:Y-m',
+            ]);
+
+            if (!\Illuminate\Support\Facades\Schema::hasTable('reimbursement_month_locks')) {
+                return back()->with('error', __('Lock table is missing. Please run migration or create reimbursement_month_locks.'));
+            }
+
+            $creatorId = (int) $user->creatorId();
+            if ($creatorId < 1) {
+                return back()->with('error', __('Invalid company context.'));
+            }
+
+            $exists = DB::table('reimbursement_month_locks')
+                ->where('created_by', $creatorId)
+                ->where('lock_month', $data['lock_month'])
+                ->exists();
+
+            if ($exists) {
+                return back()->with('error', __('This month is already locked.'));
+            }
+
+            DB::beginTransaction();
+            try {
+                DB::table('reimbursement_month_locks')->insert([
+                    'lock_month' => $data['lock_month'],
+                    'locked_by' => $user->id,
+                    'created_by' => $creatorId,
+                    'locked_at' => now(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                // Lock Month = mark all approved claims for this month as Paid.
+                $paidCount = DB::table('reimbursement_claims')
+                    ->where('created_by', $creatorId)
+                    ->where('claim_month', $data['lock_month'])
+                    ->where('status', 'approved')
+                    ->update([
+                        'status' => 'paid',
+                        'updated_at' => now(),
+                    ]);
+
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+            return back()->with(
+                'success',
+                __('Month :month locked. :count approved claim(s) marked as Paid.', [
+                    'month' => $data['lock_month'],
+                    'count' => $paidCount,
+                ])
+            );
+        } catch (\Throwable $e) {
+            \Log::error('lockReimbursementMonth failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return back()->with('error', __('Could not lock month: :msg', ['msg' => $e->getMessage()]));
         }
-
-        $data = $request->validate([
-            'lock_month' => 'required|string|size:7|date_format:Y-m',
-        ]);
-
-        $creatorId = $user->creatorId();
-        if (ReimbursementMonthLock::isLocked($data['lock_month'], $creatorId)) {
-            return back()->with('error', __('This month is already locked.'));
-        }
-
-        ReimbursementMonthLock::create([
-            'lock_month' => $data['lock_month'],
-            'locked_by' => $user->id,
-            'created_by' => $creatorId,
-            'locked_at' => now(),
-        ]);
-
-        return back()->with('success', __('Month :month locked for reimbursements.', ['month' => $data['lock_month']]));
     }
 
     public function unlockReimbursementMonth(Request $request)
     {
-        $user = \Auth::user();
-        if (!in_array($user->type, ['company', 'hr'], true)) {
-            return back()->with('error', __('Permission denied.'));
+        try {
+            $user = \Auth::user();
+            if (!$user || $user->type === 'employee') {
+                return back()->with('error', __('Permission denied.'));
+            }
+
+            $data = $request->validate([
+                'lock_month' => 'required|string|size:7|date_format:Y-m',
+            ]);
+
+            if (!\Illuminate\Support\Facades\Schema::hasTable('reimbursement_month_locks')) {
+                return back()->with('error', __('Lock table is missing.'));
+            }
+
+            $creatorId = (int) $user->creatorId();
+
+            DB::beginTransaction();
+            try {
+                DB::table('reimbursement_month_locks')
+                    ->where('created_by', $creatorId)
+                    ->where('lock_month', $data['lock_month'])
+                    ->delete();
+
+                // Unlock restores Paid → Approved for that month.
+                DB::table('reimbursement_claims')
+                    ->where('created_by', $creatorId)
+                    ->where('claim_month', $data['lock_month'])
+                    ->where('status', 'paid')
+                    ->update([
+                        'status' => 'approved',
+                        'updated_at' => now(),
+                    ]);
+
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                throw $e;
+            }
+
+            return back()->with('success', __('Month :month unlocked. Paid claims moved back to Approved.', ['month' => $data['lock_month']]));
+        } catch (\Throwable $e) {
+            \Log::error('unlockReimbursementMonth failed: ' . $e->getMessage());
+
+            return back()->with('error', __('Could not unlock month: :msg', ['msg' => $e->getMessage()]));
         }
-
-        $data = $request->validate([
-            'lock_month' => 'required|string|size:7|date_format:Y-m',
-        ]);
-
-        ReimbursementMonthLock::where('created_by', $user->creatorId())
-            ->where('lock_month', $data['lock_month'])
-            ->delete();
-
-        return back()->with('success', __('Month :month unlocked.', ['month' => $data['lock_month']]));
     }
 
     /**

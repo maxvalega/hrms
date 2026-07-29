@@ -790,7 +790,7 @@ class ReportController extends Controller
             ->select('reimbursement_claims.*', 'employees.name', 'employees.employee_id as emp_code', 'employees.account_holder_name', 'employees.account_number', 'employees.bank_name', 'employees.bank_identifier_code')
             ->leftJoin('employees', 'reimbursement_claims.employee_id', '=', 'employees.id')
             ->where('reimbursement_claims.created_by', \Auth::user()->creatorId())
-            ->where('reimbursement_claims.status', 'approved');
+            ->whereIn('reimbursement_claims.status', ['approved', 'paid']);
 
         if ($request->type == 'monthly' && !empty($request->month)) {
             $claims->where('reimbursement_claims.claim_month', $request->month);

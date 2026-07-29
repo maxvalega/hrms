@@ -22,7 +22,7 @@
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">{{ __('Lock Month') }}</h5>
-                    <small class="text-muted">{{ __('After approving claims, lock a month so the employee apply form moves to the calendar month. Previous month stays available via Previous Month.') }}</small>
+                    <small class="text-muted">{{ __('Locks the month and marks all Approved claims for that month as Paid.') }}</small>
                 </div>
                 <div class="card-body">
                     @php
@@ -155,13 +155,23 @@
                                             @endif
                                         </td>
                                         <td>
-                                            {{ ucfirst($claim->status) }}
-                                            @if (!empty($awaitingManager[$claim->id]))
-                                                <div><small class="text-muted">{{ __('Awaiting reporting manager') }}</small></div>
+                                            @if ($claim->status === 'paid')
+                                                <span class="badge bg-primary">{{ __('Paid') }}</span>
+                                            @elseif ($claim->status === 'approved')
+                                                <span class="badge bg-success">{{ __('Approved') }}</span>
+                                            @elseif ($claim->status === 'rejected')
+                                                <span class="badge bg-danger">{{ __('Rejected') }}</span>
+                                            @else
+                                                <span class="badge bg-warning text-dark">{{ __('Pending') }}</span>
+                                                @if (!empty($awaitingManager[$claim->id]))
+                                                    <div><small class="text-muted">{{ __('Awaiting reporting manager') }}</small></div>
+                                                @endif
                                             @endif
                                         </td>
                                         <td>
-                                            @if($claim->status === 'pending' && !empty($hrCanApprove[$claim->id]))
+                                            @if ($claim->status === 'paid')
+                                                <span class="badge bg-primary px-3">{{ __('PAID') }}</span>
+                                            @elseif($claim->status === 'pending' && !empty($hrCanApprove[$claim->id]))
                                                 <div class="d-flex gap-1">
                                                     <form method="POST" action="{{ route('payroll.reimbursements.status', $claim->id) }}">
                                                         @csrf
@@ -176,6 +186,8 @@
                                                 </div>
                                             @elseif($claim->status === 'pending')
                                                 <span class="text-muted small">{{ __('View only') }}</span>
+                                            @elseif($claim->status === 'approved')
+                                                <span class="text-muted small">{{ __('Awaiting Lock Month') }}</span>
                                             @else
                                                 -
                                             @endif

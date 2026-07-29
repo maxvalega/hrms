@@ -797,9 +797,10 @@ Route::group(['middleware' => ['verified']], function () {
     Route::delete('payroll/process-filtered', [\App\Http\Controllers\PayrollModuleController::class, 'deletePayrollFiltered'])->name('payroll.process.delete.filtered')->middleware(['auth', 'XSS']);
     Route::get('payroll/reimbursements', [\App\Http\Controllers\PayrollModuleController::class, 'reimbursements'])->name('payroll.reimbursements')->middleware(['auth', 'XSS']);
     Route::post('payroll/reimbursements', [\App\Http\Controllers\PayrollModuleController::class, 'storeReimbursement'])->name('payroll.reimbursements.store')->middleware(['auth', 'XSS']);
-    Route::post('payroll/reimbursements/{id}/status', [\App\Http\Controllers\PayrollModuleController::class, 'updateReimbursementStatus'])->name('payroll.reimbursements.status')->middleware(['auth', 'XSS']);
+    // Lock routes MUST be registered before {id} routes.
     Route::post('payroll/reimbursements/lock-month', [\App\Http\Controllers\PayrollModuleController::class, 'lockReimbursementMonth'])->name('payroll.reimbursements.lock')->middleware(['auth', 'XSS']);
     Route::post('payroll/reimbursements/unlock-month', [\App\Http\Controllers\PayrollModuleController::class, 'unlockReimbursementMonth'])->name('payroll.reimbursements.unlock')->middleware(['auth', 'XSS']);
+    Route::post('payroll/reimbursements/{id}/status', [\App\Http\Controllers\PayrollModuleController::class, 'updateReimbursementStatus'])->name('payroll.reimbursements.status')->middleware(['auth', 'XSS']);
     Route::get('payroll/my-reimbursements', [\App\Http\Controllers\PayrollModuleController::class, 'myReimbursements'])->name('payroll.my-reimbursements')->middleware(['auth', 'XSS']);
     Route::post('payroll/my-reimbursements', [\App\Http\Controllers\PayrollModuleController::class, 'storeMyReimbursement'])->name('payroll.my-reimbursements.store')->middleware(['auth', 'XSS']);
     Route::get('payroll/reimbursement-approvals', [\App\Http\Controllers\PayrollModuleController::class, 'reimbursementApprovals'])->name('payroll.reimbursement-approvals')->middleware(['auth', 'XSS']);

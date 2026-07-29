@@ -79,7 +79,7 @@ class ReimbursementExport implements FromArray, WithHeadings, WithTitle, WithSty
             )
             ->leftJoin('employees', 'reimbursement_claims.employee_id', '=', 'employees.id')
             ->where('reimbursement_claims.created_by', \Auth::user()->creatorId())
-            ->where('reimbursement_claims.status', 'approved');
+            ->whereIn('reimbursement_claims.status', ['approved', 'paid']);
 
         if ($this->type === 'yearly' && !empty($this->year)) {
             $query->where('reimbursement_claims.claim_month', '>=', $this->year . '-01')
@@ -114,7 +114,7 @@ class ReimbursementExport implements FromArray, WithHeadings, WithTitle, WithSty
                 $claim->component_name ?: ('#' . $claim->component_id),
                 $claim->claim_month,
                 $amount,
-                'Approved',
+                ucfirst((string) $claim->status),
                 $claim->approved_at ? $claim->approved_at->format('d-m-Y') : '',
                 $claim->account_holder_name ?? '',
                 $claim->account_number ?? '',

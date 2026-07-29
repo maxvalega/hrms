@@ -138,7 +138,9 @@
                                             @endif
                                         </td>
                                         <td>
-                                            @if ($claim->status === 'approved')
+                                            @if ($claim->status === 'paid')
+                                                <span class="badge bg-primary">{{ __('Paid') }}</span>
+                                            @elseif ($claim->status === 'approved')
                                                 <span class="badge bg-success">{{ __('Approved') }}</span>
                                             @elseif ($claim->status === 'rejected')
                                                 <span class="badge bg-danger">{{ __('Rejected') }}</span>

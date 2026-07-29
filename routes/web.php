@@ -1919,8 +1919,8 @@ Route::group(['middleware' => ['verified']], function () {
     //Payroll Export
     Route::get('export/payroll/{month}/{branch}/{department}', [ReportController::class, 'PayrollReportExport'])->name('payroll.report.export');
 
-    // Reimbursement Report Export (approved only)
-    Route::get('export/reimbursement/{month}/{branch}/{department}', [ReportController::class, 'ReimbursementReportExport'])->name('reimbursement.report.export');
+    // Reimbursement Report Export (approved only — Excel)
+    Route::get('export/reimbursement', [ReportController::class, 'ReimbursementReportExport'])->name('reimbursement.report.export');
 
     // payslip export
     Route::post('export/payslip', [PaySlipController::class, 'PayslipExport'])->name('payslip.export');

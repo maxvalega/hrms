@@ -837,18 +837,26 @@ class ReportController extends Controller
         return view('report.reimbursement', compact('claims', 'filterData', 'branch', 'department', 'filterYear'));
     }
 
-    public function ReimbursementReportExport($month, $branch, $department)
+    public function ReimbursementReportExport(Request $request)
     {
         if (!\Auth::user()->can('Manage Report')) {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
 
+        $type = $request->get('type', 'monthly');
         $data = [
-            'month' => $month,
-            'branch' => $branch,
-            'department' => $department,
+            'type' => $type,
+            'month' => $request->get('month', date('Y-m')),
+            'year' => $request->get('year', date('Y')),
+            'branch' => $request->get('branch', 0),
+            'department' => $request->get('department', $request->get('department_id', 0)),
         ];
-        $name = 'Reimbursement_' . date('Y-m-d_His');
+
+        $label = $type === 'yearly'
+            ? ('Year_' . ($data['year'] ?: date('Y')))
+            : ('Month_' . str_replace('-', '', $data['month'] ?: date('Y-m')));
+
+        $name = 'Reimbursement_Report_' . $label . '_' . date('Ymd_His');
 
         return \Excel::download(new ReimbursementExport($data), $name . '.xlsx');
     }

@@ -336,20 +336,65 @@
                                 @php
                                     $employeedoc = $employee->documents()->pluck('document_value', 'document_id');
                                     $logo = \App\Models\Utility::get_file('uploads/document');
+                                    $uploadPath = \App\Models\Utility::get_file('uploads/documentUpload');
+                                    $uploadedDocuments = $uploadedDocuments ?? collect();
+                                    $hasTypeDocs = !$documents->isEmpty();
+                                    $hasUploadedDocs = !$uploadedDocuments->isEmpty();
                                 @endphp
-                                @if (!$documents->isEmpty())
+
+                                @if ($hasTypeDocs)
                                     @foreach ($documents as $key => $document)
-                                        <div class="col-md-6">
+                                        <div class="col-md-6 mb-2">
                                             <div class="info text-sm">
                                                 <strong class="font-bold">{{ $document->name }} : </strong>
                                                 <span><a href="{{ !empty($employeedoc[$document->id]) ? $logo . '/' . $employeedoc[$document->id] : '' }}"
-                                                        target="_blank">{{ !empty($employeedoc[$document->id]) ? $employeedoc[$document->id] : '' }}</a></span>
+                                                        target="_blank">{{ !empty($employeedoc[$document->id]) ? $employeedoc[$document->id] : '-' }}</a></span>
                                             </div>
                                         </div>
                                     @endforeach
-                                @else
+                                @endif
+
+                                @if ($hasUploadedDocs)
+                                    @if ($hasTypeDocs)
+                                        <div class="col-12"><hr></div>
+                                    @endif
+                                    @foreach ($uploadedDocuments as $uploaded)
+                                        <div class="col-md-12 mb-2">
+                                            <div class="info text-sm d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                                <div>
+                                                    <strong class="font-bold">{{ $uploaded->name }}</strong>
+                                                    @if (!empty($uploaded->description))
+                                                        <span class="text-muted"> — {{ \Illuminate\Support\Str::limit($uploaded->description, 60) }}</span>
+                                                    @endif
+                                                </div>
+                                                @if (!empty($uploaded->document))
+                                                    <div class="dt-buttons">
+                                                        <div class="action-btn bg-primary me-1 d-inline-block">
+                                                            <a class="mx-2 btn btn-sm align-items-center"
+                                                                href="{{ $uploadPath . '/' . $uploaded->document }}"
+                                                                download data-bs-toggle="tooltip"
+                                                                title="{{ __('Download') }}">
+                                                                <span class="text-white"><i class="ti ti-download"></i></span>
+                                                            </a>
+                                                        </div>
+                                                        <div class="action-btn bg-secondary d-inline-block">
+                                                            <a class="mx-2 btn btn-sm align-items-center"
+                                                                href="{{ $uploadPath . '/' . $uploaded->document }}"
+                                                                target="_blank" data-bs-toggle="tooltip"
+                                                                title="{{ __('Preview') }}">
+                                                                <span class="text-white"><i class="ti ti-crosshair"></i></span>
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                @endif
+
+                                @if (!$hasTypeDocs && !$hasUploadedDocs)
                                     <div class="text-center">
-                                        No Document Type Added.!
+                                        {{ __('No Document Added.') }}
                                     </div>
                                 @endif
 

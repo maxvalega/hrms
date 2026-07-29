@@ -6,6 +6,7 @@ use App\Models\Branch;
 use App\Models\Department;
 use App\Models\Designation;
 use App\Models\Document;
+use App\Models\DucumentUpload;
 use App\Models\Employee;
 use App\Models\EmployeeDocument;
 use App\Models\EmployeeType;
@@ -768,8 +769,28 @@ class EmployeeController extends Controller
         $departments  = Department::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
         $designations = Designation::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
         $employeesId  = \Auth::user()->employeeIdFormat($employee->employee_id);
+        $uploadedDocuments = $this->employeeUploadedDocuments($employee);
 
-        return view('employee.show', compact('employee', 'employeesId', 'branches', 'departments', 'designations', 'documents'));
+        return view('employee.show', compact('employee', 'employeesId', 'branches', 'departments', 'designations', 'documents', 'uploadedDocuments'));
+    }
+
+    /**
+     * Documents from Manage Document that belong to this employee (assigned or uploaded by them).
+     */
+    protected function employeeUploadedDocuments(Employee $employee)
+    {
+        if (empty($employee->user_id)) {
+            return collect();
+        }
+
+        $userId = (int) $employee->user_id;
+
+        return DucumentUpload::where(function ($q) use ($userId) {
+                $q->where('assigned_user_id', $userId)
+                    ->orWhere('uploaded_by', $userId);
+            })
+            ->latest()
+            ->get();
     }
 
     function employeeNumber()
@@ -1207,8 +1228,9 @@ class EmployeeController extends Controller
             }
 
             $employeesId  = \Auth::user()->employeeIdFormat($employee->employee_id);
+            $uploadedDocuments = $this->employeeUploadedDocuments($employee);
 
-            return view('employee.show', compact('employee', 'employeesId', 'branches', 'departments', 'designations', 'documents'));
+            return view('employee.show', compact('employee', 'employeesId', 'branches', 'departments', 'designations', 'documents', 'uploadedDocuments'));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }

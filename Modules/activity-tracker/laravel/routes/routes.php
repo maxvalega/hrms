@@ -30,8 +30,8 @@ Route::middleware(['auth', 'XSS'])->prefix('activity-tracker')->group(function (
     // Polling endpoint — returns pending count + items for real-time bell
     Route::get('/stop-requests/poll', [ActivityTrackerController::class, 'pollStopRequests'])->name('activity-tracker.stop-requests.poll');
 
-    // Token UI (Sanctum personal access tokens used by the Electron agent)
-    Route::get   ('/token',           [ActivityTrackerController::class, 'tokenIndex'])->name('activity-tracker.token');
-    Route::post  ('/token',           [ActivityTrackerController::class, 'tokenCreate'])->name('activity-tracker.token.create');
-    Route::delete('/token/{id}',      [ActivityTrackerController::class, 'tokenRevoke'])->name('activity-tracker.token.revoke')->whereNumber('id');
+    // Token UI removed — desktop agent auth no longer managed from this screen.
+    // Route::get   ('/token',           [ActivityTrackerController::class, 'tokenIndex'])->name('activity-tracker.token');
+    // Route::post  ('/token',           [ActivityTrackerController::class, 'tokenCreate'])->name('activity-tracker.token.create');
+    // Route::delete('/token/{id}',      [ActivityTrackerController::class, 'tokenRevoke'])->name('activity-tracker.token.revoke')->whereNumber('id');
 });

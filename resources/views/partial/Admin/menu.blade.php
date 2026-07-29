@@ -522,18 +522,7 @@
                     <li class="dash-item {{ request()->routeIs('activity-tracker.daily-report') ? 'active' : '' }}">
                         <a class="dash-link" href="{{ route('activity-tracker.daily-report') }}">{{ __('Daily Report') }}</a>
                     </li>
-                    <li class="dash-item {{ request()->routeIs('activity-tracker.token') ? 'active' : '' }}">
-                        <a class="dash-link" href="{{ route('activity-tracker.token') }}">{{ __('Agent Tokens') }}</a>
-                    </li>
                 </ul>
-            </li>
-            @elseif(Auth::user() && Auth::user()->can('use-activity-tracker') && Route::has('activity-tracker.token'))
-            {{-- Employee-only: just token-issuance UI for self --}}
-            <li class="dash-item {{ request()->is('activity-tracker/token*') ? 'active' : '' }}">
-                <a class="dash-link" href="{{ route('activity-tracker.token') }}">
-                    <span class="dash-micon"><i class="ti ti-device-desktop-analytics"></i></span>
-                    <span class="dash-mtext">{{ __('Agent Token') }}</span>
-                </a>
             </li>
             @endif
             <!-- /Activity Tracker -->

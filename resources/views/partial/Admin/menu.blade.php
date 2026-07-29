@@ -312,7 +312,7 @@
             <!-- People Hub -->
             <li class="dash-item dash-hasmenu {{ Request::segment(1) == 'people-hub' ? 'dash-trigger active' : '' }}">
                 <a href="#!" class="dash-link">
-                    <span class="dash-micon"><i class="ti ti-users-group"></i></span>
+                    <span class="dash-micon"><i class="ti ti-users"></i></span>
                     <span class="dash-mtext">{{ __('People Hub') }}</span>
                     <span class="dash-arrow"><i data-feather="chevron-right"></i></span>
                 </a>
@@ -892,7 +892,7 @@
                 </li>
                 <li class="dash-item {{ Request::segment(1) == 'chat-groups' ? 'active' : '' }}">
                     <a href="{{ route('chat-groups.index') }}" class="dash-link"><span class="dash-micon"><i
-                                class="ti ti-users-group"></i></span><span
+                                class="ti ti-message-dots"></i></span><span
                             class="dash-mtext">{{ __('Group Chat') }}</span></a>
                 </li>
             @endif

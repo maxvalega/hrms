@@ -38,21 +38,6 @@
 
 @section('content')
     <div class="row">
-        <div class="col-xl-12 mb-3">
-            <div class="card">
-                <div class="card-body py-2">
-                    <div class="d-flex flex-wrap gap-3 align-items-center">
-                        <span class="badge {{ !empty($leavePolicy['carry_forward']) ? 'bg-success' : 'bg-secondary' }}">
-                            {{ __('Carry Forward') }}: {{ !empty($leavePolicy['carry_forward']) ? __('Enabled') : __('Disabled') }}
-                        </span>
-                        <span class="badge {{ !empty($leavePolicy['encashment']) ? 'bg-success' : 'bg-secondary' }}">
-                            {{ __('Encashment') }}: {{ !empty($leavePolicy['encashment']) ? __('Enabled') : __('Disabled') }}
-                        </span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         @if(!empty($leaveBalance) && count($leaveBalance) > 0)
             <div class="col-xl-12 mb-3">
                 <div class="card">

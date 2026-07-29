@@ -800,6 +800,7 @@ Route::group(['middleware' => ['verified']], function () {
     Route::post('payroll/reimbursements/{id}/status', [\App\Http\Controllers\PayrollModuleController::class, 'updateReimbursementStatus'])->name('payroll.reimbursements.status')->middleware(['auth', 'XSS']);
     Route::get('payroll/my-reimbursements', [\App\Http\Controllers\PayrollModuleController::class, 'myReimbursements'])->name('payroll.my-reimbursements')->middleware(['auth', 'XSS']);
     Route::post('payroll/my-reimbursements', [\App\Http\Controllers\PayrollModuleController::class, 'storeMyReimbursement'])->name('payroll.my-reimbursements.store')->middleware(['auth', 'XSS']);
+    Route::get('payroll/reimbursement-approvals', [\App\Http\Controllers\PayrollModuleController::class, 'reimbursementApprovals'])->name('payroll.reimbursement-approvals')->middleware(['auth', 'XSS']);
     Route::get('payroll/supplementary', [\App\Http\Controllers\PayrollModuleController::class, 'supplementary'])->name('payroll.supplementary')->middleware(['auth', 'XSS']);
     Route::post('payroll/supplementary', [\App\Http\Controllers\PayrollModuleController::class, 'storeSupplementary'])->name('payroll.supplementary.store')->middleware(['auth', 'XSS']);
     Route::delete('payroll/supplementary/{id}', [\App\Http\Controllers\PayrollModuleController::class, 'deleteSupplementary'])->name('payroll.supplementary.delete')->middleware(['auth', 'XSS']);

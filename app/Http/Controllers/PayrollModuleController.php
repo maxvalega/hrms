@@ -1711,12 +1711,29 @@ class PayrollModuleController extends Controller
         }
 
         $creatorId = \Auth::user()->creatorId();
-        $employees = Employee::where('created_by', $creatorId)->orderBy('name')->get();
+        $employees = Employee::where('created_by', $creatorId)->orderBy('name')->get()->keyBy('id');
         $components = SalaryComponent::where('created_by', $creatorId)->where('category', 'reimbursement')->where('status', 1)->get();
         $claims = ReimbursementClaim::where('created_by', $creatorId)->orderByDesc('id')->limit(50)->get();
         $employeeNames = $employees->pluck('name', 'id');
 
-        return view('payroll.reimbursements', compact('employees', 'components', 'claims', 'employeeNames'));
+        // HR may approve only when the claimant has no reporting manager.
+        $hrCanApprove = [];
+        $awaitingManager = [];
+        foreach ($claims as $claim) {
+            $emp = $employees->get($claim->employee_id);
+            $hasManager = $emp && !empty($emp->reporting_manager_id);
+            $hrCanApprove[$claim->id] = !$hasManager;
+            $awaitingManager[$claim->id] = $hasManager && $claim->status === 'pending';
+        }
+
+        return view('payroll.reimbursements', compact(
+            'employees',
+            'components',
+            'claims',
+            'employeeNames',
+            'hrCanApprove',
+            'awaitingManager'
+        ));
     }
 
     /**
@@ -1754,6 +1771,33 @@ class PayrollModuleController extends Controller
         $request->merge(['employee_id' => $employee->id]);
 
         return $this->storeReimbursement($request);
+    }
+
+    /**
+     * Reporting manager: approve/reject team reimbursement claims.
+     */
+    public function reimbursementApprovals()
+    {
+        $user = \Auth::user();
+        $manager = Employee::where('user_id', $user->id)->first();
+        if (!$manager) {
+            return redirect()->route('dashboard')->with('error', __('Employee record not found.'));
+        }
+
+        $creatorId = $user->creatorId();
+        $teamIds = Employee::where('created_by', $creatorId)
+            ->where('reporting_manager_id', $manager->id)
+            ->pluck('id');
+
+        $claims = ReimbursementClaim::where('created_by', $creatorId)
+            ->whereIn('employee_id', $teamIds)
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get();
+
+        $employeeNames = Employee::whereIn('id', $teamIds)->pluck('name', 'id');
+
+        return view('payroll.reimbursement_approvals', compact('claims', 'employeeNames', 'manager'));
     }
 
     public function supplementary()
@@ -2175,22 +2219,54 @@ class PayrollModuleController extends Controller
 
     public function updateReimbursementStatus(Request $request, int $id)
     {
-        if (\Auth::user()->type === 'employee') {
-            return back()->with('error', __('Permission denied.'));
-        }
-
-        $creatorId = \Auth::user()->creatorId();
+        $user = \Auth::user();
+        $creatorId = $user->creatorId();
         $data = $request->validate([
             'status' => 'required|in:approved,rejected',
         ]);
+
         $claim = ReimbursementClaim::where('created_by', $creatorId)->findOrFail($id);
+        if ($claim->status !== 'pending') {
+            return back()->with('error', __('This claim is already processed.'));
+        }
+
+        if (!$this->userCanApproveReimbursementClaim($user, $claim)) {
+            return back()->with('error', __('Permission denied. Only the reporting manager can approve this claim (HR only when no manager is assigned).'));
+        }
+
         $claim->update([
             'status' => $data['status'],
-            'approved_by' => \Auth::id(),
+            'approved_by' => $user->id,
             'approved_at' => now(),
         ]);
 
         return back()->with('success', __('Claim status updated.'));
+    }
+
+    /**
+     * Reporting manager approves team claims.
+     * HR/company may approve only when the employee has no reporting manager.
+     */
+    protected function userCanApproveReimbursementClaim($user, ReimbursementClaim $claim): bool
+    {
+        $employee = Employee::where('created_by', $user->creatorId())
+            ->where('id', $claim->employee_id)
+            ->first();
+
+        if (!$employee) {
+            return false;
+        }
+
+        $hasManager = !empty($employee->reporting_manager_id);
+
+        if ($hasManager) {
+            $viewer = Employee::where('user_id', $user->id)->first();
+
+            return $viewer && (int) $viewer->id === (int) $employee->reporting_manager_id;
+        }
+
+        // No reporting manager → HR / company only
+        return in_array($user->type, ['company', 'hr'], true);
     }
 
     /**

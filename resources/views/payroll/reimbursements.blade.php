@@ -54,7 +54,9 @@
         </div>
         <div class="col-lg-8">
             <div class="card">
-                <div class="card-header"><h5 class="mb-0">{{ __('Claims') }}</h5></div>
+                <div class="card-header"><h5 class="mb-0">{{ __('Claims') }}</h5>
+                    <small class="text-muted">{{ __('You can approve only when the employee has no reporting manager. Otherwise the reporting manager must approve.') }}</small>
+                </div>
                 <div class="card-body table-border-style">
                     <div class="table-responsive">
                         <table class="table">
@@ -85,9 +87,14 @@
                                                 <span class="text-muted">—</span>
                                             @endif
                                         </td>
-                                        <td>{{ ucfirst($claim->status) }}</td>
                                         <td>
-                                            @if($claim->status === 'pending')
+                                            {{ ucfirst($claim->status) }}
+                                            @if (!empty($awaitingManager[$claim->id]))
+                                                <div><small class="text-muted">{{ __('Awaiting reporting manager') }}</small></div>
+                                            @endif
+                                        </td>
+                                        <td>
+                                            @if($claim->status === 'pending' && !empty($hrCanApprove[$claim->id]))
                                                 <div class="d-flex gap-1">
                                                     <form method="POST" action="{{ route('payroll.reimbursements.status', $claim->id) }}">
                                                         @csrf
@@ -100,6 +107,8 @@
                                                         <button class="btn btn-sm btn-danger">{{ __('Reject') }}</button>
                                                     </form>
                                                 </div>
+                                            @elseif($claim->status === 'pending')
+                                                <span class="text-muted small">{{ __('View only') }}</span>
                                             @else
                                                 -
                                             @endif

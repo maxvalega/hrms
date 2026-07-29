@@ -13,6 +13,10 @@ return new class extends Migration
      */
     public function up()
     {
+        if (Schema::hasTable('grievances')) {
+            return;
+        }
+
         Schema::create('grievances', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('user_id')->nullable()->comment('Nullable for anonymous complaints');

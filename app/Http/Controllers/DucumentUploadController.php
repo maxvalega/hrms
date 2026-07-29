@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\DucumentUpload;
+use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Http\Request;
 use App\Models\Utility;
@@ -17,16 +18,27 @@ class DucumentUploadController extends Controller
 
     protected function companyUsers()
     {
-        return User::where('created_by', \Auth::user()->creatorId())
-            ->where('type', '!=', 'super admin')
+        // Use employees.user_id (actual login) so assignment matches who can sign in
+        return Employee::where('created_by', \Auth::user()->creatorId())
+            ->whereNotNull('user_id')
+            ->where('user_id', '>', 0)
             ->orderBy('name')
-            ->get()
-            ->pluck('name', 'id');
+            ->get(['user_id', 'name', 'email'])
+            ->unique('user_id')
+            ->mapWithKeys(function ($employee) {
+                $label = $employee->name;
+                if (!empty($employee->email)) {
+                    $label .= ' (' . $employee->email . ')';
+                }
+
+                return [(int) $employee->user_id => $label];
+            });
     }
 
     public function index()
     {
-        $creatorId = \Auth::user()->creatorId();
+        $user = \Auth::user();
+        $creatorId = $user->creatorId();
 
         if ($this->isHrViewer()) {
             // HR / company see every company document (including employee uploads)
@@ -35,19 +47,25 @@ class DucumentUploadController extends Controller
                 ->latest()
                 ->get();
         } else {
-            $userId = \Auth::user()->id;
-            $userRole = \Auth::user()->roles->first();
-            $roleIds = [0];
+            $userId = (int) $user->id;
+            $userRole = $user->roles->first();
+            $roleIds = ['0', 0];
             if ($userRole) {
                 $roleIds[] = $userRole->id;
+                $roleIds[] = (string) $userRole->id;
             }
 
-            // Own uploads + assigned by HR + shared by role (employee private uploads use role -1)
-            $documents = DucumentUpload::where('created_by', $creatorId)
-                ->where(function ($q) use ($userId, $roleIds) {
+            // Assigned / own uploads: match by user id (do not require created_by —
+            // employee creatorId can differ from company id in some tenants).
+            // Role-shared docs stay scoped to company.
+            $documents = DucumentUpload::query()
+                ->where(function ($q) use ($userId, $creatorId, $roleIds) {
                     $q->where('uploaded_by', $userId)
                         ->orWhere('assigned_user_id', $userId)
-                        ->orWhereIn('role', $roleIds);
+                        ->orWhere(function ($q2) use ($creatorId, $roleIds) {
+                            $q2->where('created_by', $creatorId)
+                                ->whereIn('role', $roleIds);
+                        });
                 })
                 ->with(['uploader', 'assignedUser'])
                 ->latest()
@@ -93,8 +111,8 @@ class DucumentUploadController extends Controller
         }
 
         if ($isHrViewer && !empty($request->assigned_user_id)) {
-            $validUser = User::where('created_by', \Auth::user()->creatorId())
-                ->where('id', $request->assigned_user_id)
+            $validUser = Employee::where('created_by', \Auth::user()->creatorId())
+                ->where('user_id', $request->assigned_user_id)
                 ->exists();
             if (!$validUser) {
                 return redirect()->back()->with('error', __('Invalid user selected.'));
@@ -191,8 +209,8 @@ class DucumentUploadController extends Controller
         }
 
         if ($isHrViewer && !empty($request->assigned_user_id)) {
-            $validUser = User::where('created_by', \Auth::user()->creatorId())
-                ->where('id', $request->assigned_user_id)
+            $validUser = Employee::where('created_by', \Auth::user()->creatorId())
+                ->where('user_id', $request->assigned_user_id)
                 ->exists();
             if (!$validUser) {
                 return redirect()->back()->with('error', __('Invalid user selected.'));

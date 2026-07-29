@@ -465,8 +465,9 @@ function IDinfo(id, type) {
         messageInput.focus();
         // update info in view
         $(".messenger-infoView .info-name").html(data.fetch.name);
-        const headerIdentity = data.fetch.email
-          ? `${data.fetch.name} (${data.fetch.email} #${data.fetch.id})`
+        const cleanEmail = (data.fetch.email || "").toString().replace(/\s+/g, "");
+        const headerIdentity = cleanEmail
+          ? `${data.fetch.name} (${cleanEmail} #${data.fetch.id})`
           : `${data.fetch.name} (#${data.fetch.id})`;
         $(".m-header-messaging .user-name").html(headerIdentity);
         // Star status

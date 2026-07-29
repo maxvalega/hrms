@@ -236,6 +236,14 @@
             color: #ffffff !important;
             font-size: 16px;
             font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: min(520px, 55vw);
+            display: inline-block;
+            word-break: normal;
+            word-spacing: normal;
+            letter-spacing: normal;
         }
 
         .m-header-messaging .header-avatar {
@@ -1296,6 +1304,14 @@
                 color: #ffffff !important;
                 font-size: 16px;
                 font-weight: 600;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: min(420px, 50vw);
+                display: inline-block;
+                word-break: normal;
+                word-spacing: normal;
+                letter-spacing: normal;
             }
 
             .cards.chat-embedded .m-header-messaging a i {

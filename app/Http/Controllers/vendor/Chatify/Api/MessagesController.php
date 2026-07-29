@@ -52,6 +52,9 @@ class MessagesController extends Controller
             $fetch = User::where('id', $request['id'])->first();
             if($fetch){
                 $userAvatar = Chatify::getUserWithAvatar($fetch)->avatar;
+                if (!empty($fetch->email)) {
+                    $fetch->email = preg_replace('/\s+/', '', (string) $fetch->email);
+                }
             }
         }
 

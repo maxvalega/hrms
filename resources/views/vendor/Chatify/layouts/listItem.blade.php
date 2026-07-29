@@ -59,7 +59,7 @@
                     <span>{{ $lastMessage->created_at->diffForHumans() }}</span>
                 </p>
                 @if (!empty($user->email))
-                    <small style="display:block; opacity:.7; margin-top:-2px;">{{ $user->email }}</small>
+                    <small style="display:block; opacity:.7; margin-top:-2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ preg_replace('/\s+/', '', (string) $user->email) }}</small>
                 @endif
                 <span style="justify-content: left; display:flex;">
                     {{-- Last Message user indicator --}}
@@ -98,7 +98,7 @@
                     <small style="opacity:.7; margin-left:4px;">#{{ $user->id }}</small>
                 </p>
                 @if (!empty($user->email))
-                    <small style="display:block; opacity:.7; margin-top:-2px;">{{ $user->email }}</small>
+                    <small style="display:block; opacity:.7; margin-top:-2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ preg_replace('/\s+/', '', (string) $user->email) }}</small>
                 @endif
             </td>
 
@@ -131,7 +131,7 @@
                     <small style="opacity:.7; margin-left:4px;">#{{ $user->id }}</small>
                 </p>
                 @if (!empty($user->email))
-                    <small style="display:block; opacity:.7; margin-top:-2px;">{{ $user->email }}</small>
+                    <small style="display:block; opacity:.7; margin-top:-2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ preg_replace('/\s+/', '', (string) $user->email) }}</small>
                 @endif
             </td>
 

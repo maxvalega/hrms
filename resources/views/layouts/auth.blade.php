@@ -8,7 +8,7 @@
     $language = \App\Models\Utility::getValByName('default_language');
 
     $setting = \App\Models\Utility::colorset();
-    $color = !empty($setting['theme_color']) ? $setting['theme_color'] : 'theme-3';
+    $color = !empty($setting['theme_color']) ? $setting['theme_color'] : 'theme-2';
 
     $getseo = App\Models\Utility::getSeoSetting();
     $metatitle = isset($getseo['meta_title']) ? $getseo['meta_title'] : '';

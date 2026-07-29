@@ -84,8 +84,8 @@
         .jl-row { display:flex; align-items:center; justify-content:space-between; margin:0 0 1.6rem; flex-wrap:wrap; gap:.75rem; }
         .jl-check { display:inline-flex; align-items:center; gap:.55rem; cursor:pointer; user-select:none; font-size:.86rem; color:#475569; font-weight:500; }
         .jl-check input { width:17px; height:17px; accent-color:#2563eb; cursor:pointer; margin:0; }
-        .jl-forgot { font-size:.86rem; font-weight:600; color:#2563eb; text-decoration:none; transition:color .2s; }
-        .jl-forgot:hover { color:#1e40af; text-decoration:underline; }
+        .jl-forgot { font-size:.86rem; font-weight:600; color:#51459d !important; text-decoration:none; transition:color .2s; }
+        .jl-forgot:hover { color:#3d3480 !important; text-decoration:underline; }
 
         .jl-submit { width:100%; background:linear-gradient(135deg,#2563eb 0%,#1e40af 100%); color:#fff; border:none; border-radius:12px; padding:1rem; font-size:.95rem; font-weight:700; cursor:pointer; font-family:inherit; letter-spacing:.01em; display:flex; align-items:center; justify-content:center; gap:.55rem; box-shadow:0 10px 25px -8px rgba(37,99,235,.55), inset 0 1px 0 rgba(255,255,255,.18); transition:transform .15s, box-shadow .25s, opacity .2s; position:relative; overflow:hidden; }
         .jl-submit::before { content:""; position:absolute; top:0; left:-100%; width:100%; height:100%; background:linear-gradient(90deg,transparent,rgba(255,255,255,.25),transparent); transition:left .6s; }

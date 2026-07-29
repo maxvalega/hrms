@@ -56,7 +56,7 @@ html{
     border-radius: 0px;
     position: absolute;
     transform-origin: bottom;
-    background: var(--bs-green);
+    background: #51459d;
 }
 
 .custom-login .navbar {
@@ -160,22 +160,22 @@ html{
 }
 
 .custom-login a {
-    color: var(--bs-green);
+    color: #51459d;
 }
 
 .custom-login .custom-wrapper .card .card-body h2 span {
-    color: var(--bs-green);
+    color: #51459d;
     font-weight: 400;
 }
 
 .custom-login .form-control:focus {
-    border-color: var(--bs-green);
+    border-color: #51459d;
     box-shadow: 0 0 0 0.2rem rgba(12, 175, 96, 0.25);
 }
 
 .custom-login .form-check-input:checked {
-    background-color: var(--bs-green);
-    border-color: var(--bs-green);
+    background-color: #51459d;
+    border-color: #51459d;
 }
 
 .custom-login .autorized-btn {

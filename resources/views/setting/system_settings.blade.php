@@ -199,7 +199,7 @@
     $logo = \App\Models\Utility::get_file('uploads/logo/');
     $meta_image = \App\Models\Utility::get_file('uploads/meta/');
     $lang = \App\Models\Utility::getValByName('default_language');
-    $color = isset($settings['theme_color']) ? $settings['theme_color'] : 'theme-3';
+    $color = isset($settings['theme_color']) ? $settings['theme_color'] : 'theme-2';
     $flag = !empty($settings['color_flag']) ? $settings['color_flag'] : '';
     // $is_sidebar_transperent = isset($settings['is_sidebar_transperent']) ? $settings['is_sidebar_transperent'] : '';
     // $dark_mode = isset($settings['dark_mode']) ? $settings['dark_mode'] : '';

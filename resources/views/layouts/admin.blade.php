@@ -13,7 +13,7 @@
     $logo_light_url = $logo . (!empty($logo_light_file) ? $logo_light_file : 'logo-light.png');
     $SITE_RTL = \App\Models\Utility::getValByName('SITE_RTL');
     $setting = \App\Models\Utility::colorset();
-    $color = !empty($setting['theme_color']) ? $setting['theme_color'] : 'theme-3';
+    $color = !empty($setting['theme_color']) ? $setting['theme_color'] : 'theme-2';
     $pusher_setting = \App\Models\Utility::settings();
     $getseo = App\Models\Utility::getSeoSetting();
     $metatitle = isset($getseo['meta_title']) ? $getseo['meta_title'] : '';

@@ -113,7 +113,7 @@ class Utility extends Model
             "zoom_client_id" => "",
             "zoom_client_secret" => "",
             'disable_signup_button' => "on",
-            "theme_color" => "theme-3",
+            "theme_color" => "theme-2",
             "cust_theme_bg" => "on",
             "cust_darklayout" => "off",
             "SITE_RTL" => "off",

@@ -34,17 +34,24 @@ if (!empty($_SERVER['ENV_FILE'])) {
 
 // 2. Auto-detect from server context
 if ($envFile === null) {
-    // CLI (artisan) commands have no HTTP_HOST — detect via COMPUTERNAME or fallback
     $isCli = (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server');
-
     $host = $_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? '';
     $localHosts = ['localhost', '127.0.0.1', '::1'];
+    $hostOnly = strtolower(explode(':', (string) $host)[0]);
+    $basePathEarly = dirname(__DIR__);
 
-    // Strip port (e.g. localhost:8080 → localhost)
-    $hostOnly = strtolower(explode(':', (string)$host)[0]);
+    // HTTP localhost / 127.0.0.1 → local
+    $isHttpLocal = in_array($hostOnly, $localHosts, true);
 
-    if ($isCli || in_array($hostOnly, $localHosts, true)) {
-        // CLI commands and localhost always use local env
+    // CLI on a developer machine → local; CLI on Hostinger/VPS → cloud
+    $isLocalCli = $isCli && (
+        PHP_OS_FAMILY === 'Darwin'
+        || str_contains($basePathEarly, '/Users/')
+        || str_contains($basePathEarly, 'C:\\')
+        || str_contains(strtolower($basePathEarly), 'xampp')
+    );
+
+    if ($isHttpLocal || $isLocalCli) {
         $envFile = '.env.local';
     } else {
         $envFile = '.env.cloud';

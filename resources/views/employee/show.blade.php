@@ -358,38 +358,79 @@
                                     @if ($hasTypeDocs)
                                         <div class="col-12"><hr></div>
                                     @endif
-                                    @foreach ($uploadedDocuments as $uploaded)
-                                        <div class="col-md-12 mb-2">
-                                            <div class="info text-sm d-flex align-items-center justify-content-between flex-wrap gap-2">
-                                                <div>
-                                                    <strong class="font-bold">{{ $uploaded->name }}</strong>
-                                                    @if (!empty($uploaded->description))
-                                                        <span class="text-muted"> — {{ \Illuminate\Support\Str::limit($uploaded->description, 60) }}</span>
+                                    <div class="col-12">
+                                        <style>
+                                            .emp-doc-list { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+                                            .emp-doc-item {
+                                                display: flex;
+                                                align-items: flex-start;
+                                                justify-content: space-between;
+                                                gap: 12px;
+                                                width: 100%;
+                                                max-width: 100%;
+                                                box-sizing: border-box;
+                                                padding: 10px 12px;
+                                                border: 1px solid #e9ecef;
+                                                border-radius: 8px;
+                                                background: #fafbfc;
+                                            }
+                                            .emp-doc-item__text {
+                                                min-width: 0;
+                                                flex: 1 1 auto;
+                                                word-break: break-word;
+                                            }
+                                            .emp-doc-item__text .emp-doc-name { display: block; font-weight: 600; color: #1e293b; }
+                                            .emp-doc-item__text .emp-doc-desc { display: block; margin-top: 2px; font-size: 12px; color: #64748b; }
+                                            .emp-doc-item__actions {
+                                                display: flex;
+                                                flex-shrink: 0;
+                                                align-items: center;
+                                                gap: 8px;
+                                            }
+                                            .emp-doc-item__actions a {
+                                                display: inline-flex;
+                                                align-items: center;
+                                                justify-content: center;
+                                                width: 32px;
+                                                height: 32px;
+                                                border-radius: 6px;
+                                                color: #fff !important;
+                                                text-decoration: none;
+                                                margin: 0;
+                                                padding: 0;
+                                            }
+                                            .emp-doc-item__actions a.emp-doc-dl { background: #51459d; }
+                                            .emp-doc-item__actions a.emp-doc-view { background: #6c757d; }
+                                            @media (max-width: 576px) {
+                                                .emp-doc-item { flex-direction: column; align-items: stretch; }
+                                                .emp-doc-item__actions { justify-content: flex-end; }
+                                            }
+                                        </style>
+                                        <div class="emp-doc-list">
+                                            @foreach ($uploadedDocuments as $uploaded)
+                                                <div class="emp-doc-item">
+                                                    <div class="emp-doc-item__text">
+                                                        <span class="emp-doc-name">{{ $uploaded->name }}</span>
+                                                        @if (!empty($uploaded->description))
+                                                            <span class="emp-doc-desc">{{ $uploaded->description }}</span>
+                                                        @endif
+                                                    </div>
+                                                    @if (!empty($uploaded->document))
+                                                        <div class="emp-doc-item__actions">
+                                                            <a class="emp-doc-dl" href="{{ $uploadPath . '/' . $uploaded->document }}"
+                                                                download title="{{ __('Download') }}">
+                                                                <i class="ti ti-download"></i>
+                                                            </a>
+                                                            <a class="emp-doc-view" href="{{ $uploadPath . '/' . $uploaded->document }}"
+                                                                target="_blank" title="{{ __('Preview') }}">
+                                                                <i class="ti ti-eye"></i>
+                                                            </a>
+                                                        </div>
                                                     @endif
                                                 </div>
-                                                @if (!empty($uploaded->document))
-                                                    <div class="dt-buttons">
-                                                        <div class="action-btn bg-primary me-1 d-inline-block">
-                                                            <a class="mx-2 btn btn-sm align-items-center"
-                                                                href="{{ $uploadPath . '/' . $uploaded->document }}"
-                                                                download data-bs-toggle="tooltip"
-                                                                title="{{ __('Download') }}">
-                                                                <span class="text-white"><i class="ti ti-download"></i></span>
-                                                            </a>
-                                                        </div>
-                                                        <div class="action-btn bg-secondary d-inline-block">
-                                                            <a class="mx-2 btn btn-sm align-items-center"
-                                                                href="{{ $uploadPath . '/' . $uploaded->document }}"
-                                                                target="_blank" data-bs-toggle="tooltip"
-                                                                title="{{ __('Preview') }}">
-                                                                <span class="text-white"><i class="ti ti-crosshair"></i></span>
-                                                            </a>
-                                                        </div>
-                                                    </div>
-                                                @endif
-                                            </div>
+                                            @endforeach
                                         </div>
-                                    @endforeach
+                                    </div>
                                 @endif
 
                                 @if (!$hasTypeDocs && !$hasUploadedDocs)

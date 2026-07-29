@@ -20,6 +20,9 @@
     $unseen_count = DB::select('SELECT from_id, COUNT(*) AS totalmasseges FROM ch_messages WHERE seen = 0 GROUP BY from_id');
     $pendingSubstituteLeaves = collect();
     $pendingSubstituteCount = 0;
+    $pendingAssignedDocuments = collect();
+    $pendingDocumentCount = 0;
+    $employeeNotificationCount = 0;
     if (Auth::user()->type === 'employee') {
         $employee = \App\Models\Employee::where('user_id', Auth::id())->first();
         if (!empty($employee)) {
@@ -30,6 +33,25 @@
                 ->get();
             $pendingSubstituteCount = $pendingSubstituteLeaves->count();
         }
+
+        if (\Schema::hasTable('ducument_uploads') && \Schema::hasColumn('ducument_uploads', 'assigned_seen')) {
+            $pendingAssignedDocuments = \App\Models\DucumentUpload::with('uploader')
+                ->where('assigned_user_id', Auth::id())
+                ->where('assigned_seen', false)
+                ->orderByDesc('created_at')
+                ->get();
+            $pendingDocumentCount = $pendingAssignedDocuments->count();
+        } elseif (\Schema::hasTable('ducument_uploads')) {
+            // Fallback if migration not run yet: show recent assignments (7 days)
+            $pendingAssignedDocuments = \App\Models\DucumentUpload::with('uploader')
+                ->where('assigned_user_id', Auth::id())
+                ->where('created_at', '>=', now()->subDays(7))
+                ->orderByDesc('created_at')
+                ->get();
+            $pendingDocumentCount = $pendingAssignedDocuments->count();
+        }
+
+        $employeeNotificationCount = $pendingSubstituteCount + $pendingDocumentCount;
     }
 
     // Manager's pending leave notifications
@@ -263,11 +285,11 @@
 
             @if (\Auth::user()->type == 'employee')
                 <li class="dropdown dash-h-item drp-notification">
-                    <a class="dash-head-link dropdown-toggle arrow-none me-0 notification-toggle {{ $pendingSubstituteCount > 0 ? 'beep' : '' }}"
+                    <a class="dash-head-link dropdown-toggle arrow-none me-0 notification-toggle {{ $employeeNotificationCount > 0 ? 'beep' : '' }}"
                         data-bs-toggle="dropdown" href="#" role="button" aria-haspopup="false" aria-expanded="false">
                         <i class="ti ti-bell"></i>
-                        @if ($pendingSubstituteCount > 0)
-                            <span class="bg-danger dash-h-badge">{{ $pendingSubstituteCount }}</span>
+                        @if ($employeeNotificationCount > 0)
+                            <span class="bg-danger dash-h-badge">{{ $employeeNotificationCount }}</span>
                         @endif
                     </a>
                     <div class="dropdown-menu dash-h-dropdown dropdown-menu-end notification-dropdown">
@@ -285,8 +307,28 @@
                                     </div>
                                 </div>
                             @empty
-                                <div class="px-3 py-2 text-muted">{{ __('No new notifications.') }}</div>
                             @endforelse
+
+                            @foreach ($pendingAssignedDocuments as $assignedDoc)
+                                <div class="px-3 py-2 border-bottom">
+                                    <div class="text-muted small">{{ __('New Document Assigned') }}</div>
+                                    <div class="fw-semibold">{{ $assignedDoc->name }}</div>
+                                    @if (!empty($assignedDoc->description))
+                                        <div class="text-muted small">{{ \Illuminate\Support\Str::limit($assignedDoc->description, 80) }}</div>
+                                    @endif
+                                    <div class="text-muted small">
+                                        {{ __('From') }}: {{ optional($assignedDoc->uploader)->name ?? __('HR') }}
+                                        · {{ $assignedDoc->created_at ? $assignedDoc->created_at->diffForHumans() : '' }}
+                                    </div>
+                                    <div class="mt-1">
+                                        <a href="{{ route('document-upload.index') }}" class="text-primary">{{ __('View Document') }}</a>
+                                    </div>
+                                </div>
+                            @endforeach
+
+                            @if ($employeeNotificationCount < 1)
+                                <div class="px-3 py-2 text-muted">{{ __('No new notifications.') }}</div>
+                            @endif
                         </div>
                     </div>
                 </li>

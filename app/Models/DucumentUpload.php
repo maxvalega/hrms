@@ -14,6 +14,11 @@ class DucumentUpload extends Model
         'created_by',
         'uploaded_by',
         'assigned_user_id',
+        'assigned_seen',
+    ];
+
+    protected $casts = [
+        'assigned_seen' => 'boolean',
     ];
 
     public function uploader()

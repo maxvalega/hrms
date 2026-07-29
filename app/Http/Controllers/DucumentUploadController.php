@@ -55,6 +55,13 @@ class DucumentUploadController extends Controller
                 $roleIds[] = (string) $userRole->id;
             }
 
+            // Mark HR-assigned docs as seen once the user opens Document page
+            if (\Schema::hasColumn('ducument_uploads', 'assigned_seen')) {
+                DucumentUpload::where('assigned_user_id', $userId)
+                    ->where('assigned_seen', false)
+                    ->update(['assigned_seen' => true]);
+            }
+
             // Assigned / own uploads: match by user id (do not require created_by —
             // employee creatorId can differ from company id in some tenants).
             // Role-shared docs stay scoped to company.
@@ -129,13 +136,16 @@ class DucumentUploadController extends Controller
             // Assigned to one user + visible to HR (no role broadcast)
             $document->assigned_user_id = (int) $request->assigned_user_id;
             $document->role = '-1';
+            $document->assigned_seen = false;
         } elseif ($isHrViewer) {
             $document->assigned_user_id = null;
             $document->role = $request->role;
+            $document->assigned_seen = true;
         } else {
             // Employee upload: visible to self + HR only
             $document->assigned_user_id = null;
             $document->role = '-1';
+            $document->assigned_seen = true;
         }
 
         if (!empty($request->documents)) {
@@ -221,11 +231,16 @@ class DucumentUploadController extends Controller
         $document->name = $request->name;
         $document->description = $request->description;
         if ($isHrViewer && !empty($request->assigned_user_id)) {
-            $document->assigned_user_id = (int) $request->assigned_user_id;
+            $newAssignee = (int) $request->assigned_user_id;
+            if ((int) $document->assigned_user_id !== $newAssignee) {
+                $document->assigned_seen = false;
+            }
+            $document->assigned_user_id = $newAssignee;
             $document->role = '-1';
         } elseif ($isHrViewer) {
             $document->assigned_user_id = null;
             $document->role = $request->role;
+            $document->assigned_seen = true;
         } else {
             $document->role = $request->role;
         }

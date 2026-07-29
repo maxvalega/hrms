@@ -1804,13 +1804,26 @@ class PayrollModuleController extends Controller
                 'lock_month' => 'required|string|size:7|date_format:Y-m',
             ]);
 
-            if (!\Illuminate\Support\Facades\Schema::hasTable('reimbursement_month_locks')) {
-                return back()->with('error', __('Lock table is missing. Please run migration or create reimbursement_month_locks.'));
-            }
-
             $creatorId = (int) $user->creatorId();
             if ($creatorId < 1) {
                 return back()->with('error', __('Invalid company context.'));
+            }
+
+            // Prefer direct query — Schema::hasTable can be wrong with cached config / odd hosts.
+            $lockTableExists = false;
+            try {
+                $lockTableExists = !empty(DB::select("SHOW TABLES LIKE 'reimbursement_month_locks'"));
+            } catch (\Throwable $e) {
+                $lockTableExists = \Illuminate\Support\Facades\Schema::hasTable('reimbursement_month_locks');
+            }
+
+            if (!$lockTableExists) {
+                return back()->with(
+                    'error',
+                    __('Lock table is missing on DB :db. Create reimbursement_month_locks on the same database used by the live site.', [
+                        'db' => (string) config('database.connections.' . config('database.default') . '.database'),
+                    ])
+                );
             }
 
             $exists = DB::table('reimbursement_month_locks')
@@ -1877,7 +1890,8 @@ class PayrollModuleController extends Controller
                 'lock_month' => 'required|string|size:7|date_format:Y-m',
             ]);
 
-            if (!\Illuminate\Support\Facades\Schema::hasTable('reimbursement_month_locks')) {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('reimbursement_month_locks')
+                && empty(DB::select("SHOW TABLES LIKE 'reimbursement_month_locks'"))) {
                 return back()->with('error', __('Lock table is missing.'));
             }
 

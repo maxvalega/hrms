@@ -9,6 +9,7 @@ use App\Models\EmployeeSalary;
 use App\Models\PaySchedule;
 use App\Models\Payroll;
 use App\Models\ReimbursementClaim;
+use App\Models\ReimbursementMonthLock;
 use App\Models\PayrollSupplementaryAdjustment;
 use App\Models\SalaryComponent;
 use App\Models\SalaryStructure;
@@ -1726,13 +1727,24 @@ class PayrollModuleController extends Controller
             $awaitingManager[$claim->id] = $hasManager && $claim->status === 'pending';
         }
 
+        $monthOptions = $this->reimbursementMonthOptions();
+        $lockedMonths = [];
+        if (\Illuminate\Support\Facades\Schema::hasTable('reimbursement_month_locks')) {
+            $lockedMonths = ReimbursementMonthLock::where('created_by', $creatorId)
+                ->orderByDesc('lock_month')
+                ->pluck('lock_month')
+                ->all();
+        }
+
         return view('payroll.reimbursements', compact(
             'employees',
             'components',
             'claims',
             'employeeNames',
             'hrCanApprove',
-            'awaitingManager'
+            'awaitingManager',
+            'monthOptions',
+            'lockedMonths'
         ));
     }
 
@@ -1753,7 +1765,9 @@ class PayrollModuleController extends Controller
             ->limit(50)
             ->get();
 
-        return view('payroll.my_reimbursements', compact('employee', 'claims'));
+        $monthWindow = $this->reimbursementApplyWindow($user->creatorId());
+
+        return view('payroll.my_reimbursements', compact('employee', 'claims', 'monthWindow'));
     }
 
     public function storeMyReimbursement(Request $request)
@@ -1771,6 +1785,123 @@ class PayrollModuleController extends Controller
         $request->merge(['employee_id' => $employee->id]);
 
         return $this->storeReimbursement($request);
+    }
+
+    public function lockReimbursementMonth(Request $request)
+    {
+        $user = \Auth::user();
+        if (!in_array($user->type, ['company', 'hr'], true)) {
+            return back()->with('error', __('Permission denied.'));
+        }
+
+        $data = $request->validate([
+            'lock_month' => 'required|string|size:7|date_format:Y-m',
+        ]);
+
+        $creatorId = $user->creatorId();
+        if (ReimbursementMonthLock::isLocked($data['lock_month'], $creatorId)) {
+            return back()->with('error', __('This month is already locked.'));
+        }
+
+        ReimbursementMonthLock::create([
+            'lock_month' => $data['lock_month'],
+            'locked_by' => $user->id,
+            'created_by' => $creatorId,
+            'locked_at' => now(),
+        ]);
+
+        return back()->with('success', __('Month :month locked for reimbursements.', ['month' => $data['lock_month']]));
+    }
+
+    public function unlockReimbursementMonth(Request $request)
+    {
+        $user = \Auth::user();
+        if (!in_array($user->type, ['company', 'hr'], true)) {
+            return back()->with('error', __('Permission denied.'));
+        }
+
+        $data = $request->validate([
+            'lock_month' => 'required|string|size:7|date_format:Y-m',
+        ]);
+
+        ReimbursementMonthLock::where('created_by', $user->creatorId())
+            ->where('lock_month', $data['lock_month'])
+            ->delete();
+
+        return back()->with('success', __('Month :month unlocked.', ['month' => $data['lock_month']]));
+    }
+
+    /**
+     * Compute claim-month UI rules for employee apply form.
+     *
+     * Until 5th, if previous month is unlocked → "current month" defaults to previous month.
+     * If locked (or after 5th) → "current month" = calendar month, and previous month
+     * can still be chosen via the previous-month dropdown (even when locked).
+     */
+    protected function reimbursementApplyWindow(int $creatorId): array
+    {
+        $calendarMonth = date('Y-m');
+        $previousMonth = date('Y-m', strtotime('first day of last month'));
+        $day = (int) date('j');
+        $previousLocked = ReimbursementMonthLock::isLocked($previousMonth, $creatorId);
+
+        $inGrace = $day <= 5;
+        $primaryIsPrevious = $inGrace && !$previousLocked;
+
+        $currentMonthOptions = $primaryIsPrevious
+            ? [
+                $previousMonth => $this->formatReimbursementMonthLabel($previousMonth) . ' (' . __('Open') . ')',
+                $calendarMonth => $this->formatReimbursementMonthLabel($calendarMonth),
+            ]
+            : [
+                $calendarMonth => $this->formatReimbursementMonthLabel($calendarMonth),
+            ];
+
+        $defaultCurrentMonth = $primaryIsPrevious ? $previousMonth : $calendarMonth;
+        $showPreviousDropdown = !$primaryIsPrevious;
+
+        return [
+            'calendar_month' => $calendarMonth,
+            'previous_month' => $previousMonth,
+            'day' => $day,
+            'in_grace' => $inGrace,
+            'previous_locked' => $previousLocked,
+            'current_month_options' => $currentMonthOptions,
+            'default_current_month' => $defaultCurrentMonth,
+            'show_previous_dropdown' => $showPreviousDropdown,
+            'allowed_months' => array_values(array_unique([$calendarMonth, $previousMonth])),
+        ];
+    }
+
+    protected function formatReimbursementMonthLabel(string $month): string
+    {
+        return date('M Y', strtotime($month . '-01'));
+    }
+
+    protected function reimbursementMonthOptions(int $monthsBack = 18): array
+    {
+        $options = [];
+        for ($i = 0; $i < $monthsBack; $i++) {
+            $value = date('Y-m', strtotime("first day of -{$i} month"));
+            $options[$value] = $this->formatReimbursementMonthLabel($value);
+        }
+
+        return $options;
+    }
+
+    /**
+     * Resolve final claim_month from current_month + optional previous_month fields.
+     */
+    protected function resolveEmployeeClaimMonth(Request $request, array $window): ?string
+    {
+        $current = $request->input('current_month', $request->input('claim_month'));
+        $previousSelection = $request->input('previous_month');
+
+        if ($window['show_previous_dropdown'] && !empty($previousSelection)) {
+            return $previousSelection;
+        }
+
+        return $current ?: null;
     }
 
     /**
@@ -1868,6 +1999,13 @@ class PayrollModuleController extends Controller
                 return back()->with('error', __('Employee record not found.'));
             }
             $request->merge(['employee_id' => $employee->id]);
+
+            $window = $this->reimbursementApplyWindow($creatorId);
+            $resolvedMonth = $this->resolveEmployeeClaimMonth($request, $window);
+            if (!$resolvedMonth || !in_array($resolvedMonth, $window['allowed_months'], true)) {
+                return back()->withInput()->with('error', __('Invalid claim month. You can apply for the current month or the previous month only.'));
+            }
+            $request->merge(['claim_month' => $resolvedMonth]);
         }
 
         $data = $request->validate([

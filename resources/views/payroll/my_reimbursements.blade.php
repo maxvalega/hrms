@@ -27,7 +27,7 @@
                     <h5 class="mb-0">{{ __('Apply Reimbursement') }}</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ route('payroll.my-reimbursements.store') }}" enctype="multipart/form-data">
+                    <form method="POST" action="{{ route('payroll.my-reimbursements.store') }}" enctype="multipart/form-data" id="reimbursement-apply-form">
                         @csrf
                         <div class="mb-2">
                             <label class="form-label">{{ __('Employee') }}</label>
@@ -42,11 +42,41 @@
                                 <div class="text-danger small mt-1">{{ $message }}</div>
                             @enderror
                         </div>
+
                         <div class="mb-2">
-                            <label class="form-label">{{ __('Claim Month') }} <span class="text-danger">*</span></label>
-                            <input type="month" name="claim_month" class="form-control"
-                                value="{{ old('claim_month', date('Y-m')) }}" required>
+                            <label class="form-label">{{ __('Current Month') }} <span class="text-danger">*</span></label>
+                            <select name="current_month" id="current_month" class="form-control" required>
+                                @foreach ($monthWindow['current_month_options'] as $value => $label)
+                                    <option value="{{ $value }}"
+                                        {{ old('current_month', $monthWindow['default_current_month']) === $value ? 'selected' : '' }}>
+                                        {{ $label }}
+                                    </option>
+                                @endforeach
+                            </select>
+                            @if ($monthWindow['in_grace'] && !$monthWindow['previous_locked'])
+                                <small class="text-muted">{{ __('Until the 5th, previous month stays open unless HR locks it.') }}</small>
+                            @elseif ($monthWindow['previous_locked'])
+                                <small class="text-muted">{{ __('Previous month is locked by HR. Use Previous Month below to claim it.') }}</small>
+                            @endif
                         </div>
+
+                        @if ($monthWindow['show_previous_dropdown'])
+                            <div class="mb-2" id="previous_month_wrap">
+                                <label class="form-label">{{ __('Previous Month') }}</label>
+                                <select name="previous_month" id="previous_month" class="form-control">
+                                    <option value="">{{ __('— Apply for current month —') }}</option>
+                                    <option value="{{ $monthWindow['previous_month'] }}"
+                                        {{ old('previous_month') === $monthWindow['previous_month'] ? 'selected' : '' }}>
+                                        {{ \Carbon\Carbon::createFromFormat('Y-m', $monthWindow['previous_month'])->format('M Y') }}
+                                        @if ($monthWindow['previous_locked'])
+                                            ({{ __('Locked — still allowed') }})
+                                        @endif
+                                    </option>
+                                </select>
+                                <small class="text-muted">{{ __('Select previous month only if you want to claim for that month.') }}</small>
+                            </div>
+                        @endif
+
                         <div class="mb-2">
                             <label class="form-label">{{ __('Amount') }} <span class="text-danger">*</span></label>
                             <input type="number" step="0.01" min="0.01" name="amount" class="form-control"

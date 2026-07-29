@@ -6,12 +6,73 @@
 @section('content')
     @include('payroll._nav')
 
+    @if (session('success'))
+        <div class="alert alert-success alert-dismissible fade show">{{ session('success') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+    @if (session('error'))
+        <div class="alert alert-danger alert-dismissible fade show">{{ session('error') }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    @endif
+
+    <div class="row mb-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">{{ __('Lock Month') }}</h5>
+                    <small class="text-muted">{{ __('After approving claims, lock a month so the employee apply form moves to the calendar month. Previous month stays available via Previous Month.') }}</small>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ route('payroll.reimbursements.lock') }}" class="row g-2 align-items-end">
+                        @csrf
+                        <div class="col-md-4">
+                            <label class="form-label">{{ __('Month to lock') }}</label>
+                            <select name="lock_month" class="form-control" required>
+                                @foreach ($monthOptions as $value => $label)
+                                    <option value="{{ $value }}" {{ $value === date('Y-m', strtotime('first day of last month')) ? 'selected' : '' }}>
+                                        {{ $label }}
+                                        @if (in_array($value, $lockedMonths, true))
+                                            — {{ __('Locked') }}
+                                        @endif
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-md-auto">
+                            <button class="btn btn-warning">{{ __('Lock Month') }}</button>
+                        </div>
+                    </form>
+
+                    @if (!empty($lockedMonths))
+                        <div class="mt-3">
+                            <label class="form-label">{{ __('Locked months') }}</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                @foreach ($lockedMonths as $locked)
+                                    <form method="POST" action="{{ route('payroll.reimbursements.unlock') }}" class="d-inline">
+                                        @csrf
+                                        <input type="hidden" name="lock_month" value="{{ $locked }}">
+                                        <button class="btn btn-sm btn-outline-secondary"
+                                            onclick="return confirm('{{ __('Unlock :month?', ['month' => $locked]) }}')">
+                                            {{ \Carbon\Carbon::createFromFormat('Y-m', $locked)->format('M Y') }}
+                                            · {{ __('Unlock') }}
+                                        </button>
+                                    </form>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="row">
         <div class="col-lg-4">
             <div class="card">
                 <div class="card-header"><h5 class="mb-0">{{ __('New Claim') }}</h5></div>
                 <div class="card-body">
-                    {{-- OLD: <form method="POST" action="{{ route('payroll.reimbursements.store') }}"> --}}
                     <form method="POST" action="{{ route('payroll.reimbursements.store') }}" enctype="multipart/form-data">
                         @csrf
                         <div class="mb-2">
@@ -24,19 +85,12 @@
                         </div>
                         <div class="mb-2">
                             <label class="form-label">{{ __('Component') }}</label>
-                            {{-- OLD dropdown (salary components with category=reimbursement):
-                            <select name="component_id" class="form-control" required>
-                                @foreach($components as $component)
-                                    <option value="{{ $component->id }}">{{ $component->name }}</option>
-                                @endforeach
-                            </select>
-                            --}}
                             <input type="text" name="component_name" class="form-control" value="{{ old('component_name') }}" placeholder="{{ __('e.g. Travel, Food, Medical') }}" required>
                             @error('component_name')
                                 <div class="text-danger small mt-1">{{ $message }}</div>
                             @enderror
                         </div>
-                        <div class="mb-2"><label class="form-label">{{ __('Claim Month') }}</label><input type="month" name="claim_month" class="form-control" required></div>
+                        <div class="mb-2"><label class="form-label">{{ __('Claim Month') }}</label><input type="month" name="claim_month" class="form-control" value="{{ old('claim_month', date('Y-m')) }}" required></div>
                         <div class="mb-2"><label class="form-label">{{ __('Amount') }}</label><input type="number" step="0.01" name="amount" class="form-control" required></div>
                         <div class="mb-2"><label class="form-label">{{ __('Remarks') }}</label><input type="text" name="remarks" class="form-control"></div>
                         <div class="mb-3">

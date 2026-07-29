@@ -2043,8 +2043,8 @@ class PayrollModuleController extends Controller
 
         $payload = [
             'employee_id' => (int) $data['employee_id'],
-            // OLD: 'component_id' => (int) $data['component_id'],
-            'component_id' => null,
+            // Prefer null when column is nullable; fall back to 0 for older schemas.
+            'component_id' => 0,
             'claim_month' => $data['claim_month'],
             'amount' => (float) $data['amount'],
             'status' => 'pending',
@@ -2054,6 +2054,20 @@ class PayrollModuleController extends Controller
 
         if (\Illuminate\Support\Facades\Schema::hasColumn('reimbursement_claims', 'component_name')) {
             $payload['component_name'] = trim($data['component_name']);
+            try {
+                $nullable = \Illuminate\Support\Facades\DB::selectOne(
+                    "SELECT IS_NULLABLE AS is_nullable
+                     FROM INFORMATION_SCHEMA.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE()
+                       AND TABLE_NAME = 'reimbursement_claims'
+                       AND COLUMN_NAME = 'component_id'"
+                );
+                if ($nullable && strtoupper((string) ($nullable->is_nullable ?? '')) === 'YES') {
+                    $payload['component_id'] = null;
+                }
+            } catch (\Throwable $e) {
+                $payload['component_id'] = 0;
+            }
         } else {
             // Fallback when column not migrated yet: keep text in remarks
             $label = trim($data['component_name']);
@@ -2066,7 +2080,15 @@ class PayrollModuleController extends Controller
             $payload['attachment'] = $attachmentPath;
         }
 
-        ReimbursementClaim::create($payload);
+        try {
+            ReimbursementClaim::create($payload);
+        } catch (\Throwable $e) {
+            \Log::error('Reimbursement claim create failed: ' . $e->getMessage(), [
+                'payload' => $payload,
+            ]);
+
+            return back()->withInput()->with('error', __('Failed to save reimbursement claim. Please try again or contact admin.'));
+        }
 
         return back()->with('success', __('Reimbursement claim submitted.'));
     }

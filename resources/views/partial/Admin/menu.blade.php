@@ -230,6 +230,9 @@
                         <li class="dash-item {{ request()->routeIs('payroll.my-payslips') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('payroll.my-payslips') }}">{{ __('My Payslips') }}</a>
                         </li>
+                        <li class="dash-item {{ request()->routeIs('payroll.my-reimbursements*') ? 'active' : '' }}">
+                            <a class="dash-link" href="{{ route('payroll.my-reimbursements') }}">{{ __('My Reimbursements') }}</a>
+                        </li>
                         <li class="dash-item {{ request()->routeIs('it.declaration.index') || request()->routeIs('it.declaration.create') || request()->routeIs('it.declaration.edit') ? 'active' : '-' }}">
                             <a class="dash-link" href="{{ route('it.declaration.index') }}">{{ __('IT Declaration') }}</a>
                         </li>

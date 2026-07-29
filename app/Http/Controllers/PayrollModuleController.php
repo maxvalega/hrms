@@ -1706,12 +1706,54 @@ class PayrollModuleController extends Controller
 
     public function reimbursements()
     {
+        if (\Auth::user()->type === 'employee') {
+            return redirect()->route('payroll.my-reimbursements');
+        }
+
         $creatorId = \Auth::user()->creatorId();
         $employees = Employee::where('created_by', $creatorId)->orderBy('name')->get();
         $components = SalaryComponent::where('created_by', $creatorId)->where('category', 'reimbursement')->where('status', 1)->get();
-        $claims = ReimbursementClaim::where('created_by', $creatorId)->orderByDesc('id')->limit(30)->get();
+        $claims = ReimbursementClaim::where('created_by', $creatorId)->orderByDesc('id')->limit(50)->get();
+        $employeeNames = $employees->pluck('name', 'id');
 
-        return view('payroll.reimbursements', compact('employees', 'components', 'claims'));
+        return view('payroll.reimbursements', compact('employees', 'components', 'claims', 'employeeNames'));
+    }
+
+    /**
+     * Employee self-service: apply + view own reimbursement claims.
+     */
+    public function myReimbursements()
+    {
+        $user = \Auth::user();
+        $employee = Employee::where('user_id', $user->id)->first();
+        if (!$employee) {
+            return redirect()->route('dashboard')->with('error', __('Employee record not found.'));
+        }
+
+        $claims = ReimbursementClaim::where('employee_id', $employee->id)
+            ->where('created_by', $user->creatorId())
+            ->orderByDesc('id')
+            ->limit(50)
+            ->get();
+
+        return view('payroll.my_reimbursements', compact('employee', 'claims'));
+    }
+
+    public function storeMyReimbursement(Request $request)
+    {
+        $user = \Auth::user();
+        if ($user->type !== 'employee') {
+            return redirect()->route('payroll.reimbursements');
+        }
+
+        $employee = Employee::where('user_id', $user->id)->first();
+        if (!$employee) {
+            return back()->with('error', __('Employee record not found.'));
+        }
+
+        $request->merge(['employee_id' => $employee->id]);
+
+        return $this->storeReimbursement($request);
     }
 
     public function supplementary()
@@ -1772,23 +1814,43 @@ class PayrollModuleController extends Controller
 
     public function storeReimbursement(Request $request)
     {
-        $creatorId = \Auth::user()->creatorId();
+        $user = \Auth::user();
+        $creatorId = $user->creatorId();
+
+        // Employees may only create claims for themselves.
+        if ($user->type === 'employee') {
+            $employee = Employee::where('user_id', $user->id)->first();
+            if (!$employee) {
+                return back()->with('error', __('Employee record not found.'));
+            }
+            $request->merge(['employee_id' => $employee->id]);
+        }
+
         $data = $request->validate([
             'employee_id' => 'required|integer',
             // OLD: 'component_id' => 'required|integer',
             'component_name' => 'required|string|max:120',
             'claim_month' => 'required|string|size:7',
-            'amount' => 'required|numeric|min:0',
+            'amount' => 'required|numeric|min:0.01',
             'remarks' => 'nullable|string|max:255',
             // NEW: receipt attachment (JPEG / PDF). Keep optional so pending claims without files still work.
             'attachment' => 'nullable|file|mimes:jpeg,jpg,pdf|max:5120',
         ]);
 
+        $employee = Employee::where('created_by', $creatorId)->find((int) $data['employee_id']);
+        if (!$employee) {
+            return back()->with('error', __('Invalid employee selection.'));
+        }
+
+        if ($user->type === 'employee' && (int) $employee->id !== (int) Employee::where('user_id', $user->id)->value('id')) {
+            return back()->with('error', __('Permission denied.'));
+        }
+
         $attachmentPath = null;
         if ($request->hasFile('attachment')) {
             try {
                 $file = $request->file('attachment');
-                $fileName = time() . '_' . $file->getClientOriginalName();
+                $fileName = time() . '_' . preg_replace('/[^A-Za-z0-9._-]/', '_', $file->getClientOriginalName());
                 $attachmentPath = $file->storeAs('payroll/reimbursements', $fileName, 'public');
             } catch (\Exception $e) {
                 \Log::error('Failed to upload reimbursement receipt: ' . $e->getMessage());
@@ -2113,6 +2175,10 @@ class PayrollModuleController extends Controller
 
     public function updateReimbursementStatus(Request $request, int $id)
     {
+        if (\Auth::user()->type === 'employee') {
+            return back()->with('error', __('Permission denied.'));
+        }
+
         $creatorId = \Auth::user()->creatorId();
         $data = $request->validate([
             'status' => 'required|in:approved,rejected',

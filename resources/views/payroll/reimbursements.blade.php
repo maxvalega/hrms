@@ -60,7 +60,7 @@
                         <table class="table">
                             <thead>
                                 <tr>
-                                    <th>{{ __('Employee ID') }}</th>
+                                    <th>{{ __('Employee') }}</th>
                                     <th>{{ __('Component') }}</th>
                                     <th>{{ __('Month') }}</th>
                                     <th>{{ __('Amount') }}</th>
@@ -72,7 +72,7 @@
                             <tbody>
                                 @forelse($claims as $claim)
                                     <tr>
-                                        <td>{{ $claim->employee_id }}</td>
+                                        <td>{{ ($employeeNames[$claim->employee_id] ?? null) ?: ('#' . $claim->employee_id) }}</td>
                                         <td>{{ $claim->component_name ?: ('#' . $claim->component_id) }}</td>
                                         <td>{{ $claim->claim_month }}</td>
                                         <td>{{ $claim->amount }}</td>

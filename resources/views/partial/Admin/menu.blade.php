@@ -863,13 +863,11 @@
 
 
             <!-- document-->
-            @if (Gate::check('Manage Document'))
-                <li class="dash-item">
-                    <a href="{{ route('document-upload.index') }}" class="dash-link"><span
-                            class="dash-micon"><i class="ti ti-file"></i></span><span
-                            class="dash-mtext">{{ __('Document') }}</span></a>
-                </li>
-            @endcan
+            <li class="dash-item {{ Request::segment(1) == 'document-upload' ? 'active' : '' }}">
+                <a href="{{ route('document-upload.index') }}" class="dash-link"><span
+                        class="dash-micon"><i class="ti ti-file"></i></span><span
+                        class="dash-mtext">{{ __('Document') }}</span></a>
+            </li>
 
             <!--company policy-->
 

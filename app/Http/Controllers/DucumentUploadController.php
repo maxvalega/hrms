@@ -9,46 +9,36 @@ use Spatie\Permission\Models\Role;
 
 class DucumentUploadController extends Controller
 {
-
     public function index()
     {
-        if (\Auth::user()->can('Manage Document')) {
-            if (\Auth::user()->type == 'company') {
-                $documents = DucumentUpload::where('created_by', \Auth::user()->creatorId())->get();
-            } else {
-                $userRole  = \Auth::user()->roles->first();
-                $documents = DucumentUpload::whereIn(
-                    'role',
-                    [
-                        $userRole->id,
-                        0,
-                    ]
-                )->where('created_by', \Auth::user()->creatorId())->get();
-            }
-
-            return view('documentUpload.index', compact('documents'));
+        if (\Auth::user()->type == 'company' || \Auth::user()->type == 'hr' || \Auth::user()->type == 'super admin') {
+            $documents = DucumentUpload::where('created_by', \Auth::user()->creatorId())->get();
         } else {
-            return redirect()->back()->with('error', __('Permission denied.'));
+            $userRole  = \Auth::user()->roles->first();
+            $roleIds = [0];
+            if ($userRole) {
+                $roleIds[] = $userRole->id;
+            }
+            $documents = DucumentUpload::whereIn('role', $roleIds)
+                ->where('created_by', \Auth::user()->creatorId())
+                ->get();
         }
+
+        return view('documentUpload.index', compact('documents'));
     }
 
 
     public function create()
     {
-        if (\Auth::user()->can('Create Document')) {
-            $roles = Role::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
-            $roles->prepend('All', '0');
+        $roles = Role::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+        $roles->prepend('All', '0');
 
-            return view('documentUpload.create', compact('roles'));
-        } else {
-            return redirect()->back()->with('error', __('Permission denied.'));
-        }
+        return view('documentUpload.create', compact('roles'));
     }
 
 
     public function store(Request $request)
     {
-        if (\Auth::user()->can('Create Document')) {
             $validator = \Validator::make(
                 $request->all(),
                 [
@@ -95,9 +85,6 @@ class DucumentUploadController extends Controller
 
             // return redirect()->route('document-upload.index')->with('success', __('Document successfully uploaded.'));
             return redirect()->route('document-upload.index')->with('success', __('Document successfully uploaded.') . ((isset($result) && $result != 1) ? '<br> <span class="text-danger">' . $result . '</span>' : ''));
-        } else {
-            return redirect()->back()->with('error', __('Permission denied.'));
-        }
     }
 
 

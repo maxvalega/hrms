@@ -6,6 +6,7 @@ use App\Exports\accountstatementExport;
 use App\Exports\LeaveExport;
 use App\Exports\LeaveReportExport;
 use App\Exports\PayrollExport;
+use App\Exports\ReimbursementExport;
 use App\Exports\TimesheetExport;
 use App\Exports\TimesheetReportExport;
 use App\Models\AccountList;
@@ -18,6 +19,7 @@ use App\Models\Expense;
 use App\Models\Leave;
 use App\Models\LeaveType;
 use App\Models\PaySlip;
+use App\Models\ReimbursementClaim;
 use App\Models\TimeSheet;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -763,6 +765,92 @@ class ReportController extends Controller
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
+    }
+
+    /**
+     * HR reimbursement payout report — approved claims only.
+     */
+    public function reimbursement(Request $request)
+    {
+        if (!\Auth::user()->can('Manage Report')) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        $branch = Branch::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+        $branch->prepend('All', '');
+
+        $department = Department::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+        $department->prepend('All', '');
+
+        $filterYear['branch']     = __('All');
+        $filterYear['department'] = __('All');
+        $filterYear['type']       = __('Monthly');
+
+        $claims = ReimbursementClaim::query()
+            ->select('reimbursement_claims.*', 'employees.name', 'employees.employee_id as emp_code', 'employees.account_holder_name', 'employees.account_number', 'employees.bank_name', 'employees.bank_identifier_code')
+            ->leftJoin('employees', 'reimbursement_claims.employee_id', '=', 'employees.id')
+            ->where('reimbursement_claims.created_by', \Auth::user()->creatorId())
+            ->where('reimbursement_claims.status', 'approved');
+
+        if ($request->type == 'monthly' && !empty($request->month)) {
+            $claims->where('reimbursement_claims.claim_month', $request->month);
+            $filterYear['dateYearRange'] = date('M-Y', strtotime($request->month));
+            $filterYear['type']          = __('Monthly');
+        } elseif (!isset($request->type)) {
+            $month = date('Y-m');
+            $claims->where('reimbursement_claims.claim_month', $month);
+            $filterYear['dateYearRange'] = date('M-Y', strtotime($month));
+            $filterYear['type']          = __('Monthly');
+        }
+
+        if ($request->type == 'yearly' && !empty($request->year)) {
+            $startMonth = $request->year . '-01';
+            $endMonth   = $request->year . '-12';
+            $claims->where('reimbursement_claims.claim_month', '>=', $startMonth)
+                ->where('reimbursement_claims.claim_month', '<=', $endMonth);
+            $filterYear['dateYearRange'] = $request->year;
+            $filterYear['type']          = __('Yearly');
+        }
+
+        if (!empty($request->branch)) {
+            $claims->where('employees.branch_id', $request->branch);
+            $filterYear['branch'] = !empty(Branch::find($request->branch)) ? Branch::find($request->branch)->name : '';
+        }
+
+        $departmentId = $request->department_id ?? $request->department;
+        if (!empty($departmentId)) {
+            $claims->where('employees.department_id', $departmentId);
+            $filterYear['department'] = !empty(Department::find($departmentId)) ? Department::find($departmentId)->name : '';
+        }
+
+        $claims = $claims->orderBy('reimbursement_claims.claim_month')->orderBy('employees.name')->get();
+
+        $filterData['totalAmount'] = $claims->sum('amount');
+        $filterData['totalClaims'] = $claims->count();
+
+        $starting_year = date('Y', strtotime('-5 year'));
+        $ending_year   = date('Y', strtotime('+5 year'));
+
+        $filterYear['starting_year'] = $starting_year;
+        $filterYear['ending_year']   = $ending_year;
+
+        return view('report.reimbursement', compact('claims', 'filterData', 'branch', 'department', 'filterYear'));
+    }
+
+    public function ReimbursementReportExport($month, $branch, $department)
+    {
+        if (!\Auth::user()->can('Manage Report')) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        $data = [
+            'month' => $month,
+            'branch' => $branch,
+            'department' => $department,
+        ];
+        $name = 'Reimbursement_' . date('Y-m-d_His');
+
+        return \Excel::download(new ReimbursementExport($data), $name . '.xlsx');
     }
 
     public function monthlyAttendance(Request $request)

@@ -59,6 +59,9 @@
                         <li class="dash-item {{ request()->routeIs('report.payroll') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('report.payroll') }}">{{ __('Payroll Report') }}</a>
                         </li>
+                        <li class="dash-item {{ request()->routeIs('report.reimbursement') ? 'active' : '' }}">
+                            <a class="dash-link" href="{{ route('report.reimbursement') }}">{{ __('Reimbursement Report') }}</a>
+                        </li>
                         <li class="dash-item {{ request()->routeIs('report.income-expense') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('report.income-expense') }}">{{ __('Income vs Expense') }}</a>
                         </li>

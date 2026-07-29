@@ -1531,6 +1531,12 @@ Route::group(['middleware' => ['verified']], function () {
             'XSS',
         ]
     );
+    Route::get('report/reimbursement', [ReportController::class, 'reimbursement'])->name('report.reimbursement')->middleware(
+        [
+            'auth',
+            'XSS',
+        ]
+    );
     Route::get('report/monthly/attendance', [ReportController::class, 'monthlyAttendance'])->name('report.monthly.attendance')->middleware(
         [
             'auth',
@@ -1912,6 +1918,9 @@ Route::group(['middleware' => ['verified']], function () {
 
     //Payroll Export
     Route::get('export/payroll/{month}/{branch}/{department}', [ReportController::class, 'PayrollReportExport'])->name('payroll.report.export');
+
+    // Reimbursement Report Export (approved only)
+    Route::get('export/reimbursement/{month}/{branch}/{department}', [ReportController::class, 'ReimbursementReportExport'])->name('reimbursement.report.export');
 
     // payslip export
     Route::post('export/payslip', [PaySlipController::class, 'PayslipExport'])->name('payslip.export');

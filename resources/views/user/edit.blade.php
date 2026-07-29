@@ -14,6 +14,25 @@
             </div>
         </div>
 
+        @if (\Auth::user()->type == 'super admin' && ($user->type ?? '') === 'company' && \Illuminate\Support\Facades\Schema::hasColumn('users', 'subdomain'))
+            <div class="form-group">
+                {{ Form::label('subdomain', __('Company Subdomain'), ['class' => 'form-label']) }}
+                <div class="input-group">
+                    {!! Form::text('subdomain', $user->subdomain ?? null, [
+                        'class' => 'form-control',
+                        'placeholder' => 'spectal',
+                        'pattern' => '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',
+                        'autocomplete' => 'off',
+                    ]) !!}
+                    <span class="input-group-text">.{{ config('tenancy.base_domain', 'jemini.co.in') }}</span>
+                </div>
+                <small class="text-muted">
+                    {{ __('Portal URL') }}:
+                    <strong>https://{{ ($user->subdomain ?: 'subdomain') }}.{{ config('tenancy.base_domain', 'jemini.co.in') }}</strong>
+                </small>
+            </div>
+        @endif
+
         @if (\Auth::user()->type != 'super admin')
             <div class="form-group ">
                 {{ Form::label('role', __('User Role'), ['class' => 'form-label']) }}<x-required></x-required>

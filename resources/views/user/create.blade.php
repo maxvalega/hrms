@@ -21,6 +21,23 @@
                 ]) !!}
             </div>
         </div>
+        @if (\Auth::user()->type == 'super admin' && \Illuminate\Support\Facades\Schema::hasColumn('users', 'subdomain'))
+            <div class="form-group">
+                {{ Form::label('subdomain', __('Company Subdomain'), ['class' => 'form-label']) }}
+                <div class="input-group">
+                    {!! Form::text('subdomain', null, [
+                        'class' => 'form-control',
+                        'placeholder' => 'spectal',
+                        'pattern' => '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',
+                        'autocomplete' => 'off',
+                    ]) !!}
+                    <span class="input-group-text">.{{ config('tenancy.base_domain', 'jemini.co.in') }}</span>
+                </div>
+                <small class="text-muted">
+                    {{ __('Optional. Once set, company users must login only at this portal (not on the main domain).') }}
+                </small>
+            </div>
+        @endif
         @if (\Auth::user()->type != 'super admin')
             <div class="form-group">
                 {{ Form::label('role', __('User Role'), ['class' => 'form-label']) }}<x-required></x-required>

@@ -144,6 +144,16 @@
                                 </div>
                                 <h4 class="mt-2">{{ $user->name }}</h4>
                                 <small>{{ $user->email }}</small>
+                                @if (!empty($user->subdomain))
+                                    <div class="mt-1">
+                                        <a href="https://{{ $user->subdomain }}.{{ config('tenancy.base_domain', 'jemini.co.in') }}"
+                                            target="_blank" class="text-primary small">
+                                            {{ $user->subdomain }}.{{ config('tenancy.base_domain', 'jemini.co.in') }}
+                                        </a>
+                                    </div>
+                                @else
+                                    <div class="mt-1"><small class="text-warning">{{ __('No subdomain set') }}</small></div>
+                                @endif
                                 @if (\Auth::user()->type == 'super admin')
                                     <div class="mb-0 mt-2">
                                         <div class="d-flex align-items-center gap-3 flex-wrap justify-content-center">

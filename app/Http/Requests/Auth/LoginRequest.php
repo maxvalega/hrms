@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Auth;
 
 use App\Models\User;
+use App\Support\TenantHost;
 use Illuminate\Auth\Events\Lockout;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
@@ -60,37 +61,46 @@ class LoginRequest extends FormRequest
 
     public function authenticate()
     {
+        $this->ensureIsNotRateLimited();
+
         // custom login
-        $users = User::where('email',$this->email)->get();
+        $users = User::where('email', $this->email)->get();
         $id = 0;
-        if(count($users) > 0)
-        {
+        if (count($users) > 0) {
             foreach ($users as $key => $user) {
-                if(password_verify($this->password,$user->password))
-                {
-                    if($user->is_active != 1 || $user->is_disable != 1 && $user->type != "super admin")
-                    {
+                if (password_verify($this->password, $user->password)) {
+                    if ($user->is_active != 1 || $user->is_disable != 1 && $user->type != "super admin") {
                         throw ValidationException::withMessages([
                             'email' => __("Your Account is disable, please contact your Administrate."),
                         ]);
-                    }elseif ($user->is_login_enable != 1) {
+                    } elseif ($user->is_login_enable != 1) {
                         throw ValidationException::withMessages([
                             'email' => __("Your account is disabled from company."),
                         ]);
                     }
+
+                    // Host / subdomain isolation (main vs company portal)
+                    TenantHost::assertUserMayLoginOnHost($user, $this);
+
                     $id = $user->id;
                     break;
                 }
             }
-        }
-        else
-        {
+        } else {
             throw ValidationException::withMessages([
                 'email' => __("this email doesn't match"),
             ]);
         }
 
-        if (! Auth::attempt(['email' =>$this->email, 'password' =>$this->password,'id'=>$id], $this->boolean('remember'))) {
+        if ($id === 0) {
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'email' => __('These credentials do not match our records.'),
+            ]);
+        }
+
+        if (!Auth::attempt(['email' => $this->email, 'password' => $this->password, 'id' => $id], $this->boolean('remember'))) {
             RateLimiter::hit($this->throttleKey());
 
             throw ValidationException::withMessages([

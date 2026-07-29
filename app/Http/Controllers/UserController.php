@@ -15,18 +15,66 @@ use App\Models\JoiningLetter;
 use App\Models\ExperienceCertificate;
 use App\Models\NOC;
 use App\Models\Webhook;
+use App\Support\TenantHost;
 use File;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Role;
 use Illuminate\Validation\Rule;
 use Lab404\Impersonate\Impersonate;
 
 class UserController extends Controller
 {
+    /**
+     * Validate + normalize company portal subdomain (super admin only).
+     */
+    protected function validatedCompanySubdomain(Request $request, ?int $ignoreUserId = null): ?string
+    {
+        if (!Schema::hasColumn('users', 'subdomain')) {
+            return null;
+        }
+
+        $raw = $request->input('subdomain');
+        if ($raw === null || trim((string) $raw) === '') {
+            return null;
+        }
+
+        $subdomain = TenantHost::normalizeSubdomain($raw);
+        $reserved = implode(',', config('tenancy.reserved_subdomains', []));
+
+        $rules = [
+            'subdomain' => [
+                'required',
+                'string',
+                'min:2',
+                'max:63',
+                'regex:/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/',
+                Rule::notIn(config('tenancy.reserved_subdomains', [])),
+                Rule::unique('users', 'subdomain')->ignore($ignoreUserId),
+            ],
+        ];
+
+        $validator = \Validator::make(
+            ['subdomain' => $subdomain],
+            $rules,
+            [
+                'subdomain.regex' => __('Subdomain may only contain lowercase letters, numbers, and hyphens.'),
+                'subdomain.unique' => __('This subdomain is already assigned to another company.'),
+                'subdomain.not_in' => __('This subdomain is reserved (:list).', ['list' => $reserved]),
+            ]
+        );
+
+        if ($validator->fails()) {
+            throw new \Illuminate\Validation\ValidationException($validator);
+        }
+
+        return $subdomain;
+    }
+
     public function index()
     {
         if (\Auth::user()->can('Manage User')) {
@@ -99,20 +147,29 @@ class UserController extends Controller
             if (\Auth::user()->type == 'super admin') {
                 $date = date("Y-m-d H:i:s");
                 $userpassword = $request->input('password');
-                $user = User::create(
-                    [
-                        'name' => $request['name'],
-                        'email' => $request['email'],
-                        'is_login_enable' => !empty($request->password_switch) && $request->password_switch == 'on' ? 1 : 0,
-                        'password' => !empty($userpassword) ? Hash::make($userpassword) : null,
-                        'type' => 'company',
-                        'plan' => $plan = Plan::where('price', '<=', 0)->first()->id,
-                        'lang' => !empty($default_language) ? $default_language->value : 'en',
-                        'referral_code' => $code,
-                        'created_by' => \Auth::user()->id,
-                        'email_verified_at' => $date,
-                    ]
-                );
+                try {
+                    $subdomain = $this->validatedCompanySubdomain($request);
+                } catch (\Illuminate\Validation\ValidationException $e) {
+                    return redirect()->back()->withInput()->with('error', $e->validator->errors()->first());
+                }
+
+                $payload = [
+                    'name' => $request['name'],
+                    'email' => $request['email'],
+                    'is_login_enable' => !empty($request->password_switch) && $request->password_switch == 'on' ? 1 : 0,
+                    'password' => !empty($userpassword) ? Hash::make($userpassword) : null,
+                    'type' => 'company',
+                    'plan' => $plan = Plan::where('price', '<=', 0)->first()->id,
+                    'lang' => !empty($default_language) ? $default_language->value : 'en',
+                    'referral_code' => $code,
+                    'created_by' => \Auth::user()->id,
+                    'email_verified_at' => $date,
+                ];
+                if (Schema::hasColumn('users', 'subdomain')) {
+                    $payload['subdomain'] = $subdomain;
+                }
+
+                $user = User::create($payload);
 
                 $user->assignRole('Company');
                 // $user->userDefaultData();
@@ -210,14 +267,25 @@ class UserController extends Controller
 
         if (\Auth::user()->type == 'super admin') {
             $user  = User::findOrFail($id);
-            $input = $request->all();
-            $user->fill($input)->save();
+            try {
+                $subdomain = $this->validatedCompanySubdomain($request, (int) $id);
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                return redirect()->back()->withInput()->with('error', $e->validator->errors()->first());
+            }
+
+            $user->name = $request->name;
+            $user->email = $request->email;
+            if (Schema::hasColumn('users', 'subdomain') && $user->type === 'company') {
+                $user->subdomain = $subdomain;
+            }
+            $user->save();
         } else {
             $user = User::findOrFail($id);
 
             $role          = Role::findById($request->role);
             $input         = $request->all();
             $input['type'] = $role->name;
+            unset($input['subdomain']);
             $user->fill($input)->save();
 
             $user->assignRole($role);

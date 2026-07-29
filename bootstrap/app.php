@@ -92,6 +92,7 @@ $app = Application::configure(basePath: $basePath)
             'CheckPlan' => \App\Http\Middleware\CheckPlan::class,
             'Pusher' => \App\Http\Middleware\getPusherSettings::class,
             'mobile.app.key' => \App\Http\Middleware\EnsureMobileAppKeyIsValid::class,
+            'tenant.host' => \App\Http\Middleware\EnsureTenantHost::class,
         ]);
 
         // middlewareGroups / Group Middleware
@@ -105,6 +106,7 @@ $app = Application::configure(basePath: $basePath)
             // \App\Http\Middleware\VerifyCsrfToken::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \App\Http\Middleware\FilterRequest::class,
+            \App\Http\Middleware\EnsureTenantHost::class,
         ]);
 
         // Append middleware to the 'api' group

@@ -5,7 +5,8 @@
 {{ Form::model($meeting, ['route' => ['meeting.update', $meeting->id], 'method' => 'PUT', 'class' => 'needs-validation', 'novalidate']) }}
 <div class="modal-body">
 
-    @if ($plan->enable_chatgpt == 'on')
+    {{-- Hidden for spectal.jemini.co.in only (AI generate kept for other portals) --}}
+    @if ($plan->enable_chatgpt == 'on' && \App\Support\TenantHost::subdomainFromHost() !== 'spectal')
     <div class="text-end">
         <a href="#" class="btn btn-sm btn-primary" data-size="medium" data-ajax-popup-over="true" data-url="{{ route('generate', ['meeting']) }}"
             data-bs-toggle="tooltip" data-bs-placement="top" title="{{ __('Generate') }}"

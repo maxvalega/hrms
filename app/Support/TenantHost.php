@@ -179,7 +179,7 @@ class TenantHost
                 self::throwPortalNotice([
                     'variant' => 'company',
                     'title' => __('Wrong portal'),
-                    'message' => __('This account belongs to :company. For security, company users must sign in on their own portal — not on jemini.co.in.', [
+                    'message' => __('This account belongs to :company. For security, company users must sign in on their own portal not on jemini.co.in.', [
                         'company' => $companyName,
                     ]),
                     'url' => $portal,

@@ -8,6 +8,7 @@ use App\Models\LeaveType;
 use App\Models\Holiday;
 use App\Mail\LeaveActionSend;
 use App\Mail\LeaveSubstituteRequest;
+use App\Mail\LeaveManagerRequest;
 use App\Models\Utility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -385,9 +386,8 @@ class LeaveController extends Controller
                     }
                 }
 
-                if ($approvalRequirement !== 'subordinate') {
-                    $this->notifyManagerOfLeaveRequest($leave);
-                }
+                // Always notify reporting manager by email + in-app when leave is applied
+                $this->notifyManagerOfLeaveRequest($leave);
 
                 \App\Services\InAppNotifier::notifyCompanyHr(Auth::user()->creatorId(), [
                     'module' => 'leave',
@@ -885,7 +885,7 @@ class LeaveController extends Controller
 
         $leave->save();
         $this->createSubstituteLeaveBlock($leave);
-        $this->notifyManagerOfLeaveRequest($leave);
+        // Manager was already emailed/notified when leave was applied
 
         return [
             'title' => __('Accepted'),
@@ -904,13 +904,25 @@ class LeaveController extends Controller
             $leave->load('leaveType');
         }
 
-        $managerEmp = null;
-        if (!empty($employee->reporting_manager_id)) {
-            $managerEmp = Employee::find($employee->reporting_manager_id);
+        if (empty($employee->reporting_manager_id)) {
+            \Log::warning('Leave applied but no reporting manager set for employee.', [
+                'leave_id' => $leave->id,
+                'employee_id' => $employee->id,
+            ]);
+            return;
         }
 
-        // In-app: reporting manager
-        if ($managerEmp && $managerEmp->user_id) {
+        $managerEmp = Employee::find($employee->reporting_manager_id);
+        if (empty($managerEmp)) {
+            \Log::warning('Leave applied but reporting manager employee record not found.', [
+                'leave_id' => $leave->id,
+                'reporting_manager_id' => $employee->reporting_manager_id,
+            ]);
+            return;
+        }
+
+        // In-app notification
+        if (!empty($managerEmp->user_id)) {
             \App\Services\InAppNotifier::notifyUser($managerEmp->user_id, [
                 'module' => 'leave',
                 'action' => 'created',
@@ -920,43 +932,46 @@ class LeaveController extends Controller
             ]);
         }
 
-        // Email: reporting manager (not company account)
+        $managerUser = !empty($managerEmp->user_id) ? User::find($managerEmp->user_id) : null;
+        $managerEmail = $managerUser->email ?? $managerEmp->email ?? null;
+
+        if (empty($managerEmail)) {
+            \Log::warning('Leave applied but reporting manager has no email.', [
+                'leave_id' => $leave->id,
+                'manager_employee_id' => $managerEmp->id,
+                'manager_user_id' => $managerEmp->user_id,
+            ]);
+            return;
+        }
+
+        // Direct mail (same approach as substitute request — more reliable than template settings)
+        try {
+            Mail::to($managerEmail)->send(new LeaveManagerRequest($leave, $employee, $managerEmp));
+            \Log::info('Leave request email sent to reporting manager.', [
+                'leave_id' => $leave->id,
+                'manager_email' => $managerEmail,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Failed to send leave request email to reporting manager: ' . $e->getMessage(), [
+                'leave_id' => $leave->id,
+                'manager_email' => $managerEmail,
+            ]);
+        }
+
+        // Also try company email template if enabled (optional secondary)
         try {
             $settings = Utility::settings();
-            if (($settings['new_leave_request'] ?? 0) != 1) {
-                return;
+            if (($settings['new_leave_request'] ?? 0) == 1 && !empty($managerUser)) {
+                $uArr = [
+                    'employee_name' => $employee->name,
+                    'leave_type' => $leave->leaveType->title ?? 'Leave',
+                    'leave_start_end_time' => ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
+                    'leave_reason' => $leave->leave_reason ?? '',
+                ];
+                Utility::sendEmailTemplate('new_leave_request', [$managerUser->id => $managerEmail], $uArr);
             }
-
-            if (empty($managerEmp)) {
-                \Log::warning('Leave applied but no reporting manager set for employee.', [
-                    'leave_id' => $leave->id,
-                    'employee_id' => $employee->id,
-                ]);
-                return;
-            }
-
-            $managerUser = !empty($managerEmp->user_id) ? User::find($managerEmp->user_id) : null;
-            $managerEmail = $managerUser->email ?? $managerEmp->email ?? null;
-            $managerUserId = $managerUser->id ?? ($managerEmp->user_id ?? 0);
-
-            if (empty($managerEmail)) {
-                \Log::warning('Leave applied but reporting manager has no email.', [
-                    'leave_id' => $leave->id,
-                    'manager_employee_id' => $managerEmp->id,
-                ]);
-                return;
-            }
-
-            $uArr = [
-                'employee_name' => $employee->name,
-                'leave_type' => $leave->leaveType->title ?? 'Leave',
-                'leave_start_end_time' => ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
-                'leave_reason' => $leave->leave_reason ?? '',
-            ];
-
-            Utility::sendEmailTemplate('new_leave_request', [$managerUserId => $managerEmail], $uArr);
         } catch (\Exception $e) {
-            \Log::error('Failed to send leave request to reporting manager: ' . $e->getMessage());
+            \Log::warning('Optional leave template email failed: ' . $e->getMessage());
         }
     }
 

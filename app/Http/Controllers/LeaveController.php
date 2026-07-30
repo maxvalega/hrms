@@ -900,38 +900,63 @@ class LeaveController extends Controller
             return;
         }
 
-        // In-app: reporting manager
+        if (empty($leave->relationLoaded('leaveType'))) {
+            $leave->load('leaveType');
+        }
+
+        $managerEmp = null;
         if (!empty($employee->reporting_manager_id)) {
             $managerEmp = Employee::find($employee->reporting_manager_id);
-            if ($managerEmp && $managerEmp->user_id) {
-                \App\Services\InAppNotifier::notifyUser($managerEmp->user_id, [
-                    'module' => 'leave',
-                    'action' => 'created',
-                    'title' => __('New Leave Request'),
-                    'message' => ($employee->name ?? '') . ' — ' . ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
-                    'link' => route('leave.index'),
-                ]);
-            }
         }
 
-        $user = User::where('id', $employee->created_by)->first();
-        if (empty($user)) {
-            return;
+        // In-app: reporting manager
+        if ($managerEmp && $managerEmp->user_id) {
+            \App\Services\InAppNotifier::notifyUser($managerEmp->user_id, [
+                'module' => 'leave',
+                'action' => 'created',
+                'title' => __('New Leave Request'),
+                'message' => ($employee->name ?? '') . ' — ' . ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
+                'link' => route('leave.index'),
+            ]);
         }
 
+        // Email: reporting manager (not company account)
         try {
             $settings = Utility::settings();
-            if ($settings['new_leave_request'] == 1) {
-                $uArr = [
-                    'employee_name' => $employee->name,
-                    'leave_type' => $leave->leaveType->title ?? 'Leave',
-                    'leave_start_end_time' => ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
-                    'leave_reason' => $leave->leave_reason ?? '',
-                ];
-                Utility::sendEmailTemplate('new_leave_request', [$user->id => $user->email], $uArr);
+            if (($settings['new_leave_request'] ?? 0) != 1) {
+                return;
             }
+
+            if (empty($managerEmp)) {
+                \Log::warning('Leave applied but no reporting manager set for employee.', [
+                    'leave_id' => $leave->id,
+                    'employee_id' => $employee->id,
+                ]);
+                return;
+            }
+
+            $managerUser = !empty($managerEmp->user_id) ? User::find($managerEmp->user_id) : null;
+            $managerEmail = $managerUser->email ?? $managerEmp->email ?? null;
+            $managerUserId = $managerUser->id ?? ($managerEmp->user_id ?? 0);
+
+            if (empty($managerEmail)) {
+                \Log::warning('Leave applied but reporting manager has no email.', [
+                    'leave_id' => $leave->id,
+                    'manager_employee_id' => $managerEmp->id,
+                ]);
+                return;
+            }
+
+            $uArr = [
+                'employee_name' => $employee->name,
+                'leave_type' => $leave->leaveType->title ?? 'Leave',
+                'leave_start_end_time' => ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
+                'leave_reason' => $leave->leave_reason ?? '',
+            ];
+
+            Utility::sendEmailTemplate('new_leave_request', [$managerUserId => $managerEmail], $uArr);
         } catch (\Exception $e) {
-            \Log::error('Failed to send leave request to manager: ' . $e->getMessage());
+            \Log::error('Failed to send leave request to reporting manager: ' . $e->getMessage());
         }
     }
 

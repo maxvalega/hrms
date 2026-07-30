@@ -109,6 +109,26 @@ class EventController extends Controller
             $event->created_by    = \Auth::user()->creatorId();
             $event->save();
 
+            $empIds = is_array($request->employee_id) ? $request->employee_id : [];
+            if (in_array('0', $empIds) || in_array(0, $empIds)) {
+                \App\Services\InAppNotifier::notifyCompanyEmployees(\Auth::user()->creatorId(), [
+                    'module' => 'event',
+                    'action' => 'created',
+                    'title' => __('New Event'),
+                    'message' => $request->title . ' (' . $request->start_date . ')',
+                    'link' => route('event.index'),
+                ]);
+            } else {
+                $userIds = Employee::whereIn('id', $empIds)->whereNotNull('user_id')->pluck('user_id')->all();
+                \App\Services\InAppNotifier::notifyUsers($userIds, [
+                    'module' => 'event',
+                    'action' => 'created',
+                    'title' => __('New Event'),
+                    'message' => $request->title . ' (' . $request->start_date . ')',
+                    'link' => route('event.index'),
+                ]);
+            }
+
             //  slack
             $setting = Utility::settings(\Auth::user()->creatorId());
             $branch = Branch::find($request->branch_id);

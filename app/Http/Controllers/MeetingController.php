@@ -91,6 +91,20 @@ class MeetingController extends Controller
             $meeting->created_by    = \Auth::user()->creatorId();
             $meeting->save();
 
+            $meetEmpIds = is_array($request->employee_id) ? $request->employee_id : [];
+            if (in_array('0', $meetEmpIds) || in_array(0, $meetEmpIds)) {
+                $deptIds = is_array($request->department_id) ? $request->department_id : [$request->department_id];
+                $userIds = Employee::whereIn('department_id', $deptIds)->whereNotNull('user_id')->pluck('user_id')->all();
+            } else {
+                $userIds = Employee::whereIn('id', $meetEmpIds)->whereNotNull('user_id')->pluck('user_id')->all();
+            }
+            \App\Services\InAppNotifier::notifyUsers($userIds, [
+                'module' => 'meeting',
+                'action' => 'created',
+                'title' => __('New Meeting'),
+                'message' => $request->title . ' — ' . $request->date . ' ' . $request->time,
+                'link' => route('meeting.index'),
+            ]);
 
             // slack
             $setting = Utility::settings(\Auth::user()->creatorId());

@@ -18,40 +18,13 @@
         ->count();
     $unseenCounter = $unseenCounter + $groupUnseenCounter;
     $unseen_count = DB::select('SELECT from_id, COUNT(*) AS totalmasseges FROM ch_messages WHERE seen = 0 GROUP BY from_id');
-    $pendingSubstituteLeaves = collect();
-    $pendingSubstituteCount = 0;
-    $pendingAssignedDocuments = collect();
-    $pendingDocumentCount = 0;
-    $employeeNotificationCount = 0;
-    if (Auth::user()->type === 'employee') {
-        $employee = \App\Models\Employee::where('user_id', Auth::id())->first();
-        if (!empty($employee)) {
-            $pendingSubstituteLeaves = \App\Models\Leave::with(['employees', 'leaveType'])
-                ->where('substitute_employee_id', $employee->id)
-                ->where('substitute_status', 'Pending')
-                ->orderBy('created_at', 'desc')
-                ->get();
-            $pendingSubstituteCount = $pendingSubstituteLeaves->count();
-        }
 
-        if (\Schema::hasTable('ducument_uploads') && \Schema::hasColumn('ducument_uploads', 'assigned_seen')) {
-            $pendingAssignedDocuments = \App\Models\DucumentUpload::with('uploader')
-                ->where('assigned_user_id', Auth::id())
-                ->where('assigned_seen', false)
-                ->orderByDesc('created_at')
-                ->get();
-            $pendingDocumentCount = $pendingAssignedDocuments->count();
-        } elseif (\Schema::hasTable('ducument_uploads')) {
-            // Fallback if migration not run yet: show recent assignments (7 days)
-            $pendingAssignedDocuments = \App\Models\DucumentUpload::with('uploader')
-                ->where('assigned_user_id', Auth::id())
-                ->where('created_at', '>=', now()->subDays(7))
-                ->orderByDesc('created_at')
-                ->get();
-            $pendingDocumentCount = $pendingAssignedDocuments->count();
-        }
-
-        $employeeNotificationCount = $pendingSubstituteCount + $pendingDocumentCount;
+    // Central in-app notifications (all roles except super admin)
+    $inAppNotifications = collect();
+    $inAppNotificationCount = 0;
+    if (Auth::check() && Auth::user()->type !== 'super admin') {
+        $inAppNotifications = \App\Services\InAppNotifier::unreadForUser((int) Auth::id(), 20);
+        $inAppNotificationCount = \App\Services\InAppNotifier::unreadCount((int) Auth::id());
     }
 
     // Manager's pending leave notifications
@@ -283,52 +256,41 @@
                 @endImpersonating
             @endif
 
-            @if (\Auth::user()->type == 'employee')
+            @if (\Auth::user()->type != 'super admin')
                 <li class="dropdown dash-h-item drp-notification">
-                    <a class="dash-head-link dropdown-toggle arrow-none me-0 notification-toggle {{ $employeeNotificationCount > 0 ? 'beep' : '' }}"
+                    <a class="dash-head-link dropdown-toggle arrow-none me-0 notification-toggle {{ $inAppNotificationCount > 0 ? 'beep' : '' }}"
                         data-bs-toggle="dropdown" href="#" role="button" aria-haspopup="false" aria-expanded="false">
                         <i class="ti ti-bell"></i>
-                        @if ($employeeNotificationCount > 0)
-                            <span class="bg-danger dash-h-badge">{{ $employeeNotificationCount }}</span>
+                        @if ($inAppNotificationCount > 0)
+                            <span class="bg-danger dash-h-badge">{{ $inAppNotificationCount > 99 ? '99+' : $inAppNotificationCount }}</span>
                         @endif
                     </a>
                     <div class="dropdown-menu dash-h-dropdown dropdown-menu-end notification-dropdown">
-                        <div class="noti-header">
+                        <div class="noti-header d-flex justify-content-between align-items-center px-3 pt-2">
                             <h5 class="m-0">{{ __('Notifications') }}</h5>
+                            @if ($inAppNotificationCount > 0)
+                                <form method="POST" action="{{ route('in-app-notifications.read-all') }}" class="m-0">
+                                    @csrf
+                                    <button type="submit" class="btn btn-link btn-sm p-0">{{ __('Mark all read') }}</button>
+                                </form>
+                            @endif
                         </div>
-                        <div class="noti-body" id="notification-list">
-                            @forelse ($pendingSubstituteLeaves as $leave)
+                        <div class="noti-body" id="notification-list" style="max-height:360px;overflow-y:auto;">
+                            @forelse ($inAppNotifications as $noti)
                                 <div class="px-3 py-2 border-bottom">
-                                    <div class="text-muted small">{{ __('Substitute Leave Request') }}</div>
-                                    <div>{{ optional($leave->employees)->name }} - {{ optional($leave->leaveType)->title }}</div>
-                                    <div class="text-muted small">{{ $leave->start_date }} to {{ $leave->end_date }}</div>
+                                    <div class="text-muted small text-uppercase">{{ str_replace('_', ' ', $noti->module) }}</div>
+                                    <div class="fw-semibold">{{ $noti->title }}</div>
+                                    @if (!empty($noti->message))
+                                        <div class="text-muted small">{{ \Illuminate\Support\Str::limit($noti->message, 100) }}</div>
+                                    @endif
+                                    <div class="text-muted small">{{ $noti->created_at ? $noti->created_at->diffForHumans() : '' }}</div>
                                     <div class="mt-1">
-                                        <a href="{{ route('dashboard') }}" class="text-primary">{{ __('Review') }}</a>
+                                        <a href="{{ route('in-app-notifications.read', $noti->id) }}" class="text-primary">{{ __('View') }}</a>
                                     </div>
                                 </div>
                             @empty
-                            @endforelse
-
-                            @foreach ($pendingAssignedDocuments as $assignedDoc)
-                                <div class="px-3 py-2 border-bottom">
-                                    <div class="text-muted small">{{ __('New Document Assigned') }}</div>
-                                    <div class="fw-semibold">{{ $assignedDoc->name }}</div>
-                                    @if (!empty($assignedDoc->description))
-                                        <div class="text-muted small">{{ \Illuminate\Support\Str::limit($assignedDoc->description, 80) }}</div>
-                                    @endif
-                                    <div class="text-muted small">
-                                        {{ __('From') }}: {{ optional($assignedDoc->uploader)->name ?? __('HR') }}
-                                        · {{ $assignedDoc->created_at ? $assignedDoc->created_at->diffForHumans() : '' }}
-                                    </div>
-                                    <div class="mt-1">
-                                        <a href="{{ route('document-upload.index') }}" class="text-primary">{{ __('View Document') }}</a>
-                                    </div>
-                                </div>
-                            @endforeach
-
-                            @if ($employeeNotificationCount < 1)
                                 <div class="px-3 py-2 text-muted">{{ __('No new notifications.') }}</div>
-                            @endif
+                            @endforelse
                         </div>
                     </div>
                 </li>

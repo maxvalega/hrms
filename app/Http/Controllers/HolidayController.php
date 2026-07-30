@@ -64,6 +64,14 @@ class HolidayController extends Controller
         $holiday->created_by = \Auth::user()->creatorId();
         $holiday->save();
 
+        \App\Services\InAppNotifier::notifyCompanyEmployees(\Auth::user()->creatorId(), [
+            'module' => 'holiday',
+            'action' => 'created',
+            'title' => __('New Holiday'),
+            'message' => $request->occasion . ' (' . $request->start_date . ')',
+            'link' => route('holiday.index'),
+        ]);
+
         // notifications
         $setting = Utility::settings(\Auth::user()->creatorId());
         if (isset($setting['Holiday_notification']) && $setting['Holiday_notification'] == 1) {

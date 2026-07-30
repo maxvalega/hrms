@@ -78,6 +78,17 @@ class AwardController extends Controller
             $award->created_by  = \Auth::user()->creatorId();
             $award->save();
 
+            $empAward = Employee::find($request->employee_id);
+            if ($empAward && $empAward->user_id) {
+                \App\Services\InAppNotifier::notifyUser($empAward->user_id, [
+                    'module' => 'award',
+                    'action' => 'created',
+                    'title' => __('New Award'),
+                    'message' => (AwardType::find($request->award_type)->name ?? __('Award')) . ' — ' . $request->date,
+                    'link' => route('award.index'),
+                ]);
+            }
+
             //slack
             $setting = Utility::settings(\Auth::user()->creatorId());
             $awardtype = AwardType::find($request->award_type);

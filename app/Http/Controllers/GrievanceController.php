@@ -125,6 +125,14 @@ class GrievanceController extends Controller
 
             DB::commit();
 
+            \App\Services\InAppNotifier::notifyCompanyHr(Auth::user()->creatorId(), [
+                'module' => 'grievance',
+                'action' => 'created',
+                'title' => __('New Grievance'),
+                'message' => $grievance->title,
+                'link' => route('grievances.show', $grievance->id),
+            ]);
+
             $message = $grievance->is_anonymous 
                 ? 'Grievance submitted successfully! Your anonymous token is: ' . $grievance->anonymous_token . '. Please save this token for future reference.'
                 : 'Grievance submitted successfully!';

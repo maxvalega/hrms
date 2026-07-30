@@ -176,6 +176,23 @@ class ExitManagementController extends Controller
             'manager_id'          => $managerId,
         ]);
 
+        if ($managerId) {
+            \App\Services\InAppNotifier::notifyUser($managerId, [
+                'module' => 'exit',
+                'action' => 'created',
+                'title' => __('Resignation Submitted'),
+                'message' => $user->name . ' — ' . $lwd->toDateString(),
+                'link' => route('exit-management.show', $r->id),
+            ]);
+        }
+        \App\Services\InAppNotifier::notifyCompanyHr($user->creatorId(), [
+            'module' => 'exit',
+            'action' => 'created',
+            'title' => __('Resignation Submitted'),
+            'message' => $user->name . ' — ' . $lwd->toDateString(),
+            'link' => route('exit-management.show', $r->id),
+        ]);
+
         return redirect()->route('exit-management.show', $r->id)
             ->with('success', __('Resignation submitted. Awaiting manager approval.'));
     }

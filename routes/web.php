@@ -233,6 +233,11 @@ Route::group(['middleware' => ['verified']], function () {
     Route::get('/test-notifications', function() {
         return view('test-notifications');
     })->middleware(['auth', 'XSS'])->name('test.notifications');
+
+    Route::get('/in-app-notifications/{id}/read', [\App\Http\Controllers\InAppNotificationController::class, 'read'])
+        ->middleware(['auth', 'XSS'])->name('in-app-notifications.read');
+    Route::post('/in-app-notifications/read-all', [\App\Http\Controllers\InAppNotificationController::class, 'readAll'])
+        ->middleware(['auth', 'XSS'])->name('in-app-notifications.read-all');
     Route::get('/test-grievances', function() {
         return view('grievances.test');
     })->middleware(['auth', 'XSS'])->name('test.grievances');

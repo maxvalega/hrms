@@ -79,6 +79,17 @@ class PromotionController extends Controller
             $promotion->created_by      = \Auth::user()->creatorId();
             $promotion->save();
 
+            $promoEmp = Employee::find($promotion->employee_id);
+            if ($promoEmp && $promoEmp->user_id) {
+                \App\Services\InAppNotifier::notifyUser($promoEmp->user_id, [
+                    'module' => 'promotion',
+                    'action' => 'created',
+                    'title' => __('Promotion'),
+                    'message' => $promotion->promotion_title,
+                    'link' => route('promotion.index'),
+                ]);
+            }
+
             $setings = Utility::settings();
            
             if($setings['employee_promotion'] == 1)

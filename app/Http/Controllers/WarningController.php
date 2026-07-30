@@ -104,6 +104,24 @@ class WarningController extends Controller
             $warning->created_by   = \Auth::user()->creatorId();
             $warning->save();
 
+            $warned = Employee::find($warning->warning_to);
+            if ($warned && $warned->user_id) {
+                \App\Services\InAppNotifier::notifyUser($warned->user_id, [
+                    'module' => 'warning',
+                    'action' => 'created',
+                    'title' => __('New Warning'),
+                    'message' => $warning->subject,
+                    'link' => route('warning.index'),
+                ]);
+            }
+            \App\Services\InAppNotifier::notifyCompanyHr(\Auth::user()->creatorId(), [
+                'module' => 'warning',
+                'action' => 'created',
+                'title' => __('Warning Issued'),
+                'message' => ($warned->name ?? '') . ' — ' . $warning->subject,
+                'link' => route('warning.index'),
+            ]);
+
             $setings = Utility::settings();
             
             if($setings['employee_warning'] == 1)

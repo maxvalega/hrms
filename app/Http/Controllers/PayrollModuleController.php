@@ -2187,6 +2187,26 @@ class PayrollModuleController extends Controller
             return back()->withInput()->with('error', __('Failed to save reimbursement claim. Please try again or contact admin.'));
         }
 
+        if (!empty($employee->reporting_manager_id)) {
+            $mgr = Employee::find($employee->reporting_manager_id);
+            if ($mgr && $mgr->user_id) {
+                \App\Services\InAppNotifier::notifyUser($mgr->user_id, [
+                    'module' => 'reimbursement',
+                    'action' => 'created',
+                    'title' => __('New Reimbursement Claim'),
+                    'message' => ($employee->name ?? '') . ' — ' . ($data['component_name'] ?? ''),
+                    'link' => route('payroll.reimbursement-approvals'),
+                ]);
+            }
+        }
+        \App\Services\InAppNotifier::notifyCompanyHr($creatorId, [
+            'module' => 'reimbursement',
+            'action' => 'created',
+            'title' => __('New Reimbursement Claim'),
+            'message' => ($employee->name ?? '') . ' — ' . ($data['component_name'] ?? ''),
+            'link' => route('payroll.reimbursements'),
+        ]);
+
         return back()->with('success', __('Reimbursement claim submitted.'));
     }
 
@@ -2496,6 +2516,17 @@ class PayrollModuleController extends Controller
             'approved_by' => $user->id,
             'approved_at' => now(),
         ]);
+
+        $claimEmp = Employee::where('id', $claim->employee_id)->first();
+        if ($claimEmp && $claimEmp->user_id) {
+            \App\Services\InAppNotifier::notifyUser($claimEmp->user_id, [
+                'module' => 'reimbursement',
+                'action' => $data['status'],
+                'title' => __('Reimbursement') . ' ' . ucfirst($data['status']),
+                'message' => __('Your reimbursement claim was :status', ['status' => $data['status']]),
+                'link' => route('payroll.my-reimbursements'),
+            ]);
+        }
 
         return back()->with('success', __('Claim status updated.'));
     }

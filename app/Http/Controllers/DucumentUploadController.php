@@ -170,6 +170,31 @@ class DucumentUploadController extends Controller
         }
         $document->save();
 
+        if (!empty($document->assigned_user_id)) {
+            \App\Services\InAppNotifier::notifyUser($document->assigned_user_id, [
+                'module' => 'document',
+                'action' => 'assigned',
+                'title' => __('New Document Assigned'),
+                'message' => $document->name,
+                'link' => route('document-upload.index'),
+            ]);
+            \App\Services\InAppNotifier::notifyCompanyHr(\Auth::user()->creatorId(), [
+                'module' => 'document',
+                'action' => 'assigned',
+                'title' => __('Document Assigned to Employee'),
+                'message' => $document->name,
+                'link' => route('document-upload.index'),
+            ]);
+        } elseif (!$isHrViewer) {
+            \App\Services\InAppNotifier::notifyCompanyHr(\Auth::user()->creatorId(), [
+                'module' => 'document',
+                'action' => 'uploaded',
+                'title' => __('Employee Uploaded a Document'),
+                'message' => $document->name . ' — ' . (\Auth::user()->name ?? ''),
+                'link' => route('document-upload.index'),
+            ]);
+        }
+
         return redirect()->route('document-upload.index')->with(
             'success',
             __('Document successfully uploaded.') . ((isset($result) && $result != 1) ? '<br> <span class="text-danger">' . $result . '</span>' : '')

@@ -374,11 +374,28 @@ class LeaveController extends Controller
                             // Continue without failing - leave is created successfully
                         }
                     }
+                    if (!empty($substitute) && !empty($substitute->user_id)) {
+                        \App\Services\InAppNotifier::notifyUser($substitute->user_id, [
+                            'module' => 'leave',
+                            'action' => 'substitute_request',
+                            'title' => __('Substitute Leave Request'),
+                            'message' => ($employee->name ?? '') . ' — ' . ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
+                            'link' => route('dashboard'),
+                        ]);
+                    }
                 }
 
                 if ($approvalRequirement !== 'subordinate') {
                     $this->notifyManagerOfLeaveRequest($leave);
                 }
+
+                \App\Services\InAppNotifier::notifyCompanyHr(Auth::user()->creatorId(), [
+                    'module' => 'leave',
+                    'action' => 'created',
+                    'title' => __('New Leave Request'),
+                    'message' => ($employee->name ?? '') . ' — ' . ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
+                    'link' => route('leave.index'),
+                ]);
 
                 // Google calendar
                 if ($request->get('synchronize_type')  == 'google_calender') {
@@ -709,6 +726,18 @@ class LeaveController extends Controller
 
         $leave->save();
 
+        // In-app: notify employee of approve/reject
+        $empNotified = Employee::find($leave->employee_id);
+        if ($empNotified && $empNotified->user_id) {
+            \App\Services\InAppNotifier::notifyUser($empNotified->user_id, [
+                'module' => 'leave',
+                'action' => strtolower($leave->status),
+                'title' => __('Leave') . ' ' . __($leave->status),
+                'message' => ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
+                'link' => route('leave.index'),
+            ]);
+        }
+
         // twilio
         $setting = Utility::settings(\Auth::user()->creatorId());
         $emp = Employee::find($leave->employee_id);
@@ -869,6 +898,20 @@ class LeaveController extends Controller
         $employee = Employee::where('id', $leave->employee_id)->first();
         if (empty($employee)) {
             return;
+        }
+
+        // In-app: reporting manager
+        if (!empty($employee->reporting_manager_id)) {
+            $managerEmp = Employee::find($employee->reporting_manager_id);
+            if ($managerEmp && $managerEmp->user_id) {
+                \App\Services\InAppNotifier::notifyUser($managerEmp->user_id, [
+                    'module' => 'leave',
+                    'action' => 'created',
+                    'title' => __('New Leave Request'),
+                    'message' => ($employee->name ?? '') . ' — ' . ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
+                    'link' => route('leave.index'),
+                ]);
+            }
         }
 
         $user = User::where('id', $employee->created_by)->first();

@@ -104,6 +104,24 @@ class ComplaintController extends Controller
             $complaint->created_by        = \Auth::user()->creatorId();
             $complaint->save();
 
+            $against = Employee::find($complaint->complaint_against);
+            if ($against && $against->user_id) {
+                \App\Services\InAppNotifier::notifyUser($against->user_id, [
+                    'module' => 'complaint',
+                    'action' => 'created',
+                    'title' => __('New Complaint'),
+                    'message' => $complaint->title,
+                    'link' => route('complaint.index'),
+                ]);
+            }
+            \App\Services\InAppNotifier::notifyCompanyHr(\Auth::user()->creatorId(), [
+                'module' => 'complaint',
+                'action' => 'created',
+                'title' => __('New Complaint Filed'),
+                'message' => $complaint->title,
+                'link' => route('complaint.index'),
+            ]);
+
             $setings = Utility::settings();
              
             if($setings['employee_complaints'] == 1)

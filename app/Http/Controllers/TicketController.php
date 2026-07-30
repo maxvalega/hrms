@@ -129,6 +129,24 @@ class TicketController extends Controller
             $ticket->status         = $request->status;
             $ticket->save();
 
+            $ticketUserId = Auth::user()->type == 'employee' ? Auth::id() : (int) $request->employee_id;
+            if ($ticketUserId) {
+                \App\Services\InAppNotifier::notifyUser($ticketUserId, [
+                    'module' => 'ticket',
+                    'action' => 'created',
+                    'title' => __('Support Ticket'),
+                    'message' => $ticket->title,
+                    'link' => route('ticket.index'),
+                ]);
+            }
+            \App\Services\InAppNotifier::notifyCompanyHr(\Auth::user()->creatorId(), [
+                'module' => 'ticket',
+                'action' => 'created',
+                'title' => __('New Support Ticket'),
+                'message' => $ticket->title,
+                'link' => route('ticket.index'),
+            ]);
+
             //slack
             $setting = Utility::settings(\Auth::user()->creatorId());
             $emp = User::where('id', $request->employee_id)->first();

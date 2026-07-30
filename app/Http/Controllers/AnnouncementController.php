@@ -94,6 +94,26 @@ class AnnouncementController extends Controller
             $announcement->created_by    = \Auth::user()->creatorId();
             $announcement->save();
 
+            $annEmpIds = is_array($request->employee_id) ? $request->employee_id : explode(',', implode(',', (array) $request->employee_id));
+            if (in_array('0', $annEmpIds) || in_array(0, $annEmpIds)) {
+                \App\Services\InAppNotifier::notifyCompanyEmployees(\Auth::user()->creatorId(), [
+                    'module' => 'announcement',
+                    'action' => 'created',
+                    'title' => __('New Announcement'),
+                    'message' => $request->title,
+                    'link' => route('announcement.index'),
+                ]);
+            } else {
+                $userIds = Employee::whereIn('id', array_filter($annEmpIds))->whereNotNull('user_id')->pluck('user_id')->all();
+                \App\Services\InAppNotifier::notifyUsers($userIds, [
+                    'module' => 'announcement',
+                    'action' => 'created',
+                    'title' => __('New Announcement'),
+                    'message' => $request->title,
+                    'link' => route('announcement.index'),
+                ]);
+            }
+
             // slack
             $setting = Utility::settings(\Auth::user()->creatorId());
             $branch = Branch::find($request->branch_id);

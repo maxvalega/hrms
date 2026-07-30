@@ -583,6 +583,17 @@ class GrowthReviewController extends Controller
             'created_by' => $this->creatorId(),
         ]);
 
+        $toEmp = Employee::find($data['to_employee_id']);
+        if ($toEmp && $toEmp->user_id) {
+            \App\Services\InAppNotifier::notifyUser($toEmp->user_id, [
+                'module' => 'shoutout',
+                'action' => 'created',
+                'title' => __('New Shoutout'),
+                'message' => \Illuminate\Support\Str::limit($data['message'], 100),
+                'link' => route('growth-review.shoutouts'),
+            ]);
+        }
+
         return back()->with('success', __('Shoutout sent!'));
     }
 
@@ -682,6 +693,13 @@ class GrowthReviewController extends Controller
 
         $syncUps = $query->orderByDesc('meeting_date')->paginate(20);
 
+        // Employee opens Sync Ups → clear unread notifications for their items
+        if ($emp && \Schema::hasColumn('gr_sync_ups', 'employee_seen')) {
+            GrSyncUp::where('employee_id', $emp->id)
+                ->where('employee_seen', false)
+                ->update(['employee_seen' => true]);
+        }
+
         $employees = $isAdmin
             ? Employee::where('created_by', $cid)->orderBy('name')->get()
             : Employee::where('created_by', $cid)->whereIn('id', $managedIds)->orderBy('name')->get();
@@ -718,7 +736,7 @@ class GrowthReviewController extends Controller
         }
 
         $emp = $this->currentEmployee();
-        GrSyncUp::create([
+        $syncUp = GrSyncUp::create([
             'cycle_id' => $data['cycle_id'] ?? null,
             'employee_id' => $data['employee_id'],
             'manager_id' => $emp ? $emp->id : 0,
@@ -727,7 +745,26 @@ class GrowthReviewController extends Controller
             'discussion_points' => !empty($data['discussion_points']) ? array_filter(array_map('trim', explode("\n", $data['discussion_points']))) : null,
             'action_items' => !empty($data['action_items']) ? array_filter(array_map('trim', explode("\n", $data['action_items']))) : null,
             'status' => 'completed',
+            'employee_seen' => false,
             'created_by' => $cid,
+        ]);
+
+        $target = Employee::find($data['employee_id']);
+        if ($target && $target->user_id) {
+            \App\Services\InAppNotifier::notifyUser($target->user_id, [
+                'module' => 'sync_up',
+                'action' => 'created',
+                'title' => __('New Sync Up'),
+                'message' => __('A sync-up was shared with you for :date', ['date' => $data['meeting_date']]),
+                'link' => route('growth-review.sync-ups'),
+            ]);
+        }
+        \App\Services\InAppNotifier::notifyCompanyHr($cid, [
+            'module' => 'sync_up',
+            'action' => 'created',
+            'title' => __('Sync Up Recorded'),
+            'message' => ($target->name ?? __('Employee')) . ' — ' . $data['meeting_date'],
+            'link' => route('growth-review.sync-ups'),
         ]);
 
         return back()->with('success', __('Sync Up shared with employee.'));
@@ -757,6 +794,22 @@ class GrowthReviewController extends Controller
                 : $syncUp->action_items,
             'status' => $data['status'] ?? $syncUp->status,
         ]);
+
+        if (\Schema::hasColumn('gr_sync_ups', 'employee_seen')) {
+            $syncUp->employee_seen = false;
+            $syncUp->save();
+        }
+
+        $target = Employee::find($syncUp->employee_id);
+        if ($target && $target->user_id) {
+            \App\Services\InAppNotifier::notifyUser($target->user_id, [
+                'module' => 'sync_up',
+                'action' => 'updated',
+                'title' => __('Sync Up Updated'),
+                'message' => __('Your sync-up was updated.'),
+                'link' => route('growth-review.sync-ups'),
+            ]);
+        }
 
         return back()->with('success', __('Sync Up updated.'));
     }
@@ -841,6 +894,24 @@ class GrowthReviewController extends Controller
             'final_outcome' => 'pending',
             'auto_initiated' => false,
             'created_by' => $cid,
+        ]);
+
+        $planEmp = Employee::find($data['employee_id']);
+        if ($planEmp && $planEmp->user_id) {
+            \App\Services\InAppNotifier::notifyUser($planEmp->user_id, [
+                'module' => 'comeback',
+                'action' => 'assigned',
+                'title' => __('Comeback Plan Assigned'),
+                'message' => $data['title'],
+                'link' => route('growth-review.comeback'),
+            ]);
+        }
+        \App\Services\InAppNotifier::notifyCompanyHr($cid, [
+            'module' => 'comeback',
+            'action' => 'assigned',
+            'title' => __('Comeback Plan Assigned'),
+            'message' => ($planEmp->name ?? '') . ' — ' . $data['title'],
+            'link' => route('growth-review.comeback'),
         ]);
 
         return back()->with('success', __('Comeback Plan assigned.'));

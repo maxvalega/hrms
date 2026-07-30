@@ -22,11 +22,11 @@ use App\Models\ReimbursementClaim;
  *  Medical         = ₹40,000 fixed (₹3,333/month)
  *  Employer PF     = 12% of min(Basic monthly, ₹15,000) × 12
  *  Gratuity        = 4.81% of Basic
- *  ESIC Employer   = 3.25% of Gross  (ONLY if Gross monthly ≤ ₹21,000)
+ *  ESIC Employer   = 3.25% of Basic  (ONLY if Gross monthly ≤ ₹21,000 for eligibility)
  *  Gross           = CTC − (Employer PF + Gratuity + ESIC Employer)
  *  Special Allow.  = Gross − Basic − HRA − Conveyance − Medical  (balancing)
  *  PF Employee     = 12% of min(Basic monthly, ₹15,000) × 12
- *  ESIC Employee   = 0.75% of Gross  (ONLY if Gross monthly ≤ ₹21,000)
+ *  ESIC Employee   = 0.75% of Basic  (ONLY if Gross monthly ≤ ₹21,000 for eligibility)
  *  Professional Tax= ₹200/month = ₹2,400/year
  *  Net Pay         = Gross − PF Employee − ESIC Employee − PT
  */
@@ -37,7 +37,7 @@ class SalaryCalculator
     const PF_BASIC_CAP_MONTHLY = 15000;
     const ESIC_EMPLOYEE_RATE   = 0.0075;
     const ESIC_EMPLOYER_RATE   = 0.0325;
-    const ESIC_GROSS_LIMIT     = 21000; // monthly ceiling
+    const ESIC_GROSS_LIMIT     = 21000; // monthly ceiling (eligibility only)
     const GRATUITY_RATE        = 0.0481;
     const PT_MONTHLY           = 200;
     const CONVEYANCE_ANNUAL    = 19200;
@@ -103,23 +103,20 @@ class SalaryCalculator
         // Gratuity: 4.81% of Basic annual
         $gratuityAnnual = round($basicAnnual * self::GRATUITY_RATE);
 
-        // Estimate gross without ESIC first, to check eligibility
+        // Estimate gross without ESIC first, to check eligibility (statutory ceiling is on gross)
         $grossWithoutEsic        = $ctc - $pfEmployerAnnual - $gratuityAnnual;
         $grossWithoutEsicMonthly = $grossWithoutEsic / 12;
 
-        // ESIC Employer: 3.25% of Gross — ONLY if gross monthly ≤ ₹21,000
-        // ESIC applies only when employee is ESIC-enabled and falls under ESIC gross ceiling.
+        // ESIC: Employee 0.75% of Basic, Employer 3.25% of Basic
+        // Eligibility still uses Gross monthly ≤ ₹21,000
         $esicApplicable      = $esicEnabled && ($grossWithoutEsicMonthly <= self::ESIC_GROSS_LIMIT);
         $esicEmployerAnnual  = 0;
         $esicEmployeeAnnual  = 0;
 
         if ($esicApplicable) {
-            // When ESIC applies, gross needs recalculation:
-            // CTC = Gross + PF + Gratuity + 0.0325×Gross
-            // CTC - PF - Gratuity = Gross × 1.0325
-            $grossAnnual        = round(($ctc - $pfEmployerAnnual - $gratuityAnnual) / (1 + self::ESIC_EMPLOYER_RATE));
-            $esicEmployerAnnual = round($grossAnnual * self::ESIC_EMPLOYER_RATE);
-            $esicEmployeeAnnual = round($grossAnnual * self::ESIC_EMPLOYEE_RATE);
+            $esicEmployerAnnual = round($basicAnnual * self::ESIC_EMPLOYER_RATE);
+            $esicEmployeeAnnual = round($basicAnnual * self::ESIC_EMPLOYEE_RATE);
+            $grossAnnual        = round($ctc - $pfEmployerAnnual - $gratuityAnnual - $esicEmployerAnnual);
         } else {
             $grossAnnual = round($grossWithoutEsic);
         }
@@ -182,12 +179,11 @@ class SalaryCalculator
         $ptExempt = $employee && in_array($employee->present_state, self::PT_EXEMPT_STATES, true);
         $ptAnnual = $ptExempt ? 0 : self::PT_MONTHLY * 12;
 
-        // ESIC must be calculated on total gross earnings of the selected month (base + additional one-time earnings).
-        $extraGrossMonthly = $totalSpecialAllowanceMonthly;
-        $esicEmployeeBaseMonthly = $esicApplicable ? round($baseGrossMonthly * self::ESIC_EMPLOYEE_RATE, 2) : 0.0;
-        $esicEmployerBaseMonthly = $esicApplicable ? round($baseGrossMonthly * self::ESIC_EMPLOYER_RATE, 2) : 0.0;
-        $esicEmployeeExtraMonthly = $esicApplicable ? round($extraGrossMonthly * self::ESIC_EMPLOYEE_RATE, 2) : 0.0;
-        $esicEmployerExtraMonthly = $esicApplicable ? round($extraGrossMonthly * self::ESIC_EMPLOYER_RATE, 2) : 0.0;
+        // ESIC on Basic only (not on gross / special allowances)
+        $esicEmployeeBaseMonthly = $esicApplicable ? round($basicMonthly * self::ESIC_EMPLOYEE_RATE, 2) : 0.0;
+        $esicEmployerBaseMonthly = $esicApplicable ? round($basicMonthly * self::ESIC_EMPLOYER_RATE, 2) : 0.0;
+        $esicEmployeeExtraMonthly = 0.0;
+        $esicEmployerExtraMonthly = 0.0;
 
         $esicEmployeeMonthly = round($esicEmployeeBaseMonthly + $esicEmployeeExtraMonthly, 2);
         $esicEmployerMonthly = round($esicEmployerBaseMonthly + $esicEmployerExtraMonthly, 2);

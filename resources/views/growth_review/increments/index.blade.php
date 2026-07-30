@@ -237,15 +237,15 @@
                             @php
                                 $sal = $salaryData[$inc->employee_id] ?? null;
                                 $basicPct = $sal->basic_percentage ?? 50;
-                                // Approximate net monthly: CTC/12 minus PF(12% of basic) minus ESIC(0.75% of gross if applicable)
+                                // Approximate net monthly: CTC/12 minus PF(12% of basic) minus ESIC(0.75% of basic if applicable)
                                 $oldGrossMonthly = round($inc->old_ctc / 12);
                                 $newGrossMonthly = round($inc->new_ctc / 12);
                                 $oldBasicMonthly = round($oldGrossMonthly * $basicPct / 100);
                                 $newBasicMonthly = round($newGrossMonthly * $basicPct / 100);
                                 $oldPf = ($sal && $sal->is_pf_enabled) ? min(round($oldBasicMonthly * 0.12), 1800) : 0;
                                 $newPf = ($sal && $sal->is_pf_enabled) ? min(round($newBasicMonthly * 0.12), 1800) : 0;
-                                $oldEsic = ($sal && $sal->is_esic_enabled && $oldGrossMonthly <= 21000) ? round($oldGrossMonthly * 0.0075) : 0;
-                                $newEsic = ($sal && $sal->is_esic_enabled && $newGrossMonthly <= 21000) ? round($newGrossMonthly * 0.0075) : 0;
+                                $oldEsic = ($sal && $sal->is_esic_enabled && $oldGrossMonthly <= 21000) ? round($oldBasicMonthly * 0.0075) : 0;
+                                $newEsic = ($sal && $sal->is_esic_enabled && $newGrossMonthly <= 21000) ? round($newBasicMonthly * 0.0075) : 0;
                                 $oldNet = $oldGrossMonthly - $oldPf - $oldEsic;
                                 $newNet = $newGrossMonthly - $newPf - $newEsic;
                                 $diffNet = $newNet - $oldNet;

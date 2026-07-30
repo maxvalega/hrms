@@ -21,7 +21,7 @@ class StatutoryCalculator
         $gender = $gender ? strtolower($gender) : null;
 
         $epf = ($config ? $config->pf_enabled : true) ? $this->calculateEPF($basicMonthly, $state, $gender, $month) : ['employee' => 0.0, 'employer' => 0.0];
-        $esic = ($config ? $config->esic_enabled : true) ? $this->calculateESIC($grossMonthly, $state, $gender, $month) : ['employee' => 0.0, 'employer' => 0.0];
+        $esic = ($config ? $config->esic_enabled : true) ? $this->calculateESIC($basicMonthly, $grossMonthly, $state, $gender, $month) : ['employee' => 0.0, 'employer' => 0.0];
         $pt = ($config ? $config->pt_enabled : true) ? $this->calculatePT($grossMonthly, $state, $gender, $month, $employeeId) : ['employee' => 0.0, 'employer' => 0.0];
         $lwf = ($config ? $config->lwf_enabled : true) ? $this->calculateLWF($month, $grossMonthly, $state, $gender) : ['employee' => 0.0, 'employer' => 0.0];
 
@@ -63,8 +63,9 @@ class StatutoryCalculator
         return ['employee' => $employee, 'employer' => $employer];
     }
 
-    public function calculateESIC(float $grossMonthly, ?int $stateId = null, ?string $gender = null, ?string $month = null): array
+    public function calculateESIC(float $basicMonthly, float $grossMonthly, ?int $stateId = null, ?string $gender = null, ?string $month = null): array
     {
+        // Eligibility uses Gross; contribution amounts use Basic.
         $rule = $this->resolveRule('ESIC', $grossMonthly, $stateId, $gender, $month);
         if (!$rule) {
             return ['employee' => 0.0, 'employer' => 0.0];
@@ -76,8 +77,8 @@ class StatutoryCalculator
         }
 
         return [
-            'employee' => $this->applyContribution($grossMonthly, $rule->employee_contribution_type, (float)$rule->employee_value),
-            'employer' => $this->applyContribution($grossMonthly, $rule->employer_contribution_type, (float)$rule->employer_value),
+            'employee' => $this->applyContribution($basicMonthly, $rule->employee_contribution_type, (float)$rule->employee_value),
+            'employer' => $this->applyContribution($basicMonthly, $rule->employer_contribution_type, (float)$rule->employer_value),
         ];
     }
 

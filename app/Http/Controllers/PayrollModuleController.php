@@ -1219,13 +1219,13 @@ class PayrollModuleController extends Controller
 
                 // Custom policy:
                 // 1) ESIC eligibility is based on fixed monthly salary (without one-time additions).
-                //    If eligible, ESIC is calculated on the month's total earnings (fixed + one-time additions).
-                // 2) PF should remain on BASIC basis (as per statutory/basic rule), not on total gross.
+                // 2) If eligible, ESIC Employee/Employer are calculated on Basic (not Gross).
+                // 3) PF should remain on BASIC basis (as per statutory/basic rule), not on total gross.
                 $esicEnabled = (bool)($employeeSalary->is_esic_enabled ?? false);
 
                 if ($esicEnabled && $fixedGrossMonthly <= 21000) {
-                    $statutory['esic_employee'] = round($totalGrossMonthly * 0.0075, 2);
-                    $statutory['esic_employer'] = round($totalGrossMonthly * 0.0325, 2);
+                    $statutory['esic_employee'] = round($basicMonthly * 0.0075, 2);
+                    $statutory['esic_employer'] = round($basicMonthly * 0.0325, 2);
                 } else {
                     $statutory['esic_employee'] = 0.0;
                     $statutory['esic_employer'] = 0.0;

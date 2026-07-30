@@ -271,7 +271,7 @@
                                 </tr>
 
                                 <tr>
-                                    <td class="ss-component">{{ __('ESIC (Employee)') }}<div class="ss-note">0.75% {{ __('of Gross') }}</div></td>
+                                    <td class="ss-component">{{ __('ESIC (Employee)') }}<div class="ss-note">0.75% {{ __('of Basic') }}</div></td>
                                     <td><span class="ss-badge ss-badge-auto">0.75%</span></td>
                                     <td class="ss-amount ss-deduction">{{ $esicEmpA > 0 ? '-'.number_format($esicEmpA) : '—' }}</td>
                                     <td class="ss-amount-m ss-deduction">{{ $esicEmpA > 0 ? '-'.number_format($esicEmpA / 12) : '—' }}</td>
@@ -299,7 +299,7 @@
                                 </tr>
 
                                 <tr>
-                                    <td class="ss-component">{{ __('ESIC (Employer)') }}<div class="ss-note">3.25% {{ __('of Gross') }}</div></td>
+                                    <td class="ss-component">{{ __('ESIC (Employer)') }}<div class="ss-note">3.25% {{ __('of Basic') }}</div></td>
                                     <td><span class="ss-badge ss-badge-auto">3.25%</span></td>
                                     <td class="ss-amount ss-employer">{{ $esicErA > 0 ? number_format($esicErA) : '—' }}</td>
                                     <td class="ss-amount-m ss-employer">{{ $esicErA > 0 ? number_format($esicErA / 12) : '—' }}</td>

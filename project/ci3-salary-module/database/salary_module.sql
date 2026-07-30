@@ -83,10 +83,10 @@ INSERT INTO salary_components (name, type, calculation_type, value, formula, con
 SELECT 'PF Employee', 'deduction', 'formula', NULL, 'MIN(BASIC * 0.12, 21600)', '(BASIC <= 180000) OR (PF_ENABLED == 1)', 1, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM salary_components WHERE name = 'PF Employee');
 INSERT INTO salary_components (name, type, calculation_type, value, formula, condition_rule, status, created_at, updated_at)
-SELECT 'ESIC Employee', 'deduction', 'formula', NULL, 'GROSS * 0.0075', '(GROSS <= 252000) AND (ESIC_ENABLED == 1)', 1, NOW(), NOW()
+SELECT 'ESIC Employee', 'deduction', 'formula', NULL, 'BASIC * 0.0075', '(GROSS <= 252000) AND (ESIC_ENABLED == 1)', 1, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM salary_components WHERE name = 'ESIC Employee');
 INSERT INTO salary_components (name, type, calculation_type, value, formula, condition_rule, status, created_at, updated_at)
-SELECT 'ESIC Employer', 'employer', 'formula', NULL, 'GROSS * 0.0325', '(GROSS <= 252000) AND (ESIC_ENABLED == 1)', 1, NOW(), NOW()
+SELECT 'ESIC Employer', 'employer', 'formula', NULL, 'BASIC * 0.0325', '(GROSS <= 252000) AND (ESIC_ENABLED == 1)', 1, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM salary_components WHERE name = 'ESIC Employer');
 INSERT INTO salary_components (name, type, calculation_type, value, formula, condition_rule, status, created_at, updated_at)
 SELECT 'Gratuity', 'employer', 'formula', NULL, 'BASIC * 0.0481', NULL, 1, NOW(), NOW()

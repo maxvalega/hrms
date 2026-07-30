@@ -14,7 +14,7 @@ VALUES
     ('Medical', 'earning', 'earning', 'fixed', 15000.00, NULL, NULL, 1, 0, 0, 'monthly', NULL, 1, 1, NOW(), NOW()),
     ('Special Allowance', 'earning', 'earning', 'formula', NULL, 'MAX(CTC_ANNUAL - (BASIC + HRA + CONVEYANCE + MEDICAL), 0)', NULL, 1, 0, 0, 'monthly', NULL, 1, 1, NOW(), NOW()),
     ('PF Employee', 'deduction', 'deduction', 'formula', NULL, 'MIN(BASIC * 0.12, 21600)', NULL, 0, 1, 0, 'monthly', NULL, 1, 1, NOW(), NOW()),
-    ('ESIC Employee', 'deduction', 'deduction', 'formula', NULL, 'GROSS * 0.0075', NULL, 0, 0, 1, 'monthly', 'GROSS <= 252000', 1, 1, NOW(), NOW()),
+    ('ESIC Employee', 'deduction', 'deduction', 'formula', NULL, 'BASIC * 0.0075', NULL, 0, 0, 1, 'monthly', 'GROSS <= 252000', 1, 1, NOW(), NOW()),
     ('Employer PF', 'benefit', 'employer', 'formula', NULL, 'MIN(BASIC * 0.12, 21600)', NULL, 0, 1, 0, 'monthly', NULL, 1, 1, NOW(), NOW()),
     ('Gratuity', 'benefit', 'employer', 'formula', NULL, 'BASIC * 0.0481', NULL, 0, 0, 0, 'monthly', NULL, 1, 1, NOW(), NOW()),
     ('Fuel', 'reimbursement', 'earning', 'fixed', 0.00, NULL, 2500.00, 0, 0, 0, 'monthly', NULL, 1, 1, NOW(), NOW());

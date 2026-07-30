@@ -148,7 +148,7 @@
                     <div class="ss-sum-box" style="background:#dbeafe;color:#1e40af;padding:12px 14px;">
                         <div class="ss-sum-label"><i class="ti ti-heart-handshake" style="margin-right:3px;"></i>{{ __('Employee ESIC') }}</div>
                         <div class="ss-sum-value" style="font-size:1.1rem;">{{ $esicEmpA > 0 ? \Auth::user()->priceFormat($esicEmpA) : '—' }}</div>
-                        <div class="ss-sum-sub">{{ $esicEmpA > 0 ? \Auth::user()->priceFormat($esicEmpA / 12) . '/mo' : '0.75% of Gross' }}</div>
+                        <div class="ss-sum-sub">{{ $esicEmpA > 0 ? \Auth::user()->priceFormat($esicEmpA / 12) . '/mo' : '0.75% of Basic' }}</div>
                     </div>
                 </div>
                 {{-- Employer PF --}}
@@ -164,7 +164,7 @@
                     <div class="ss-sum-box" style="background:#e0e7ff;color:#3730a3;padding:12px 14px;">
                         <div class="ss-sum-label"><i class="ti ti-building-bank" style="margin-right:3px;"></i>{{ __('Employer ESIC') }}</div>
                         <div class="ss-sum-value" style="font-size:1.1rem;">{{ $esicErA > 0 ? \Auth::user()->priceFormat($esicErA) : '—' }}</div>
-                        <div class="ss-sum-sub">{{ $esicErA > 0 ? \Auth::user()->priceFormat($esicErA / 12) . '/mo' : '3.25% of Gross' }}</div>
+                        <div class="ss-sum-sub">{{ $esicErA > 0 ? \Auth::user()->priceFormat($esicErA / 12) . '/mo' : '3.25% of Basic' }}</div>
                     </div>
                 </div>
                 {{-- Gratuity --}}
@@ -279,7 +279,7 @@
                                 </tr>
 
                                 <tr>
-                                    <td class="ss-component">{{ __('ESIC Employee') }}<div class="ss-note">0.75% {{ __('of Gross (if ≤ ₹21K/mo)') }}</div></td>
+                                    <td class="ss-component">{{ __('ESIC Employee') }}<div class="ss-note">0.75% {{ __('of Basic (if Gross ≤ ₹21K/mo)') }}</div></td>
                                     <td><span class="ss-badge ss-badge-auto">0.75%</span></td>
                                     <td class="ss-amount ss-deduction">{{ $esicEmpA > 0 ? '-'.number_format($esicEmpA) : '—' }}</td>
                                     <td class="ss-amount-m ss-deduction">{{ $esicEmpA > 0 ? '-'.number_format($esicEmpA / 12) : '—' }}</td>
@@ -309,7 +309,7 @@
                                 </tr>
 
                                 <tr>
-                                    <td class="ss-component">{{ __('ESIC Employer') }}<div class="ss-note">3.25% {{ __('of Gross (if ≤ ₹21K/mo)') }}</div></td>
+                                    <td class="ss-component">{{ __('ESIC Employer') }}<div class="ss-note">3.25% {{ __('of Basic (if Gross ≤ ₹21K/mo)') }}</div></td>
                                     <td><span class="ss-badge ss-badge-auto">3.25%</span></td>
                                     <td class="ss-amount ss-employer">{{ $esicErA > 0 ? number_format($esicErA) : '—' }}</td>
                                     <td class="ss-amount-m ss-employer">{{ $esicErA > 0 ? number_format($esicErA / 12) : '—' }}</td>

@@ -124,8 +124,8 @@ class SalaryStructureController extends Controller
             ['name' => 'Gross', 'type' => 'earning', 'calculation_type' => 'formula', 'value' => null, 'formula' => 'BASIC + HRA + CONVEYANCE + MEDICAL + SPECIAL_ALLOWANCE', 'condition_rule' => null, 'priority' => 60],
             // Employee deductions
             ['name' => 'PF Employee', 'type' => 'deduction', 'calculation_type' => 'formula', 'value' => null, 'formula' => 'MIN(BASIC * 0.12, 21600)', 'condition_rule' => '(BASIC <= 180000) OR (PF_ENABLED == 1)', 'priority' => 70],
-            ['name' => 'ESIC Employee', 'type' => 'deduction', 'calculation_type' => 'formula', 'value' => null, 'formula' => 'GROSS * 0.0075', 'condition_rule' => '(GROSS <= 252000) AND (ESIC_ENABLED == 1)', 'priority' => 80],
-            ['name' => 'ESIC Employer', 'type' => 'employer', 'calculation_type' => 'formula', 'value' => null, 'formula' => 'GROSS * 0.0325', 'condition_rule' => '(GROSS <= 252000) AND (ESIC_ENABLED == 1)', 'priority' => 90],
+            ['name' => 'ESIC Employee', 'type' => 'deduction', 'calculation_type' => 'formula', 'value' => null, 'formula' => 'BASIC * 0.0075', 'condition_rule' => '(GROSS <= 252000) AND (ESIC_ENABLED == 1)', 'priority' => 80],
+            ['name' => 'ESIC Employer', 'type' => 'employer', 'calculation_type' => 'formula', 'value' => null, 'formula' => 'BASIC * 0.0325', 'condition_rule' => '(GROSS <= 252000) AND (ESIC_ENABLED == 1)', 'priority' => 90],
         ];
 
         foreach ($defaults as $item) {

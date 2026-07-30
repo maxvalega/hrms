@@ -1901,8 +1901,8 @@ class GrowthReviewController extends Controller
                 $newBasic = round($newGross * $basicPct / 100);
                 $oldPf = ($sal && $sal->is_pf_enabled) ? min(round($oldBasic * 0.12), 1800) : 0;
                 $newPf = ($sal && $sal->is_pf_enabled) ? min(round($newBasic * 0.12), 1800) : 0;
-                $oldEsic = ($sal && $sal->is_esic_enabled && $oldGross <= 21000) ? round($oldGross * 0.0075) : 0;
-                $newEsic = ($sal && $sal->is_esic_enabled && $newGross <= 21000) ? round($newGross * 0.0075) : 0;
+                $oldEsic = ($sal && $sal->is_esic_enabled && $oldGross <= 21000) ? round($oldBasic * 0.0075) : 0;
+                $newEsic = ($sal && $sal->is_esic_enabled && $newGross <= 21000) ? round($newBasic * 0.0075) : 0;
                 $oldNet = $oldGross - $oldPf - $oldEsic;
                 $newNet = $newGross - $newPf - $newEsic;
 

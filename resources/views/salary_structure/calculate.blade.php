@@ -297,7 +297,7 @@
                             <tr>
                                 <td class="ss-component">
                                     {{ __('ESIC Employee') }}
-                                    <div class="ss-note">0.75% {{ __('of Gross (if Gross ≤ ₹21,000/mo)') }}</div>
+                                    <div class="ss-note">0.75% {{ __('of Basic (if Gross ≤ ₹21,000/mo)') }}</div>
                                 </td>
                                 <td><span class="ss-badge-formula">0.75% {{ __('Gross') }}</span></td>
                                 <td class="ss-amount ss-deduction">{{ $esicEmpA > 0 ? '-'.number_format($esicEmpA) : '—' }}</td>
@@ -335,7 +335,7 @@
                             <tr>
                                 <td class="ss-component">
                                     {{ __('ESIC Employer') }}
-                                    <div class="ss-note">3.25% {{ __('of Gross (if Gross ≤ ₹21,000/mo)') }}</div>
+                                    <div class="ss-note">3.25% {{ __('of Basic (if Gross ≤ ₹21,000/mo)') }}</div>
                                 </td>
                                 <td><span class="ss-badge-formula">3.25% {{ __('Gross') }}</span></td>
                                 <td class="ss-amount ss-employer">{{ $esicErA > 0 ? number_format($esicErA) : '—' }}</td>
@@ -413,8 +413,8 @@
                         {{ __('ESIC applies if Gross Salary ≤ ₹21,000/month (₹2,52,000/year).') }}
                     </div>
                     <table class="table table-sm mb-2" style="font-size:.8rem;">
-                        <tr><td>{{ __('Employee Contribution') }}</td><td class="fw-bold text-end">0.75% {{ __('of Gross') }}</td></tr>
-                        <tr><td>{{ __('Employer Contribution') }}</td><td class="fw-bold text-end">3.25% {{ __('of Gross') }}</td></tr>
+                        <tr><td>{{ __('Employee Contribution') }}</td><td class="fw-bold text-end">0.75% {{ __('of Basic') }}</td></tr>
+                        <tr><td>{{ __('Employer Contribution') }}</td><td class="fw-bold text-end">3.25% {{ __('of Basic') }}</td></tr>
                     </table>
                     @php $esicApplicable = ($grossA / 12) <= 21000; @endphp
                     <div class="p-2 rounded" style="background:{{ $esicApplicable ? '#dcfce7' : '#f1f5f9' }};border:1px solid {{ $esicApplicable ? '#86efac' : '#e2e8f0' }};">

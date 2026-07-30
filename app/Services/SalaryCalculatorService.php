@@ -178,7 +178,7 @@ class SalaryCalculatorService
                 continue;
             }
 
-            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $token) && !in_array($upper, $functions, true)) {
+            if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $token) && !in_array($upper, $functions, true) && !isset($precedence[$upper])) {
                 $output[] = ['var' => $upper];
                 continue;
             }

@@ -299,7 +299,7 @@
                                     {{ __('ESIC Employee') }}
                                     <div class="ss-note">0.75% {{ __('of Basic (if Gross ≤ ₹21,000/mo)') }}</div>
                                 </td>
-                                <td><span class="ss-badge-formula">0.75% {{ __('Gross') }}</span></td>
+                                <td><span class="ss-badge-formula">0.75% {{ __('Basic') }}</span></td>
                                 <td class="ss-amount ss-deduction">{{ $esicEmpA > 0 ? '-'.number_format($esicEmpA) : '—' }}</td>
                                 <td class="ss-amount-monthly ss-deduction">{{ $esicEmpM > 0 ? '-'.number_format($esicEmpM) : '—' }}</td>
                             </tr>
@@ -337,7 +337,7 @@
                                     {{ __('ESIC Employer') }}
                                     <div class="ss-note">3.25% {{ __('of Basic (if Gross ≤ ₹21,000/mo)') }}</div>
                                 </td>
-                                <td><span class="ss-badge-formula">3.25% {{ __('Gross') }}</span></td>
+                                <td><span class="ss-badge-formula">3.25% {{ __('Basic') }}</span></td>
                                 <td class="ss-amount ss-employer">{{ $esicErA > 0 ? number_format($esicErA) : '—' }}</td>
                                 <td class="ss-amount-monthly ss-employer">{{ $esicErM > 0 ? number_format($esicErM) : '—' }}</td>
                             </tr>

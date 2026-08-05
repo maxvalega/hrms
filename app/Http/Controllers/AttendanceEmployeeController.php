@@ -2290,24 +2290,39 @@ class AttendanceEmployeeController extends Controller
                 return redirect()->back()->with('error', __('Uploaded file is empty.'));
             }
 
-            // Find the header row that contains day columns (skip title rows).
+            // Find the header row with the most day columns (skip title rows).
             $headerRowIndex = null;
             $header = [];
             $dayColumns = [];
+            $bestCount = 0;
+            $headerSamples = [];
+
             foreach ($rows as $idx => $candidate) {
+                if ($idx > 25) {
+                    break; // don't scan huge sheets forever
+                }
+                $nonEmpty = array_values(array_filter(array_map(fn($v) => trim((string) $this->stringifyRegisterHeaderCell($v)), $candidate), fn($v) => $v !== ''));
+                if ($idx < 5) {
+                    $headerSamples[] = implode(' | ', array_slice($nonEmpty, 0, 8));
+                }
+
                 $parsed = $this->parseRegisterDayColumns($candidate, $monthHint);
-                if (!empty($parsed)) {
+                $count = count($parsed);
+                // Prefer a real day-matrix header (several day columns), not a title with one date.
+                if ($count > $bestCount && ($count >= 5 || ($count >= 1 && $count >= (int) floor(count($nonEmpty) * 0.4)))) {
+                    $bestCount = $count;
                     $headerRowIndex = $idx;
                     $header = $candidate;
                     $dayColumns = $parsed;
-                    break;
                 }
             }
 
             if ($headerRowIndex === null || empty($dayColumns)) {
+                $sample = !empty($headerSamples) ? ' Found headers: ' . $headerSamples[0] : '';
                 return redirect()->back()->with(
                     'error',
-                    __('Could not find day columns in the file header. Use dates like 01-08-2026, 01/08/2026, 2026-08-01, or day numbers 1–31 with Month set.')
+                    __('Could not find day columns (dd-mm-yyyy) in the file header.') . $sample
+                    . ' ' . __('Use 01-08-2026 / 01/08/2026 / 2026-08-01, or day numbers 1–31 with Month set in the import form.')
                 );
             }
 
@@ -2422,27 +2437,49 @@ class AttendanceEmployeeController extends Controller
     protected function parseRegisterDayColumns(array $header, string $monthHint): array
     {
         $dayColumns = [];
-        $summaryNames = ['present', 'absent', 'leave', 'half_day', 'half day', 'late', 'early', 'ot', 'total', 'name', 'department', 'designation', 'emp_id', 'employee_id', 'employee', 'emp id'];
+        $summaryNames = [
+            'present', 'absent', 'leave', 'half_day', 'half day', 'late', 'early', 'ot', 'total',
+            'name', 'department', 'designation', 'emp_id', 'employee_id', 'employee', 'emp id',
+            'sr', 'sr_no', 's_no', 'sno', 'sl_no', 'sl', 'no', 'status', 'remark', 'remarks',
+        ];
 
         foreach ($header as $colIndex => $raw) {
-            $value = trim((string) $raw);
+            $value = trim($this->stringifyRegisterHeaderCell($raw));
             if ($value === '') {
                 continue;
             }
 
             $normalized = strtolower(preg_replace('/[^a-z0-9]+/', '_', $value));
-            if (in_array($normalized, $summaryNames, true) || str_starts_with($normalized, 'emp')) {
+            if (in_array($normalized, $summaryNames, true)) {
+                continue;
+            }
+            // Skip employee-code style labels, but allow plain day numbers.
+            if (preg_match('/^emp/', $normalized) && !preg_match('/^\d+$/', $normalized)) {
                 continue;
             }
 
-            $date = $this->parseRegisterHeaderDate($value, $monthHint);
+            $date = $this->parseRegisterHeaderDate($raw, $monthHint);
             if ($date) {
                 $dayColumns[(int) $colIndex] = $date;
             }
         }
 
-        // Need at least a few day columns to treat this as a register matrix.
-        return count($dayColumns) >= 1 ? $dayColumns : [];
+        return $dayColumns;
+    }
+
+    protected function stringifyRegisterHeaderCell($value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('d-m-Y');
+        }
+        if (is_bool($value)) {
+            return '';
+        }
+        if (is_numeric($value)) {
+            return (string) $value;
+        }
+
+        return trim((string) $value);
     }
 
     protected function parseRegisterHeaderDate($value, string $monthHint): ?string
@@ -2451,16 +2488,45 @@ class AttendanceEmployeeController extends Controller
             return null;
         }
 
-        // Excel serial date
-        if (is_numeric($value) && (float) $value > 20000) {
-            try {
-                return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($value)->format('Y-m-d');
-            } catch (\Throwable $e) {
-                // fall through
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        // Excel serial date (typical spreadsheet day serials)
+        if (is_numeric($value)) {
+            $num = (float) $value;
+            if ($num > 20000 && $num < 80000) {
+                try {
+                    return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($num)->format('Y-m-d');
+                } catch (\Throwable $e) {
+                    // fall through
+                }
+            }
+            // Day-of-month only
+            if ($num == (int) $num && $num >= 1 && $num <= 31 && preg_match('/^\d{4}-\d{2}$/', $monthHint)) {
+                $candidate = sprintf('%s-%02d', $monthHint, (int) $num);
+                $dt = \DateTime::createFromFormat('Y-m-d', $candidate);
+                if ($dt && $dt->format('Y-m-d') === $candidate) {
+                    return $candidate;
+                }
             }
         }
 
         $raw = trim((string) $value);
+        // Strip weekday prefixes like "Mon 01-08-2026"
+        $raw = preg_replace('/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*[\s,]*/i', '', $raw);
+        $raw = trim($raw);
+
+        // Prefer ISO / 4-digit-year tokens first so "2026-08-03" is not truncated to "26-08-03"
+        if (preg_match('/(\d{4}[-\/.]\d{1,2}[-\/.]\d{1,2})/', $raw, $m)) {
+            $raw = $m[1];
+        } elseif (preg_match('/(\d{1,2}[-\/.]\d{1,2}[-\/.]\d{4})/', $raw, $m)) {
+            $raw = $m[1];
+        } elseif (preg_match('/(\d{1,2}[-\/.]\d{1,2}[-\/.]\d{2})/', $raw, $m)) {
+            $raw = $m[1];
+        } elseif (preg_match('/(\d{1,2}[-\/\s][A-Za-z]{3,9}[-\/\s]\d{2,4})/', $raw, $m)) {
+            $raw = $m[1];
+        }
 
         // Day number only (1-31) → use month hint
         if (preg_match('/^\d{1,2}$/', $raw)) {
@@ -2474,19 +2540,42 @@ class AttendanceEmployeeController extends Controller
             }
         }
 
-        $formats = ['d-m-Y', 'd/m/Y', 'd.m.Y', 'Y-m-d', 'Y/m/d', 'd-m-y', 'd/m/y', 'm/d/Y', 'j-n-Y', 'j/n/Y'];
+        // Try 4-digit year formats before 2-digit year formats
+        $formats = [
+            'Y-m-d', 'Y/m/d', 'Y.m.d',
+            'd-m-Y', 'd/m/Y', 'd.m.Y', 'j-n-Y', 'j/n/Y',
+            'd-M-Y', 'd/M/Y', 'd M Y', 'j M Y', 'M d Y', 'M-d-Y',
+            'd-m-y', 'd/m/y', 'd-M-y',
+            'd-M', 'd M',
+            'm/d/Y',
+        ];
         foreach ($formats as $fmt) {
             $dt = \DateTime::createFromFormat('!' . $fmt, $raw);
             if ($dt instanceof \DateTime) {
                 $errors = \DateTime::getLastErrors();
-                if (($errors['warning_count'] ?? 0) === 0 && ($errors['error_count'] ?? 0) === 0) {
-                    return $dt->format('Y-m-d');
+                if (is_array($errors) && (($errors['warning_count'] ?? 0) > 0 || ($errors['error_count'] ?? 0) > 0)) {
+                    continue;
                 }
+                // Formats without year → apply monthHint year/month when possible
+                if (in_array($fmt, ['d-M', 'd M'], true) && preg_match('/^\d{4}-\d{2}$/', $monthHint)) {
+                    [$y, $m] = explode('-', $monthHint);
+                    $dt->setDate((int) $y, (int) $m, (int) $dt->format('d'));
+                }
+                $year = (int) $dt->format('Y');
+                if ($year < 1990 || $year > 2100) {
+                    continue;
+                }
+                return $dt->format('Y-m-d');
             }
         }
 
         try {
-            return Carbon::parse($raw)->format('Y-m-d');
+            $parsed = Carbon::parse($raw);
+            $year = (int) $parsed->format('Y');
+            if ($year < 1990 || $year > 2100) {
+                return null;
+            }
+            return $parsed->format('Y-m-d');
         } catch (\Throwable $e) {
             return null;
         }

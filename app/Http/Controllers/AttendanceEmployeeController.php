@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use App\Exports\MonthlyAttendanceExport;
+use App\Support\TenantHost;
 use Maatwebsite\Excel\Facades\Excel;
 
 class AttendanceEmployeeController extends Controller
@@ -39,6 +40,15 @@ class AttendanceEmployeeController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Relaxed Bulk Attendance (optional branch/dept + Import Register)
+     * is limited to the Vimal Industrial portal only.
+     */
+    private function isVimalBulkAttendancePortal(?Request $request = null): bool
+    {
+        return TenantHost::subdomainFromHost($request ? $request->getHost() : null) === 'vimalindustrial';
     }
 
     /**
@@ -2049,12 +2059,31 @@ class AttendanceEmployeeController extends Controller
             $department = Department::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
             $department->prepend('Select Department', '');
 
-            $employees = [];
-            if (!empty($request->branch) && !empty($request->department)) {
-                $employees = Employee::where('created_by', \Auth::user()->creatorId())->where('branch_id', $request->branch)->where('department_id', $request->department)->get();
+            $isVimalBulkMode = $this->isVimalBulkAttendancePortal($request);
+            $employees = collect();
+
+            if ($isVimalBulkMode) {
+                // Vimal only: branch / department optional; search by date alone lists all employees.
+                $query = Employee::where('created_by', \Auth::user()->creatorId())->orderBy('name');
+                if (!empty($request->branch)) {
+                    $query->where('branch_id', $request->branch);
+                }
+                if (!empty($request->department)) {
+                    $query->where('department_id', $request->department);
+                }
+                $employees = $request->hasAny(['date', 'branch', 'department']) ? $query->get() : collect();
+            } else {
+                // Other portals: keep original branch + department requirement.
+                if (!empty($request->branch) && !empty($request->department)) {
+                    $employees = Employee::where('created_by', \Auth::user()->creatorId())
+                        ->where('branch_id', $request->branch)
+                        ->where('department_id', $request->department)
+                        ->orderBy('name')
+                        ->get();
+                }
             }
 
-            return view('attendance.bulk', compact('employees', 'branch', 'department'));
+            return view('attendance.bulk', compact('employees', 'branch', 'department', 'isVimalBulkMode'));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
@@ -2066,15 +2095,25 @@ class AttendanceEmployeeController extends Controller
             if (!\Auth::user()->can('Create Attendance')) {
                 return redirect()->back()->with('error', __('Permission denied.'));
             }
-            if (empty($request->branch) || empty($request->department)) {
+
+            $isVimalBulkMode = $this->isVimalBulkAttendancePortal($request);
+            if (!$isVimalBulkMode && (empty($request->branch) || empty($request->department))) {
                 return redirect()->back()->with('error', __('Branch & department field required.'));
             }
 
             $date = $request->date ?: date('Y-m-d');
-            $employees = Employee::where('created_by', \Auth::user()->creatorId())
-                ->where('branch_id', $request->branch)
-                ->where('department_id', $request->department)
-                ->get();
+            $query = Employee::where('created_by', \Auth::user()->creatorId());
+            if (!empty($request->branch)) {
+                $query->where('branch_id', $request->branch);
+            }
+            if (!empty($request->department)) {
+                $query->where('department_id', $request->department);
+            }
+            $employees = $query->orderBy('name')->get();
+
+            if ($employees->isEmpty()) {
+                return redirect()->back()->with('error', __('No employees found for the selected filters.'));
+            }
 
             $startTime = Utility::getValByName('company_start_time') ?: '09:00:00';
             $endTime   = Utility::getValByName('company_end_time')   ?: '18:00:00';
@@ -2209,6 +2248,316 @@ class AttendanceEmployeeController extends Controller
             \Log::error('Bulk attendance import failed: ' . $e->getMessage());
             return redirect()->back()->with('error', 'Import failed: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Import a monthly attendance register (matrix): rows = employees, columns = day dates.
+     * Accepts headers as dd-mm-yyyy / dd/mm/yyyy / yyyy-mm-dd / Excel serial / day number (1-31).
+     * Scoped to Bulk Attendance page only.
+     */
+    public function bulkAttendanceImportRegister(Request $request)
+    {
+        try {
+            // Vimal Industrial bulk attendance only.
+            if (!$this->isVimalBulkAttendancePortal($request)) {
+                return redirect()->back()->with('error', __('This import is only available on the Vimal Industrial portal.'));
+            }
+
+            if ($denied = $this->denyUnlessAttendanceAdmin()) {
+                return $denied;
+            }
+            if (!\Auth::user()->can('Create Attendance')) {
+                return redirect()->back()->with('error', __('Permission denied.'));
+            }
+
+            $request->validate([
+                'file' => 'required|file|mimes:xlsx,xls,csv,txt',
+                'month' => 'nullable|date_format:Y-m',
+            ]);
+
+            $cid = \Auth::user()->creatorId();
+            $monthHint = $request->input('month') ?: (isset($request->date) ? substr((string) $request->date, 0, 7) : date('Y-m'));
+
+            $sheets = Excel::toArray(new class implements \Maatwebsite\Excel\Concerns\ToArray {
+                public function array(array $array)
+                {
+                    return $array;
+                }
+            }, $request->file('file'));
+
+            $rows = $sheets[0] ?? [];
+            if (empty($rows)) {
+                return redirect()->back()->with('error', __('Uploaded file is empty.'));
+            }
+
+            // Find the header row that contains day columns (skip title rows).
+            $headerRowIndex = null;
+            $header = [];
+            $dayColumns = [];
+            foreach ($rows as $idx => $candidate) {
+                $parsed = $this->parseRegisterDayColumns($candidate, $monthHint);
+                if (!empty($parsed)) {
+                    $headerRowIndex = $idx;
+                    $header = $candidate;
+                    $dayColumns = $parsed;
+                    break;
+                }
+            }
+
+            if ($headerRowIndex === null || empty($dayColumns)) {
+                return redirect()->back()->with(
+                    'error',
+                    __('Could not find day columns in the file header. Use dates like 01-08-2026, 01/08/2026, 2026-08-01, or day numbers 1–31 with Month set.')
+                );
+            }
+
+            $empIdCol = $this->findRegisterEmployeeIdColumn($header);
+            $nameCol = $this->findRegisterNameColumn($header);
+            if ($empIdCol === null && $nameCol === null) {
+                return redirect()->back()->with('error', __('Could not find Employee ID or Name column in the file.'));
+            }
+
+            $startTime = Utility::getValByName('company_start_time') ?: '09:00:00';
+            $endTime = Utility::getValByName('company_end_time') ?: '18:00:00';
+
+            $created = 0;
+            $updated = 0;
+            $skipped = 0;
+            $errors = [];
+
+            for ($r = $headerRowIndex + 1; $r < count($rows); $r++) {
+                $row = $rows[$r];
+                if (count(array_filter($row, fn($v) => trim((string) $v) !== '')) === 0) {
+                    continue;
+                }
+
+                $employee = null;
+                if ($empIdCol !== null) {
+                    $empRaw = trim((string) ($row[$empIdCol] ?? ''));
+                    $empNum = (int) preg_replace('/[^0-9]/', '', $empRaw);
+                    if ($empNum > 0) {
+                        $employee = Employee::where('created_by', $cid)->where('employee_id', $empNum)->first()
+                            ?: Employee::where('created_by', $cid)->where('id', $empNum)->first();
+                    }
+                }
+                if (!$employee && $nameCol !== null) {
+                    $name = trim((string) ($row[$nameCol] ?? ''));
+                    if ($name !== '') {
+                        $employee = Employee::where('created_by', $cid)->where('name', 'like', $name)->first();
+                    }
+                }
+
+                if (!$employee) {
+                    $skipped++;
+                    $errors[] = 'Row ' . ($r + 1) . ': employee not found';
+                    continue;
+                }
+
+                foreach ($dayColumns as $colIndex => $dateYmd) {
+                    $cell = trim((string) ($row[$colIndex] ?? ''));
+                    if ($cell === '' || $cell === '-' || strcasecmp($cell, 'NA') === 0) {
+                        continue;
+                    }
+
+                    [$status, $clockIn, $clockOut] = $this->parseRegisterCell($cell, $startTime, $endTime);
+                    $existing = AttendanceEmployee::where('employee_id', $employee->id)->where('date', $dateYmd)->first();
+                    $isUpdate = (bool) $existing;
+                    $att = $existing ?: new AttendanceEmployee();
+                    $att->employee_id = $employee->id;
+                    $att->created_by = $cid;
+                    $att->date = $dateYmd;
+                    $att->total_rest = '00:00:00';
+
+                    if (in_array($status, ['Absent', 'Leave'], true)) {
+                        $att->status = $status;
+                        $att->clock_in = '00:00:00';
+                        $att->clock_out = '00:00:00';
+                        $att->late = '00:00:00';
+                        $att->early_leaving = '00:00:00';
+                        $att->overtime = '00:00:00';
+                        $att->late_mark = 0;
+                        $att->early_mark = 0;
+                        $att->less_hours_mark = 0;
+                        $att->deduction_units = $status === 'Absent' ? 1 : 0;
+                    } else {
+                        $metrics = $this->calculateAttendanceMetrics(
+                            (int) $employee->id,
+                            $dateYmd,
+                            $clockIn,
+                            $clockOut,
+                            $existing->id ?? null
+                        );
+                        $att->status = $status === 'Half Day' ? 'Half Day' : $metrics['attendance_status'];
+                        $att->clock_in = $clockIn;
+                        $att->clock_out = $clockOut;
+                        $att->late = $metrics['late'];
+                        $att->early_leaving = $metrics['early_leaving'];
+                        $att->overtime = $metrics['overtime'];
+                        $att->late_mark = (int) $metrics['late_mark'];
+                        $att->early_mark = (int) $metrics['early_mark'];
+                        $att->less_hours_mark = (int) $metrics['less_hours_mark'];
+                        $att->deduction_units = $status === 'Half Day' ? 0.5 : $metrics['deduction_units'];
+                    }
+
+                    $att->save();
+                    $isUpdate ? $updated++ : $created++;
+                }
+            }
+
+            $msg = "Register import done. Created: {$created}, Updated: {$updated}, Skipped rows: {$skipped}";
+            if (!empty($errors)) {
+                $msg .= ' | ' . implode('; ', array_slice($errors, 0, 3));
+            }
+
+            return redirect()->back()->with('success', $msg);
+        } catch (\Throwable $e) {
+            \Log::error('Bulk attendance register import failed: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Register import failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * @return array<int,string> colIndex => Y-m-d
+     */
+    protected function parseRegisterDayColumns(array $header, string $monthHint): array
+    {
+        $dayColumns = [];
+        $summaryNames = ['present', 'absent', 'leave', 'half_day', 'half day', 'late', 'early', 'ot', 'total', 'name', 'department', 'designation', 'emp_id', 'employee_id', 'employee', 'emp id'];
+
+        foreach ($header as $colIndex => $raw) {
+            $value = trim((string) $raw);
+            if ($value === '') {
+                continue;
+            }
+
+            $normalized = strtolower(preg_replace('/[^a-z0-9]+/', '_', $value));
+            if (in_array($normalized, $summaryNames, true) || str_starts_with($normalized, 'emp')) {
+                continue;
+            }
+
+            $date = $this->parseRegisterHeaderDate($value, $monthHint);
+            if ($date) {
+                $dayColumns[(int) $colIndex] = $date;
+            }
+        }
+
+        // Need at least a few day columns to treat this as a register matrix.
+        return count($dayColumns) >= 1 ? $dayColumns : [];
+    }
+
+    protected function parseRegisterHeaderDate($value, string $monthHint): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        // Excel serial date
+        if (is_numeric($value) && (float) $value > 20000) {
+            try {
+                return \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject($value)->format('Y-m-d');
+            } catch (\Throwable $e) {
+                // fall through
+            }
+        }
+
+        $raw = trim((string) $value);
+
+        // Day number only (1-31) → use month hint
+        if (preg_match('/^\d{1,2}$/', $raw)) {
+            $day = (int) $raw;
+            if ($day >= 1 && $day <= 31 && preg_match('/^\d{4}-\d{2}$/', $monthHint)) {
+                $candidate = sprintf('%s-%02d', $monthHint, $day);
+                $dt = \DateTime::createFromFormat('Y-m-d', $candidate);
+                if ($dt && $dt->format('Y-m-d') === $candidate) {
+                    return $candidate;
+                }
+            }
+        }
+
+        $formats = ['d-m-Y', 'd/m/Y', 'd.m.Y', 'Y-m-d', 'Y/m/d', 'd-m-y', 'd/m/y', 'm/d/Y', 'j-n-Y', 'j/n/Y'];
+        foreach ($formats as $fmt) {
+            $dt = \DateTime::createFromFormat('!' . $fmt, $raw);
+            if ($dt instanceof \DateTime) {
+                $errors = \DateTime::getLastErrors();
+                if (($errors['warning_count'] ?? 0) === 0 && ($errors['error_count'] ?? 0) === 0) {
+                    return $dt->format('Y-m-d');
+                }
+            }
+        }
+
+        try {
+            return Carbon::parse($raw)->format('Y-m-d');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    protected function findRegisterEmployeeIdColumn(array $header): ?int
+    {
+        foreach ($header as $i => $raw) {
+            $key = strtolower(trim((string) $raw));
+            $key = preg_replace('/[^a-z0-9]+/', '_', $key);
+            if (in_array($key, ['emp_id', 'employee_id', 'empid', 'id', 'code', 'staff_code', 'employee_code'], true)) {
+                return (int) $i;
+            }
+        }
+        // Fallback: first column if it looks numeric-ish in later rows — still prefer col 0 labeled Emp ID style.
+        foreach ($header as $i => $raw) {
+            if (stripos((string) $raw, 'emp') !== false && stripos((string) $raw, 'name') === false) {
+                return (int) $i;
+            }
+        }
+
+        return 0;
+    }
+
+    protected function findRegisterNameColumn(array $header): ?int
+    {
+        foreach ($header as $i => $raw) {
+            $key = strtolower(trim((string) $raw));
+            if (in_array($key, ['name', 'employee', 'employee name', 'emp name'], true)) {
+                return (int) $i;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array{0:string,1:string,2:string} status, clock_in, clock_out
+     */
+    protected function parseRegisterCell(string $cell, string $defaultIn, string $defaultOut): array
+    {
+        $upper = strtoupper(trim($cell));
+        $status = 'Present';
+        $clockIn = $defaultIn;
+        $clockOut = $defaultOut;
+
+        if (preg_match('/\b(HD|HALF\s*DAY)\b/', $upper)) {
+            $status = 'Half Day';
+        } elseif (preg_match('/\b(A|ABSENT)\b/', $upper) && !preg_match('/\bP\b/', $upper)) {
+            $status = 'Absent';
+        } elseif (preg_match('/\b(L|LEAVE|WO|WEEK\s*OFF|OFF)\b/', $upper) && !preg_match('/\bP\b/', $upper)) {
+            $status = 'Leave';
+        } elseif (preg_match('/\b(P|PRESENT)\b/', $upper)) {
+            $status = 'Present';
+        }
+
+        // Times like (09:00-18:00) or 09:00-18:00
+        if (preg_match('/(\d{1,2}:\d{2})\s*[-–to]+\s*(\d{1,2}:\d{2})/i', $cell, $m)) {
+            $clockIn = date('H:i:s', strtotime($m[1]));
+            $clockOut = date('H:i:s', strtotime($m[2]));
+            if ($status === 'Absent' || $status === 'Leave') {
+                $status = 'Present';
+            }
+        }
+
+        if (in_array($status, ['Absent', 'Leave'], true)) {
+            $clockIn = '00:00:00';
+            $clockOut = '00:00:00';
+        }
+
+        return [$status, $clockIn, $clockOut];
     }
 
     public function uploadExcelAttendance(Request $request)
@@ -2431,18 +2780,27 @@ class AttendanceEmployeeController extends Controller
                 return redirect()->back()->with('error', __('Permission denied.'));
             }
 
-            if (empty($request->branch) || empty($request->department)) {
+            $isVimalBulkMode = $this->isVimalBulkAttendancePortal($request);
+            if (!$isVimalBulkMode && (empty($request->branch) || empty($request->department))) {
                 return redirect()->back()->with('error', __('Branch & department field required.'));
             }
 
             $date = $request->date ?: date('Y-m-d');
-            $employees = Employee::where('created_by', \Auth::user()->creatorId())
-                ->where('branch_id', $request->branch)
-                ->where('department_id', $request->department)
-                ->get();
+            $query = Employee::where('created_by', \Auth::user()->creatorId());
+            if (!empty($request->branch)) {
+                $query->where('branch_id', $request->branch);
+            }
+            if (!empty($request->department)) {
+                $query->where('department_id', $request->department);
+            }
+            $employees = $query->orderBy('name')->get();
 
-            $branchName = Branch::where('id', $request->branch)->value('name') ?? '';
-            $deptName = Department::where('id', $request->department)->value('name') ?? '';
+            if ($employees->isEmpty()) {
+                return redirect()->back()->with('error', __('No employees found for the selected filters.'));
+            }
+
+            $branchName = !empty($request->branch) ? (Branch::where('id', $request->branch)->value('name') ?? '') : '';
+            $deptName = !empty($request->department) ? (Department::where('id', $request->department)->value('name') ?? '') : '';
 
             $headings = ['Employee ID', 'Name', 'Branch', 'Department', 'Date', 'Status', 'Clock In', 'Clock Out', 'Late', 'Early Leaving', 'Overtime'];
 
@@ -2489,85 +2847,86 @@ class AttendanceEmployeeController extends Controller
 
     public function bulkAttendanceData(Request $request)
     {
-        if (\Auth::user()->can('Create Attendance')) {
-            if (!empty($request->branch) && !empty($request->department)) {
-                $startTime = Utility::getValByName('company_start_time');
-                $endTime   = Utility::getValByName('company_end_time');
-                $date      = $request->date;
-
-                $employees = $request->employee_id;
-                $atte      = [];
-                foreach ($employees as $employee) {
-                    $present = 'present-' . $employee;
-                    $in      = 'in-' . $employee;
-                    $out     = 'out-' . $employee;
-                    $atte[]  = $present;
-                    if ($request->$present == 'on') {
-
-                        $in  = date("H:i:s", strtotime($request->$in));
-                        $out = date("H:i:s", strtotime($request->$out));
-
-                        $metrics = $this->calculateAttendanceMetrics(
-                            (int) $employee,
-                            $date,
-                            $in,
-                            $out,
-                            !empty($attendance) ? (int) $attendance->id : null
-                        );
-
-                        $attendance = AttendanceEmployee::where('employee_id', '=', $employee)->where('date', '=', $request->date)->first();
-
-                        if (!empty($attendance)) {
-                            $employeeAttendance = $attendance;
-                        } else {
-                            $employeeAttendance              = new AttendanceEmployee();
-                            $employeeAttendance->employee_id = $employee;
-                            $employeeAttendance->created_by  = \Auth::user()->creatorId();
-                        }
-
-                        $employeeAttendance->date          = $request->date;
-                        $employeeAttendance->status        = $metrics['attendance_status'];
-                        $employeeAttendance->clock_in      = $in;
-                        $employeeAttendance->clock_out     = $out;
-                        $employeeAttendance->late          = $metrics['late'];
-                        $employeeAttendance->early_leaving = $metrics['early_leaving'];
-                        $employeeAttendance->overtime      = $metrics['overtime'];
-                        $employeeAttendance->late_mark     = $metrics['late_mark'];
-                        $employeeAttendance->early_mark    = $metrics['early_mark'];
-                        $employeeAttendance->less_hours_mark = $metrics['less_hours_mark'];
-                        $employeeAttendance->deduction_units = $metrics['deduction_units'];
-                        $employeeAttendance->total_rest    = '00:00:00';
-                        $employeeAttendance->save();
-                    } else {
-                        $attendance = AttendanceEmployee::where('employee_id', '=', $employee)->where('date', '=', $request->date)->first();
-
-                        if (!empty($attendance)) {
-                            $employeeAttendance = $attendance;
-                        } else {
-                            $employeeAttendance              = new AttendanceEmployee();
-                            $employeeAttendance->employee_id = $employee;
-                            $employeeAttendance->created_by  = \Auth::user()->creatorId();
-                        }
-
-                        $employeeAttendance->status        = 'Leave';
-                        $employeeAttendance->date          = $request->date;
-                        $employeeAttendance->clock_in      = '00:00:00';
-                        $employeeAttendance->clock_out     = '00:00:00';
-                        $employeeAttendance->late          = '00:00:00';
-                        $employeeAttendance->early_leaving = '00:00:00';
-                        $employeeAttendance->overtime      = '00:00:00';
-                        $employeeAttendance->total_rest    = '00:00:00';
-                        $employeeAttendance->save();
-                    }
-                }
-
-                return redirect()->back()->with('success', __('Employee attendance successfully created.'));
-            } else {
-                return redirect()->back()->with('error', __('Branch & department field required.'));
-            }
-        } else {
+        if (!\Auth::user()->can('Create Attendance')) {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
+
+        $isVimalBulkMode = $this->isVimalBulkAttendancePortal($request);
+        if (!$isVimalBulkMode && (empty($request->branch) || empty($request->department))) {
+            return redirect()->back()->with('error', __('Branch & department field required.'));
+        }
+
+        if (empty($request->date) || empty($request->employee_id) || !is_array($request->employee_id)) {
+            return redirect()->back()->with('error', __('Please search employees and try again.'));
+        }
+
+        $date = $request->date;
+        $employees = $request->employee_id;
+
+        foreach ($employees as $employee) {
+            $present = 'present-' . $employee;
+            $in      = 'in-' . $employee;
+            $out     = 'out-' . $employee;
+
+            if ($request->$present == 'on') {
+                $in  = date('H:i:s', strtotime($request->$in));
+                $out = date('H:i:s', strtotime($request->$out));
+
+                $attendance = AttendanceEmployee::where('employee_id', '=', $employee)->where('date', '=', $date)->first();
+
+                $metrics = $this->calculateAttendanceMetrics(
+                    (int) $employee,
+                    $date,
+                    $in,
+                    $out,
+                    !empty($attendance) ? (int) $attendance->id : null
+                );
+
+                if (!empty($attendance)) {
+                    $employeeAttendance = $attendance;
+                } else {
+                    $employeeAttendance              = new AttendanceEmployee();
+                    $employeeAttendance->employee_id = $employee;
+                    $employeeAttendance->created_by  = \Auth::user()->creatorId();
+                }
+
+                $employeeAttendance->date            = $date;
+                $employeeAttendance->status          = $metrics['attendance_status'];
+                $employeeAttendance->clock_in        = $in;
+                $employeeAttendance->clock_out       = $out;
+                $employeeAttendance->late            = $metrics['late'];
+                $employeeAttendance->early_leaving   = $metrics['early_leaving'];
+                $employeeAttendance->overtime        = $metrics['overtime'];
+                $employeeAttendance->late_mark       = $metrics['late_mark'];
+                $employeeAttendance->early_mark      = $metrics['early_mark'];
+                $employeeAttendance->less_hours_mark = $metrics['less_hours_mark'];
+                $employeeAttendance->deduction_units = $metrics['deduction_units'];
+                $employeeAttendance->total_rest      = '00:00:00';
+                $employeeAttendance->save();
+            } else {
+                $attendance = AttendanceEmployee::where('employee_id', '=', $employee)->where('date', '=', $date)->first();
+
+                if (!empty($attendance)) {
+                    $employeeAttendance = $attendance;
+                } else {
+                    $employeeAttendance              = new AttendanceEmployee();
+                    $employeeAttendance->employee_id = $employee;
+                    $employeeAttendance->created_by  = \Auth::user()->creatorId();
+                }
+
+                $employeeAttendance->status        = 'Leave';
+                $employeeAttendance->date          = $date;
+                $employeeAttendance->clock_in      = '00:00:00';
+                $employeeAttendance->clock_out     = '00:00:00';
+                $employeeAttendance->late          = '00:00:00';
+                $employeeAttendance->early_leaving = '00:00:00';
+                $employeeAttendance->overtime      = '00:00:00';
+                $employeeAttendance->total_rest    = '00:00:00';
+                $employeeAttendance->save();
+            }
+        }
+
+        return redirect()->back()->with('success', __('Employee attendance successfully created.'));
     }
 
     protected function getAttendanceSettings(): array

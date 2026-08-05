@@ -1109,6 +1109,12 @@ Route::group(['middleware' => ['verified']], function () {
             'XSS',
         ]
     );
+    Route::post('attendanceemployee/bulkattendance/import-register', [AttendanceEmployeeController::class, 'bulkAttendanceImportRegister'])->name('attendanceemployee.bulkattendance.import-register')->middleware(
+        [
+            'auth',
+            'XSS',
+        ]
+    );
     Route::post('attendanceemployee/bulkattendance', [AttendanceEmployeeController::class, 'bulkAttendanceData'])->name('attendanceemployee.bulkattendances')->middleware(
         [
             'auth',

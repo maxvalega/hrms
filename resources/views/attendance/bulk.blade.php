@@ -139,7 +139,8 @@
                                             <span class="btn-inner--icon"><i
                                                     class="ti ti-refresh text-white-off "></i></span>
                                         </a>
-                                        @if(in_array(\Auth::user()->type, ['super admin', 'company']) && !empty($_GET['branch']) && !empty($_GET['department']))
+                                        @php $isVimalBulkMode = $isVimalBulkMode ?? false; @endphp
+                                        @if(in_array(\Auth::user()->type, ['super admin', 'company']) && ($isVimalBulkMode || (!empty($_GET['branch']) && !empty($_GET['department']))))
                                         <a href="{{ route('attendanceemployee.bulkattendance.template', ['branch' => $_GET['branch'] ?? '', 'department' => $_GET['department'] ?? '', 'date' => $_GET['date'] ?? date('Y-m-d')]) }}"
                                             class="btn btn-sm btn-info text-white" data-bs-toggle="tooltip" title=""
                                             data-bs-original-title="{{ __('Download Excel template to fill offline') }}">
@@ -150,6 +151,13 @@
                                             title="{{ __('Upload filled Excel to create/update attendance') }}">
                                             <span class="btn-inner--icon"><i class="ti ti-upload"></i> {{ __('Upload Excel') }}</span>
                                         </a>
+                                        @if($isVimalBulkMode)
+                                        <a href="#" class="btn btn-sm btn-dark"
+                                            data-bs-toggle="modal" data-bs-target="#importRegisterModal"
+                                            title="{{ __('Import monthly register with day columns') }}">
+                                            <span class="btn-inner--icon"><i class="ti ti-file-import"></i> {{ __('Import Register') }}</span>
+                                        </a>
+                                        @endif
                                         <a href="{{ route('attendanceemployee.bulkattendance.export', ['branch' => $_GET['branch'] ?? '', 'department' => $_GET['department'] ?? '', 'date' => $_GET['date'] ?? date('Y-m-d')]) }}"
                                             class="btn btn-sm btn-success" data-bs-toggle="tooltip" title=""
                                             data-bs-original-title="{{ __('Export current attendance to Excel') }}">
@@ -294,6 +302,46 @@
         </div>
       </div>
     </div>
+
+    {{-- Import Register Modal (Vimal Industrial bulk attendance only) --}}
+    @if(!empty($isVimalBulkMode))
+    <div class="modal fade" id="importRegisterModal" tabindex="-1" aria-labelledby="importRegisterModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <form action="{{ route('attendanceemployee.bulkattendance.import-register') }}" method="post" enctype="multipart/form-data">
+            @csrf
+            <div class="modal-header">
+              <h5 class="modal-title" id="importRegisterModalLabel">{{ __('Import Register') }}</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <div class="alert alert-info" style="font-size:.85rem;">
+                <strong>{{ __('Expected format') }}:</strong>
+                <ul class="mb-0 ps-3">
+                  <li>{{ __('One row per employee') }}</li>
+                  <li>{{ __('Day columns in header: 01-08-2026, 01/08/2026, 2026-08-01, or day numbers 1–31') }}</li>
+                  <li>{{ __('Cell values: P / A / L / HD (optional times like P (09:00-18:00))') }}</li>
+                  <li>{{ __('Branch & department are not required') }}</li>
+                </ul>
+              </div>
+              <div class="mb-3">
+                <label class="form-label">{{ __('Month') }} <small class="text-muted">({{ __('needed if headers are day numbers 1–31') }})</small></label>
+                <input type="month" name="month" class="form-control" value="{{ isset($_GET['date']) ? substr($_GET['date'], 0, 7) : date('Y-m') }}">
+              </div>
+              <div class="mb-3">
+                <label class="form-label">{{ __('Select Register File') }} <span class="text-danger">*</span></label>
+                <input type="file" name="file" accept=".csv,.xlsx,.xls" class="form-control" required>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ __('Cancel') }}</button>
+              <button type="submit" class="btn btn-dark"><i class="ti ti-file-import"></i> {{ __('Import Register') }}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    @endif
     </div>
 @endsection
 

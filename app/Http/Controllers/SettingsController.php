@@ -477,6 +477,9 @@ class SettingsController extends Controller
             if (!isset($request->ip_restrict)) {
                 $post['ip_restrict'] = 'off';
             }
+            if (!isset($request->geo_fencing_enabled)) {
+                $post['geo_fencing_enabled'] = 'off';
+            }
             if (!isset($request->leave_sandwich_policy)) {
                 $post['leave_sandwich_policy'] = 'off';
             }

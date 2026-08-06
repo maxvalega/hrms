@@ -16,6 +16,7 @@ use App\Models\PayrollAttendanceSync;
 use App\Models\User;
 use App\Models\Utility;
 use App\Services\FacialRecognitionService;
+use App\Services\GeoFenceService;
 use Carbon\Carbon;
 use DateTime;
 use Illuminate\Http\Request;
@@ -1771,6 +1772,16 @@ class AttendanceEmployeeController extends Controller
             $longitudeOut = $request->input('longitude_out');
             $addressOut = $request->input('address_out');
 
+            $employeeForGeo = Employee::find($employeeId);
+            $geoCheckOut = app(GeoFenceService::class)->validatePunch(
+                $request->filled('latitude_out') ? (float) $latitudeOut : null,
+                $request->filled('longitude_out') ? (float) $longitudeOut : null,
+                $employeeForGeo
+            );
+            if (! $geoCheckOut['allowed']) {
+                return redirect()->route('dashboard')->with('error', $geoCheckOut['message']);
+            }
+
             // Clock-out: require photo and verify against profile (same as clock-in)
             $photoOut = null;
             $photoBase64Out = $request->input('photo_base64_out');
@@ -1877,6 +1888,16 @@ class AttendanceEmployeeController extends Controller
         }
         if ($employeeId <= 0) {
             return redirect()->back()->with('error', __('Employee profile not found. Cannot mark attendance. Please contact HR to link your account to an employee.'));
+        }
+
+        $employee = Employee::find($employeeId);
+        $geoCheck = app(GeoFenceService::class)->validatePunch(
+            $request->filled('latitude') ? (float) $request->input('latitude') : null,
+            $request->filled('longitude') ? (float) $request->input('longitude') : null,
+            $employee
+        );
+        if (! $geoCheck['allowed']) {
+            return redirect()->back()->with('error', $geoCheck['message']);
         }
 
         $startTime = Utility::getValByName('company_start_time');

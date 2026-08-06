@@ -1127,6 +1127,61 @@
                                     </div>
                                 </div>
                                 </div>
+
+                                {{-- Geo Tagging / Geofence --}}
+                                <div class="mt-3" style="padding:14px; border:1px solid #e2e8f0; border-radius:10px;">
+                                    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                                        <div>
+                                            <h6 class="mb-1"><i class="ti ti-map-pin me-1"></i>{{ __('Geo Tagging Check') }}</h6>
+                                            <small class="text-muted">{{ __('Require employees to clock in/out within a set distance (metres) from the office location.') }}</small>
+                                        </div>
+                                        <div class="form-check form-switch">
+                                            <input type="hidden" name="geo_fencing_enabled" value="off">
+                                            <input type="checkbox" class="form-check-input" name="geo_fencing_enabled" id="geo_fencing_enabled"
+                                                value="on" {{ ($settings['geo_fencing_enabled'] ?? 'off') === 'on' ? 'checked' : '' }}>
+                                            <label class="form-check-label" for="geo_fencing_enabled">{{ __('Enable') }}</label>
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="form-group col-md-4">
+                                            {{ Form::label('geo_fence_radius_metres', __('Allowed Radius (metres)'), ['class' => 'col-form-label']) }}
+                                            {{ Form::number('geo_fence_radius_metres', $settings['geo_fence_radius_metres'] ?? 100, ['class' => 'form-control', 'min' => '1', 'step' => '1', 'placeholder' => '100']) }}
+                                            <small class="text-muted">{{ __('Admin can change this anytime (e.g. 50, 100, 200).') }}</small>
+                                        </div>
+                                        <div class="form-group col-md-4">
+                                            {{ Form::label('company_latitude', __('Office Latitude'), ['class' => 'col-form-label']) }}
+                                            {{ Form::text('company_latitude', $settings['company_latitude'] ?? '', ['class' => 'form-control', 'id' => 'company_latitude', 'placeholder' => '28.4595']) }}
+                                        </div>
+                                        <div class="form-group col-md-4">
+                                            {{ Form::label('company_longitude', __('Office Longitude'), ['class' => 'col-form-label']) }}
+                                            {{ Form::text('company_longitude', $settings['company_longitude'] ?? '', ['class' => 'form-control', 'id' => 'company_longitude', 'placeholder' => '77.0266']) }}
+                                        </div>
+                                        <div class="col-md-12 mb-2">
+                                            <button type="button" class="btn btn-sm btn-outline-primary" id="btnUseMyLocationForOffice">
+                                                <i class="ti ti-current-location me-1"></i>{{ __('Use my current location as office') }}
+                                            </button>
+                                            <small class="text-muted ms-2">{{ __('Or set per-branch coordinates under Branch settings (overrides company location for that branch).') }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <script>
+                                (function () {
+                                    var btn = document.getElementById('btnUseMyLocationForOffice');
+                                    if (!btn || !navigator.geolocation) return;
+                                    btn.addEventListener('click', function () {
+                                        btn.disabled = true;
+                                        navigator.geolocation.getCurrentPosition(function (pos) {
+                                            document.getElementById('company_latitude').value = pos.coords.latitude.toFixed(7);
+                                            document.getElementById('company_longitude').value = pos.coords.longitude.toFixed(7);
+                                            btn.disabled = false;
+                                        }, function () {
+                                            alert(@json(__('Unable to get location. Please allow location access or enter coordinates manually.')));
+                                            btn.disabled = false;
+                                        }, { enableHighAccuracy: true, timeout: 15000 });
+                                    });
+                                })();
+                                </script>
+
                                 <script>
                                 function rpAttSwitchPolicy(mode) {
                                     var grace = document.getElementById('rpPolicyGrace');

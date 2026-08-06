@@ -12,6 +12,7 @@ use App\Models\LeaveType;
 use App\Models\User;
 use App\Models\Utility;
 use App\Services\FacialRecognitionService;
+use App\Services\GeoFenceService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -295,6 +296,21 @@ class MobileAppController extends Controller
             }
         }
 
+        $geoCheck = app(GeoFenceService::class)->validatePunch(
+            $request->filled('latitude') ? (float) $request->latitude : null,
+            $request->filled('longitude') ? (float) $request->longitude : null,
+            $employee,
+            (int) $request->user()->creatorId()
+        );
+        if (! $geoCheck['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => $geoCheck['message'],
+                'distance_metres' => $geoCheck['distance_metres'],
+                'radius_metres' => $geoCheck['radius_metres'],
+            ], 403);
+        }
+
         $today = date('Y-m-d');
         $time = date('H:i:s');
 
@@ -396,6 +412,21 @@ class MobileAppController extends Controller
         $employee = Employee::where('user_id', $request->user()->id)->first();
         if (!$employee) {
             return response()->json(['success' => false, 'message' => 'Employee not found.'], 404);
+        }
+
+        $geoCheck = app(GeoFenceService::class)->validatePunch(
+            $request->filled('latitude') ? (float) $request->latitude : null,
+            $request->filled('longitude') ? (float) $request->longitude : null,
+            $employee,
+            (int) $request->user()->creatorId()
+        );
+        if (! $geoCheck['allowed']) {
+            return response()->json([
+                'success' => false,
+                'message' => $geoCheck['message'],
+                'distance_metres' => $geoCheck['distance_metres'],
+                'radius_metres' => $geoCheck['radius_metres'],
+            ], 403);
         }
 
         $today = date('Y-m-d');

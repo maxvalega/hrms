@@ -38,6 +38,18 @@
                 </select>
             </div>
         </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                {{ Form::label('latitude', __('Latitude (for geo tagging)'), ['class' => 'form-label']) }}
+                {{ Form::text('latitude', null, ['class' => 'form-control', 'placeholder' => '28.4595']) }}
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                {{ Form::label('longitude', __('Longitude (for geo tagging)'), ['class' => 'form-label']) }}
+                {{ Form::text('longitude', null, ['class' => 'form-control', 'placeholder' => '77.0266']) }}
+            </div>
+        </div>
     </div>
 </div>
 <div class="modal-footer">

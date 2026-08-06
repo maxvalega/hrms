@@ -12,6 +12,8 @@ class Branch extends Model
         'country',
         'state',
         'city',
+        'latitude',
+        'longitude',
         'created_by',
     ];
 

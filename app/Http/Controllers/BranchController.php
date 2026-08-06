@@ -53,6 +53,8 @@ class BranchController extends Controller
             $branch->country   = $request->input('country');
             $branch->state     = $request->input('state');
             $branch->city      = $request->input('city');
+            $branch->latitude  = $request->filled('latitude') ? $request->input('latitude') : null;
+            $branch->longitude = $request->filled('longitude') ? $request->input('longitude') : null;
             $branch->created_by = \Auth::user()->creatorId();
             $branch->save();
 
@@ -101,6 +103,8 @@ class BranchController extends Controller
                 $branch->country = $request->input('country');
                 $branch->state   = $request->input('state');
                 $branch->city    = $request->input('city');
+                $branch->latitude  = $request->filled('latitude') ? $request->input('latitude') : null;
+                $branch->longitude = $request->filled('longitude') ? $request->input('longitude') : null;
                 $branch->save();
 
                 return redirect()->route('branch.index')->with('success', __('Branch successfully updated.'));

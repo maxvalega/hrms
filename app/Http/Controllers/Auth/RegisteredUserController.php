@@ -114,6 +114,7 @@ class RegisteredUserController extends Controller
         if ($settings['email_verification'] == 'off') {
             try {
                 $uArr = [
+                    'name' => $user->name ?? $request->name,
                     'email' => $request->email,
                     'password' => $request->password,
                 ];

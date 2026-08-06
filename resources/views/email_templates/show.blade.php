@@ -66,7 +66,7 @@
                     <div class="row text-xs">
 
                         <h6 class="font-weight-bold mb-4">{{ __('Variables') }}</h6>
-                        @if ($emailTemplate->slug == 'new_user')
+                        @if ($emailTemplate->slug == 'new_user' || $emailTemplate->slug == 'account_enabled')
                             <div class="row">
                                 {{-- <h6 class="font-weight-bold pb-3">{{__('Create User')}}</h6> --}}
                                 <p class="col-6">{{ __('App Name') }} : <span
@@ -75,6 +75,8 @@
                                         class="pull-right text-primary">{company_name}</span></p>
                                 <p class="col-6">{{ __('App Url') }} : <span
                                         class="pull-right text-primary">{app_url}</span></p>
+                                <p class="col-6">{{ __('Name') }} : <span
+                                        class="pull-right text-primary">{name}</span></p>
                                 <p class="col-6">{{ __('Email') }} : <span
                                         class="pull-right text-primary">{email}</span></p>
                                 <p class="col-6">{{ __('Password') }} : <span

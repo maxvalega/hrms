@@ -83,6 +83,7 @@ class User extends Authenticatable implements MustVerifyEmail
         $emailTemplate = [
             'New User',
             'New Employee',
+            'Account Enabled',
             'New Payroll',
             'New Ticket',
             'New Award',
@@ -146,11 +147,7 @@ class User extends Authenticatable implements MustVerifyEmail
                     <p>{app_url}</p>
                     <p>Danke,</p>
                     <p>{app_name}</p>',
-                    'en' => '<p>Hello,&nbsp;<br />Welcome to {app_name}.</p>
-                    <p><strong>You are now user..</strong></p>
-                    <p><strong>Email </strong>: {email}<br /><strong>Password</strong> : {password}</p>
-                    <p>{app_url}</p>
-                    <p>Thanks,<br />{app_name}</p>',
+                    'en' => \App\Models\Utility::loginCredentialsEmailContent(),
                     'es' => '<p>Hola,</p>
                     <p>Bienvenido a {app_name}.</p>
                     <p>Ahora es usuario ..</p>
@@ -267,12 +264,11 @@ class User extends Authenticatable implements MustVerifyEmail
                     <p>{app_url}</p>
                     <p>Danke,</p>
                     <p>{app_name}</p>',
-                    'en' => '<p>Hello {employee_name},&nbsp;<br />Welcome to {app_name}.</p>
-                    <p>You are now Employee..</p>
-                    <p><strong>Email </strong>: {employee_email}</p>
-                    <p><strong>Password</strong> : {employee_password}</p>
-                    <p>{app_url}</p>
-                    <p>Thanks,<br />{app_name}</p>',
+                    'en' => str_replace(
+                        ['{name}', '{email}', '{password}'],
+                        ['{employee_name}', '{employee_email}', '{employee_password}'],
+                        \App\Models\Utility::loginCredentialsEmailContent()
+                    ),
                     'es' => '<p style="line-height: 28px;">Hello {employee_name},</p>
                     <p style="line-height: 28px;">Bienvenido a {app_name}.</p>
                     <p style="line-height: 28px;">Ahora es Empleado.</p>
@@ -2502,11 +2498,20 @@ class User extends Authenticatable implements MustVerifyEmail
                     <p><span style="font-family: sans-serif;">{company_name}</span></p>',
                 ],
             ],
+            'account_enabled' => [
+                'subject' => 'Your account has been enabled',
+                'lang' => [
+                    'en' => \App\Models\Utility::loginCredentialsEmailContent(),
+                ],
+            ],
         ];
 
         $email = EmailTemplate::all();
 
         foreach ($email as $e) {
+            if (! isset($defaultTemplate[$e->slug]['lang'])) {
+                continue;
+            }
 
             foreach ($defaultTemplate[$e->slug]['lang'] as $lang => $content) {
                 $emailNoti = EmailTemplateLang::where('parent_id', $e->id)->where('lang', $lang)->count();

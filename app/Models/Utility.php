@@ -79,6 +79,7 @@ class Utility extends Model
             "company_end_time" => "18:00",
             'new_user' => '1',
             'new_employee' => '1',
+            'account_enabled' => '1',
             'new_payroll' => '1',
             'new_ticket' => '1',
             'new_award' => '1',
@@ -355,6 +356,7 @@ class Utility extends Model
     public static $emailStatus = [
         'new_user' => 'New User',
         'new_employee' => 'New Employee',
+        'account_enabled' => 'Account Enabled',
         'new_payroll' => 'New Payroll',
         'new_ticket' => 'New Ticket',
         'new_award' => 'New Award',
@@ -668,7 +670,6 @@ class Utility extends Model
 
     /**
      * Email login username (email) + plain password after account enable / password set.
-     * Uses new_employee template for employees, new_user for other roles.
      */
     public static function sendLoginCredentialsEmail(User $user, string $plainPassword): array
     {
@@ -676,18 +677,61 @@ class Utility extends Model
             return ['is_success' => false, 'error' => __('Email or password missing.')];
         }
 
-        if (strtolower((string) $user->type) === 'employee') {
-            return self::sendEmailTemplate('new_employee', [$user->id => $user->email], [
-                'employee_name' => $user->name,
-                'employee_email' => $user->email,
-                'employee_password' => $plainPassword,
-            ]);
-        }
-
-        return self::sendEmailTemplate('new_user', [$user->id => $user->email], [
+        $vars = [
+            'name' => $user->name,
             'email' => $user->email,
             'password' => $plainPassword,
-        ]);
+            'employee_name' => $user->name,
+            'employee_email' => $user->email,
+            'employee_password' => $plainPassword,
+        ];
+
+        if (EmailTemplate::where('slug', 'account_enabled')->exists()) {
+            return self::sendEmailTemplate('account_enabled', [$user->id => $user->email], $vars);
+        }
+
+        if (strtolower((string) $user->type) === 'employee') {
+            return self::sendEmailTemplate('new_employee', [$user->id => $user->email], $vars);
+        }
+
+        return self::sendEmailTemplate('new_user', [$user->id => $user->email], $vars);
+    }
+
+    /**
+     * Polished HTML body for login credential emails.
+     */
+    public static function loginCredentialsEmailContent(): string
+    {
+        return <<<'HTML'
+<div style="font-family:'Segoe UI',Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#1f2937;line-height:1.6;background:#ffffff;">
+  <div style="background:linear-gradient(135deg,#0f766e,#0d9488);color:#ffffff;padding:28px 32px;border-radius:12px 12px 0 0;">
+    <p style="margin:0;font-size:13px;letter-spacing:.04em;text-transform:uppercase;opacity:.85;">Account Access</p>
+    <h1 style="margin:8px 0 0;font-size:22px;font-weight:600;line-height:1.3;">Your login credentials</h1>
+    <p style="margin:8px 0 0;font-size:14px;opacity:.92;">{app_name}</p>
+  </div>
+  <div style="border:1px solid #e5e7eb;border-top:0;padding:28px 32px;border-radius:0 0 12px 12px;background:#ffffff;">
+    <p style="margin:0 0 12px;font-size:15px;">Hi <strong>{name}</strong>,</p>
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;">Your account has been enabled. Use the details below to sign in to the HRMS portal.</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border-collapse:separate;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin:0 0 22px;">
+      <tr>
+        <td style="padding:14px 18px;font-size:12px;color:#64748b;width:140px;vertical-align:top;">Username / Email</td>
+        <td style="padding:14px 18px;font-size:15px;font-weight:600;color:#0f172a;word-break:break-all;">{email}</td>
+      </tr>
+      <tr>
+        <td style="padding:14px 18px;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;vertical-align:top;">Password</td>
+        <td style="padding:14px 18px;font-size:15px;font-weight:700;color:#0f172a;font-family:Consolas,'Courier New',monospace;letter-spacing:.03em;">{password}</td>
+      </tr>
+    </table>
+    <p style="margin:0 0 8px;font-size:14px;color:#374151;">Sign in here:</p>
+    <p style="margin:0 0 22px;font-size:14px;">{app_url}</p>
+    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px 14px;margin:0 0 22px;">
+      <p style="margin:0;font-size:13px;color:#9a3412;"><strong>Security tip:</strong> Please change your password after your first login.</p>
+    </div>
+    <p style="margin:0;font-size:14px;color:#374151;">If you did not expect this email, contact your HR administrator.</p>
+    <p style="margin:24px 0 0;font-size:14px;color:#64748b;">Thanks,<br><strong style="color:#0f172a;">{company_name}</strong><br><span style="font-size:12px;">{app_name}</span></p>
+  </div>
+</div>
+HTML;
     }
 
     public static function sendEmailTemplate($emailTemplate, $mailTo, $obj)
@@ -707,8 +751,15 @@ class Utility extends Model
         if (isset($template) && !empty($template)) {
 
             // check template is active or not by company
-            $is_active = UserEmailTemplate::where('template_id', '=', $template->id)->first();
-            if ($is_active->is_active == 1) {
+            $companyId = $usr ? $usr->creatorId() : 1;
+            $is_active = UserEmailTemplate::where('template_id', '=', $template->id)
+                ->where('user_id', $companyId)
+                ->first();
+            // Fall back to any active row if company-specific toggle is missing
+            if (! $is_active) {
+                $is_active = UserEmailTemplate::where('template_id', '=', $template->id)->first();
+            }
+            if ($is_active && (int) $is_active->is_active === 1) {
                 $settings = self::settings();
 
                 $data = Utility::getSetting();
@@ -2608,24 +2659,25 @@ class Utility extends Model
     {
         $defaultTemplate = [
             'new_user' => [
-                'subject' => 'New User',
+                'subject' => 'Your login credentials',
                 'lang' => [
-                    'en' => '<p>Hello,&nbsp;<br />Welcome to {app_name}.</p>
-                    <p><strong>You are now user..</strong></p>
-                    <p><strong>Email </strong>: {email}<br /><strong>Password</strong> : {password}</p>
-                    <p>{app_url}</p>
-                    <p>Thanks,<br />{app_name}</p>',
+                    'en' => Utility::loginCredentialsEmailContent(),
                 ],
             ],
             'new_employee' => [
-                'subject' => 'New Employee',
+                'subject' => 'Your login credentials',
                 'lang' => [
-                    'en' => '<p>Hello {employee_name},&nbsp;<br />Welcome to {app_name}.</p>
-                    <p>You are now Employee..</p>
-                    <p><strong>Email </strong>: {employee_email}</p>
-                    <p><strong>Password</strong> : {employee_password}</p>
-                    <p>{app_url}</p>
-                    <p>Thanks,<br />{app_name}</p>',
+                    'en' => str_replace(
+                        ['{name}', '{email}', '{password}'],
+                        ['{employee_name}', '{employee_email}', '{employee_password}'],
+                        Utility::loginCredentialsEmailContent()
+                    ),
+                ],
+            ],
+            'account_enabled' => [
+                'subject' => 'Your account has been enabled',
+                'lang' => [
+                    'en' => Utility::loginCredentialsEmailContent(),
                 ],
             ],
             'new_payroll' => [

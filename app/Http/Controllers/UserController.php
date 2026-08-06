@@ -218,6 +218,7 @@ class UserController extends Controller
             if ($setings['new_user'] == 1) {
 
                 $uArr = [
+                    'name' => $user->name,
                     'email' => $user->email,
                     'password' => $request->password,
                 ];

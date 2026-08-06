@@ -670,6 +670,7 @@ class Utility extends Model
 
     /**
      * Email login username (email) + plain password after account enable / password set.
+     * Sends directly (does not silently skip when a template toggle is off).
      */
     public static function sendLoginCredentialsEmail(User $user, string $plainPassword): array
     {
@@ -677,24 +678,154 @@ class Utility extends Model
             return ['is_success' => false, 'error' => __('Email or password missing.')];
         }
 
-        $vars = [
-            'name' => $user->name,
-            'email' => $user->email,
-            'password' => $plainPassword,
-            'employee_name' => $user->name,
-            'employee_email' => $user->email,
-            'employee_password' => $plainPassword,
+        try {
+            self::ensureAccountEnabledEmailTemplate($user);
+
+            $companyId = \Auth::check() ? \Auth::user()->creatorId() : ((int) ($user->created_by ?: 1));
+            $settings = self::settingsByUser($companyId);
+
+            if (empty($settings['mail_host']) && empty(config('mail.mailers.smtp.host'))) {
+                // Fall back to super-admin / system SMTP
+                $settings = array_merge($settings, self::settingsByUser(1));
+            }
+
+            if (empty($settings['mail_host']) && empty(env('MAIL_HOST'))) {
+                return [
+                    'is_success' => false,
+                    'error' => __('SMTP is not configured. Set mail host/username in Company Settings → Email, then try again.'),
+                ];
+            }
+
+            self::applySmtpConfig($settings);
+
+            $html = self::replaceVariable(self::loginCredentialsEmailContent(), [
+                'name' => $user->name,
+                'email' => $user->email,
+                'password' => $plainPassword,
+                'employee_name' => $user->name,
+                'employee_email' => $user->email,
+                'employee_password' => $plainPassword,
+            ]);
+
+            $subject = __('Your account has been enabled');
+            $fromAddress = $settings['mail_from_address'] ?: config('mail.from.address');
+            $fromName = $settings['mail_from_name'] ?: ($settings['company_name'] ?: config('mail.from.name'));
+
+            if (empty($fromAddress)) {
+                return [
+                    'is_success' => false,
+                    'error' => __('Mail From Address is empty. Please configure it in Email settings.'),
+                ];
+            }
+
+            Mail::html($html, function ($message) use ($user, $subject, $fromAddress, $fromName) {
+                $message->to($user->email, $user->name ?: null)
+                    ->subject($subject)
+                    ->from($fromAddress, $fromName ?: 'HRMS');
+            });
+
+            return ['is_success' => true, 'error' => false];
+        } catch (\Throwable $e) {
+            \Log::error('Login credentials email failed', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'is_success' => false,
+                'error' => __('E-Mail was not sent') . ': ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Make sure Account Enabled template + company toggle exist and are active.
+     */
+    protected static function ensureAccountEnabledEmailTemplate(User $user): void
+    {
+        $template = EmailTemplate::firstOrCreate(
+            ['slug' => 'account_enabled'],
+            [
+                'name' => 'Account Enabled',
+                'from' => 'HRMS',
+                'created_by' => 1,
+            ]
+        );
+
+        $lang = EmailTemplateLang::firstOrNew([
+            'parent_id' => $template->id,
+            'lang' => 'en',
+        ]);
+        if (empty($lang->content)) {
+            $lang->subject = 'Your account has been enabled';
+            $lang->content = self::loginCredentialsEmailContent();
+            $lang->save();
+        }
+
+        $companyId = \Auth::check() ? \Auth::user()->creatorId() : ((int) ($user->created_by ?: 1));
+        UserEmailTemplate::updateOrCreate(
+            [
+                'template_id' => $template->id,
+                'user_id' => $companyId,
+            ],
+            ['is_active' => 1]
+        );
+    }
+
+    /**
+     * Settings for a specific company/user id (bypasses static cache).
+     */
+    public static function settingsByUser(int $userId): array
+    {
+        $settings = [
+            'mail_driver' => '',
+            'mail_host' => '',
+            'mail_port' => '',
+            'mail_encryption' => '',
+            'mail_username' => '',
+            'mail_password' => '',
+            'mail_from_address' => '',
+            'mail_from_name' => '',
+            'company_name' => '',
         ];
 
-        if (EmailTemplate::where('slug', 'account_enabled')->exists()) {
-            return self::sendEmailTemplate('account_enabled', [$user->id => $user->email], $vars);
+        $rows = DB::table('settings')->where('created_by', $userId)->get();
+        if ($rows->isEmpty() && $userId !== 1) {
+            $rows = DB::table('settings')->where('created_by', 1)->get();
         }
 
-        if (strtolower((string) $user->type) === 'employee') {
-            return self::sendEmailTemplate('new_employee', [$user->id => $user->email], $vars);
+        foreach ($rows as $row) {
+            $settings[$row->name] = $row->value;
         }
 
-        return self::sendEmailTemplate('new_user', [$user->id => $user->email], $vars);
+        return $settings;
+    }
+
+    /**
+     * Apply SMTP config using Laravel's current mailer keys.
+     */
+    public static function applySmtpConfig(array $settings): void
+    {
+        $driver = $settings['mail_driver'] ?? config('mail.default', 'smtp');
+        config([
+            'mail.default' => $driver ?: 'smtp',
+            'mail.mailers.smtp.transport' => 'smtp',
+            'mail.mailers.smtp.host' => $settings['mail_host'] ?? config('mail.mailers.smtp.host'),
+            'mail.mailers.smtp.port' => $settings['mail_port'] ?? config('mail.mailers.smtp.port'),
+            'mail.mailers.smtp.encryption' => $settings['mail_encryption'] ?? config('mail.mailers.smtp.encryption'),
+            'mail.mailers.smtp.username' => $settings['mail_username'] ?? config('mail.mailers.smtp.username'),
+            'mail.mailers.smtp.password' => $settings['mail_password'] ?? config('mail.mailers.smtp.password'),
+            'mail.from.address' => $settings['mail_from_address'] ?? config('mail.from.address'),
+            'mail.from.name' => $settings['mail_from_name'] ?? config('mail.from.name'),
+            // Legacy keys still referenced elsewhere
+            'mail.driver' => $driver ?: 'smtp',
+            'mail.host' => $settings['mail_host'] ?? '',
+            'mail.port' => $settings['mail_port'] ?? '',
+            'mail.encryption' => $settings['mail_encryption'] ?? '',
+            'mail.username' => $settings['mail_username'] ?? '',
+            'mail.password' => $settings['mail_password'] ?? '',
+        ]);
     }
 
     /**
@@ -745,6 +876,14 @@ HTML;
                 $mailTo = array_values($mailTo);
             }
         }
+
+        if (empty($mailTo)) {
+            return [
+                'is_success' => false,
+                'error' => __('No recipient email address.'),
+            ];
+        }
+
         // find template is exist or not in our record
         $template = EmailTemplate::where('slug', $emailTemplate)->first();
 
@@ -760,9 +899,8 @@ HTML;
                 $is_active = UserEmailTemplate::where('template_id', '=', $template->id)->first();
             }
             if ($is_active && (int) $is_active->is_active === 1) {
-                $settings = self::settings();
-
-                $data = Utility::getSetting();
+                $settings = self::settingsByUser((int) $companyId);
+                self::applySmtpConfig($settings);
 
                 $setting = [
                     'mail_driver' => '',
@@ -773,56 +911,38 @@ HTML;
                     'mail_password' => '',
                     'mail_from_address' => '',
                     'mail_from_name' => '',
-
                 ];
+                $data = Utility::getSetting();
                 foreach ($data as $row) {
                     $setting[$row->name] = $row->value;
                 }
 
-                // get email content language base
-                if ($usr) {
-                    $content = EmailTemplateLang::where('parent_id', '=', $template->id)->where('lang', 'LIKE', $usr->lang)->first();
-                } else {
+                // get email content language base (fall back to English)
+                $lang = ($usr && ! empty($usr->lang)) ? $usr->lang : 'en';
+                $content = EmailTemplateLang::where('parent_id', '=', $template->id)->where('lang', 'LIKE', $lang)->first();
+                if (! $content || empty($content->content)) {
                     $content = EmailTemplateLang::where('parent_id', '=', $template->id)->where('lang', 'LIKE', 'en')->first();
                 }
+
+                if (! $content) {
+                    return [
+                        'is_success' => false,
+                        'error' => __('Mail template content is missing.'),
+                    ];
+                }
+
                 $content['from'] = $template->from;
 
                 if (!empty($content->content)) {
                     $content->content = self::replaceVariable($content->content, $obj);
-                    // send email
-                    // try {
-                    //     config([
-                    //         'mail.driver'       => $settings['mail_driver'],
-                    //         'mail.host'         => $settings['mail_host'],
-                    //         'mail.port'         => $settings['mail_port'],
-                    //         'mail.username'     => $settings['mail_username'],
-                    //         'mail.password'     => $settings['mail_password'],
-                    //         'mail.encryption'   => $settings['mail_encryption'],
-                    //         'mail.from.address' => $settings['mail_from_address'],
-                    //         'mail.from.name'    => $settings['mail_from_name'],
-                    //     ]);
-                    //     Mail::to($mailTo)->send(new CommonEmailTemplate($content, $settings, $mailTo[0]));
-                    // } catch (\Exception $e) {
-                    //     $error = __('E-Mail has been not sent due to SMTP configuration');
-                    // }
 
                     try {
-                        config(
-                            [
-                                'mail.driver' => $settings['mail_driver'] ? $settings['mail_driver'] : $setting['mail_driver'],
-                                'mail.host' => $settings['mail_host'] ? $settings['mail_host'] : $setting['mail_host'],
-                                'mail.port' => $settings['mail_port'] ? $settings['mail_port'] : $setting['mail_port'],
-                                'mail.encryption' => $settings['mail_encryption'] ? $settings['mail_encryption'] : $setting['mail_encryption'],
-                                'mail.username' => $settings['mail_username'] ? $settings['mail_username'] : $setting['mail_username'],
-                                'mail.password' => $settings['mail_password'] ? $settings['mail_password'] : $setting['mail_password'],
-                                'mail.from.address' => $settings['mail_from_address'] ? $settings['mail_from_address'] : $setting['mail_from_address'],
-                                'mail.from.name' => $settings['mail_from_name'] ? $settings['mail_from_name'] : $setting['mail_from_name'],
-                            ]
-                        );
+                        $merged = array_merge($setting, $settings);
+                        self::applySmtpConfig($merged);
 
-                        Mail::to($mailTo)->send(new CommonEmailTemplate($content, $settings, $mailTo[0]));
+                        Mail::to($mailTo)->send(new CommonEmailTemplate($content, $merged, $mailTo[0]));
                     } catch (\Exception $e) {
-                        $error = __('E-Mail has been not sent due to SMTP configuration');
+                        $error = __('E-Mail has been not sent due to SMTP configuration') . ': ' . $e->getMessage();
                     }
 
                     if (isset($error)) {
@@ -846,11 +966,16 @@ HTML;
                 return $arReturn;
             } else {
                 return [
-                    'is_success' => true,
-                    'error' => false,
+                    'is_success' => false,
+                    'error' => __('Email template is disabled for this company.'),
                 ];
             }
         }
+
+        return [
+            'is_success' => false,
+            'error' => __('Email template not found.'),
+        ];
     }
 
     public static function replaceVariable($content, $obj)

@@ -400,13 +400,16 @@ class UserController extends Controller
         ])->save();
 
         $resp = Utility::sendLoginCredentialsEmail($user, $plainPassword);
-        $mailNote = (! empty($resp) && ($resp['is_success'] ?? false) === false && ! empty($resp['error']))
-            ? '<br> <span class="text-danger">' . $resp['error'] . '</span>'
-            : '';
+        if (! empty($resp) && ($resp['is_success'] ?? false) === false) {
+            return redirect()->back()->with(
+                'error',
+                __('User login was enabled, but the email failed:') . ' ' . ($resp['error'] ?? __('Unknown error'))
+            );
+        }
 
         return redirect()->back()->with(
             'success',
-            __('User login enabled successfully. Login credentials have been sent to their email.') . $mailNote
+            __('User login enabled successfully. Login credentials have been sent to their email.')
         );
     }
 
@@ -448,13 +451,16 @@ class UserController extends Controller
         ])->save();
 
         $resp = Utility::sendLoginCredentialsEmail($user, $request->password);
-        $mailNote = (! empty($resp) && ($resp['is_success'] ?? false) === false && ! empty($resp['error']))
-            ? '<br> <span class="text-danger">' . $resp['error'] . '</span>'
-            : '';
+        if (! empty($resp) && ($resp['is_success'] ?? false) === false) {
+            return redirect()->route('user.index')->with(
+                'error',
+                __('Password updated, but the email failed:') . ' ' . ($resp['error'] ?? __('Unknown error'))
+            );
+        }
 
         return redirect()->route('user.index')->with(
             'success',
-            __('User Password successfully updated. Login credentials have been sent to their email.') . $mailNote
+            __('User Password successfully updated. Login credentials have been sent to their email.')
         );
     }
 

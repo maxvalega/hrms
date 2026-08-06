@@ -1525,13 +1525,16 @@ class EmployeeController extends Controller
         ])->save();
 
         $resp = Utility::sendLoginCredentialsEmail($user, $request->password);
-        $mailNote = (! empty($resp) && ($resp['is_success'] ?? false) === false && ! empty($resp['error']))
-            ? '<br> <span class="text-danger">' . $resp['error'] . '</span>'
-            : '';
+        if (! empty($resp) && ($resp['is_success'] ?? false) === false) {
+            return redirect()->route('employee.index')->with(
+                'error',
+                __('Password updated, but the email failed:') . ' ' . ($resp['error'] ?? __('Unknown error'))
+            );
+        }
 
         return redirect()->route('employee.index')->with(
             'success',
-            __('Employee Password successfully updated. Login credentials have been sent to their email.') . $mailNote
+            __('Employee Password successfully updated. Login credentials have been sent to their email.')
         );
     }
 }

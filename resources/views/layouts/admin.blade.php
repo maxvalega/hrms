@@ -433,7 +433,8 @@
             // Attendance calendar events should navigate directly, not open in modal
             if ($(this).hasClass('attn-cal-present') || $(this).hasClass('attn-cal-absent') ||
                 $(this).hasClass('attn-cal-late') || $(this).hasClass('attn-cal-leave') ||
-                $(this).hasClass('attn-cal-halfday') || (url && url.indexOf('attendanceemployee') !== -1)) {
+                $(this).hasClass('attn-cal-halfday') || $(this).hasClass('spectal-leave-cal') ||
+                (url && url.indexOf('attendanceemployee') !== -1)) {
                 window.location.href = url;
                 return;
             }

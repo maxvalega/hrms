@@ -446,21 +446,29 @@ class EventController extends Controller
 
         $isSpectal = TenantHost::subdomainFromHost() === 'spectal';
 
-        // Spectal: every user sees who is on leave (approved leave + attendance leave for all staff).
-        $attendanceEvents = $this->buildAttendanceCalendarEvents($onlyEmployeeId, $isSpectal);
-        $arrayJson = array_merge($arrayJson, $attendanceEvents);
-
+        // Spectal: approved leave first (one chip per day), then attendance — skip duplicate "On Leave".
+        $leaveCoveredKeys = [];
         if ($isSpectal) {
-            $arrayJson = array_merge($arrayJson, $this->buildSpectalApprovedLeaveCalendarEvents());
+            $leaveEvents = $this->buildSpectalApprovedLeaveCalendarEvents($leaveCoveredKeys);
+            $arrayJson = array_merge($arrayJson, $leaveEvents);
         }
+
+        $attendanceEvents = $this->buildAttendanceCalendarEvents(
+            $onlyEmployeeId,
+            $isSpectal,
+            $leaveCoveredKeys
+        );
+        $arrayJson = array_merge($arrayJson, $attendanceEvents);
 
         return response()->json($arrayJson);
     }
 
     /**
-     * Spectal only: approved leave applications for all employees, visible to every user.
+     * Spectal only: approved leave for all employees, one event per day (avoids cut-off multi-day bars).
+     *
+     * @param  array<string, bool>  $leaveCoveredKeys  filled with "employeeId|Y-m-d" keys for dedupe
      */
-    protected function buildSpectalApprovedLeaveCalendarEvents(): array
+    protected function buildSpectalApprovedLeaveCalendarEvents(array &$leaveCoveredKeys = []): array
     {
         $creatorId = \Auth::user()->creatorId();
         $dateFrom = Carbon::now()->subMonths(4)->startOfMonth()->format('Y-m-d');
@@ -491,23 +499,34 @@ class EventController extends Controller
                 ? ' (' . __('Half Day') . ')'
                 : '';
 
-            $end = Carbon::parse($leave->end_date)->addDay()->format('Y-m-d H:i:s');
-
-            $event = [
-                'id' => 'leave-' . $leave->id,
-                'title' => $empName . ': ' . $leaveType . $suffix,
-                'start' => $leave->start_date,
-                'end' => $end,
-                'allDay' => true,
-                'className' => 'attn-cal-leave',
-                'classNames' => ['attn-cal-leave'],
-            ];
-
-            if ($canOpenLeave) {
-                $event['url'] = route('leave.action', $leave->id);
+            $title = $empName . ' · ' . $leaveType . $suffix;
+            $rangeStart = Carbon::parse($leave->start_date)->startOfDay();
+            $rangeEnd = Carbon::parse($leave->end_date)->startOfDay();
+            if ($rangeEnd->lt($rangeStart)) {
+                $rangeEnd = $rangeStart->copy();
             }
 
-            $out[] = $event;
+            for ($day = $rangeStart->copy(); $day->lte($rangeEnd); $day->addDay()) {
+                $dateStr = $day->toDateString();
+                $leaveCoveredKeys[(int) $leave->employee_id . '|' . $dateStr] = true;
+
+                $event = [
+                    'id' => 'leave-' . $leave->id . '-' . $day->format('Ymd'),
+                    'title' => $title,
+                    'start' => $dateStr,
+                    'end' => $day->copy()->addDay()->format('Y-m-d H:i:s'),
+                    'allDay' => true,
+                    'display' => 'block',
+                    'className' => 'attn-cal-leave spectal-leave-cal',
+                    'classNames' => ['attn-cal-leave', 'spectal-leave-cal'],
+                ];
+
+                if ($canOpenLeave) {
+                    $event['url'] = route('leave.action', $leave->id);
+                }
+
+                $out[] = $event;
+            }
         }
 
         return $out;
@@ -518,9 +537,14 @@ class EventController extends Controller
      *
      * When $shareCompanyLeave is true (Spectal), employees still see only their own attendance
      * for present/absent/etc., but leave-status rows for the whole company are included and named.
+     *
+     * @param  array<string, bool>  $leaveCoveredKeys  "employeeId|Y-m-d" already shown as approved leave
      */
-    protected function buildAttendanceCalendarEvents(?int $onlyEmployeeId, bool $shareCompanyLeave = false): array
-    {
+    protected function buildAttendanceCalendarEvents(
+        ?int $onlyEmployeeId,
+        bool $shareCompanyLeave = false,
+        array $leaveCoveredKeys = []
+    ): array {
         $creatorId = \Auth::user()->creatorId();
         $dateFrom = Carbon::now()->subMonths(4)->startOfMonth()->format('Y-m-d');
         $dateTo = Carbon::now()->addMonth()->endOfMonth()->format('Y-m-d');
@@ -581,6 +605,12 @@ class EventController extends Controller
 
             $mainRow = $rows->sortByDesc(fn ($r) => $priority($r->status))->first();
             $mainStatus = strtolower(trim((string) ($mainRow->status ?? 'present')));
+
+            // Already shown as approved leave (Spectal) — skip duplicate "On Leave" chip.
+            $coverKey = (int) $sample->employee_id . '|' . (string) $sample->date;
+            if ($mainStatus === 'leave' && isset($leaveCoveredKeys[$coverKey]) && ! $rows->contains(fn ($r) => isset($swipeAttendanceIds[(int) $r->id]))) {
+                continue;
+            }
 
             $hasSwipeRequest = $rows->contains(fn ($r) => isset($swipeAttendanceIds[(int) $r->id]));
 

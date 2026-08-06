@@ -523,6 +523,50 @@
             border-color: #ffc107 !important;
             color: #664d03 !important;
         }
+
+        /* Spectal leave chips: full name + leave type, no truncated grey bars */
+        .fc .fc-event.spectal-leave-cal,
+        .fc-event.spectal-leave-cal {
+            background-color: #cfe2ff !important;
+            border: 1px solid #0d6efd !important;
+            color: #084298 !important;
+            font-weight: 600;
+            white-space: normal !important;
+            overflow: visible !important;
+            height: auto !important;
+            min-height: 1.35em;
+            line-height: 1.25 !important;
+            padding: 2px 5px !important;
+            border-radius: 4px !important;
+        }
+        .fc .fc-event.spectal-leave-cal .fc-event-main,
+        .fc .fc-event.spectal-leave-cal .fc-event-title {
+            color: #084298 !important;
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
+            font-size: 0.72rem;
+            line-height: 1.25;
+        }
+        .fc-more-popover {
+            max-width: min(360px, 92vw);
+            z-index: 1080 !important;
+        }
+        .fc-more-popover .fc-popover-body {
+            max-height: 320px;
+            overflow-y: auto;
+        }
+        .fc-more-popover .fc-event,
+        .fc-more-popover .fc-event .fc-event-title,
+        .fc-more-popover .fc-event .fc-event-main {
+            white-space: normal !important;
+            overflow: visible !important;
+            text-overflow: unset !important;
+            height: auto !important;
+        }
+        .fc-daygrid-block-event .fc-event-title {
+            white-space: normal;
+        }
     </style>
 @endpush
 
@@ -1605,9 +1649,11 @@
                             selectable: true,
                             selectMirror: true,
                             editable: true,
-                            dayMaxEvents: true,
+                            dayMaxEvents: 4,
+                            moreLinkClick: 'popover',
                             handleWindowResize: true,
                             events: data,
+                            eventDisplay: 'block',
                             // height: 'auto',
                             // timeFormat: 'H(:mm)',
                         });
@@ -1866,9 +1912,11 @@
                             selectable: true,
                             selectMirror: true,
                             editable: true,
-                            dayMaxEvents: true,
+                            dayMaxEvents: 4,
+                            moreLinkClick: 'popover',
                             handleWindowResize: true,
                             events: data,
+                            eventDisplay: 'block',
                             // height: 'auto',
                             // timeFormat: 'H(:mm)',
 

@@ -321,6 +321,13 @@ class SettingsController extends Controller
     public function saveEmailSettings(Request $request)
     {
         if (\Auth::user()->type == 'company' || \Auth::user()->type == 'super admin') {
+            if (empty($request->mail_driver)) {
+                $request->merge(['mail_driver' => 'smtp']);
+            }
+            if (empty($request->mail_encryption)) {
+                $request->merge(['mail_encryption' => 'tls']);
+            }
+
             $request->validate(
                 [
                     'mail_driver' => 'required|string|max:255',
@@ -341,17 +348,15 @@ class SettingsController extends Controller
                 $settings = Utility::settings();
                 unset($post['_token']);
                 foreach ($post as $key => $data) {
-                    if (in_array($key, array_keys($settings)) && !empty($data)) {
-                        if (!empty($data)) {
-                            \DB::insert(
-                                'insert into settings (`value`, `name`,`created_by`) values (?, ?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`) ',
-                                [
-                                    $data,
-                                    $key,
-                                    \Auth::user()->creatorId(),
-                                ]
-                            );
-                        }
+                    if (in_array($key, array_keys($settings)) && $data !== null && $data !== '') {
+                        \DB::insert(
+                            'insert into settings (`value`, `name`,`created_by`) values (?, ?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`) ',
+                            [
+                                $data,
+                                $key,
+                                \Auth::user()->creatorId(),
+                            ]
+                        );
                     }
                 }
                 return redirect()->back()->with('success', __('Setting successfully updated.'));
@@ -1007,12 +1012,12 @@ class SettingsController extends Controller
         // if($user->can('manage-setting'))
         // {
         $data                      = [];
-        $data['mail_driver']       = $request->mail_driver;
+        $data['mail_driver']       = $request->mail_driver ?: 'smtp';
         $data['mail_host']         = $request->mail_host;
         $data['mail_port']         = $request->mail_port;
         $data['mail_username']     = $request->mail_username;
         $data['mail_password']     = $request->mail_password;
-        $data['mail_encryption']   = $request->mail_encryption;
+        $data['mail_encryption']   = $request->mail_encryption ?: 'tls';
         $data['mail_from_address'] = $request->mail_from_address;
         $data['mail_from_name']    = $request->mail_from_name;
 
@@ -1030,6 +1035,10 @@ class SettingsController extends Controller
 
     public function testSendMail(Request $request)
     {
+        if (empty($request->mail_driver)) {
+            $request->merge(['mail_driver' => 'smtp']);
+        }
+
         $validator = \Validator::make(
             $request->all(),
             [
@@ -1054,18 +1063,16 @@ class SettingsController extends Controller
         }
 
         try {
-            config(
-                [
-                    'mail.driver' => $request->mail_driver,
-                    'mail.host' => $request->mail_host,
-                    'mail.port' => $request->mail_port,
-                    'mail.encryption' => $request->mail_encryption,
-                    'mail.username' => $request->mail_username,
-                    'mail.password' => $request->mail_password,
-                    'mail.from.address' => $request->mail_from_address,
-                    'mail.from.name' => $request->mail_from_name,
-                ]
-            );
+            Utility::applySmtpConfig([
+                'mail_driver' => $request->mail_driver,
+                'mail_host' => $request->mail_host,
+                'mail_port' => $request->mail_port,
+                'mail_encryption' => $request->mail_encryption ?: 'tls',
+                'mail_username' => $request->mail_username,
+                'mail_password' => $request->mail_password,
+                'mail_from_address' => $request->mail_from_address,
+                'mail_from_name' => $request->mail_from_name,
+            ]);
             Mail::to($request->email)->send(new TestMail());
         } catch (\Exception $e) {
             return response()->json(

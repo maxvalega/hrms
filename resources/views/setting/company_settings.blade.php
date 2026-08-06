@@ -96,6 +96,7 @@
         $(document).on("click", '.send_email', function(e) {
             e.preventDefault();
             var title = $(this).attr('data-title');
+            var $emailBox = $('#email-settings');
 
             var size = 'md';
             var url = $(this).attr('data-url');
@@ -105,14 +106,14 @@
                 $("#commonModal").modal('show');
                 $.post(url, {
                     _token: '{{ csrf_token() }}',
-                    mail_driver: $("#mail_driver").val(),
-                    mail_host: $("#mail_host").val(),
-                    mail_port: $("#mail_port").val(),
-                    mail_username: $("#mail_username").val(),
-                    mail_password: $("#mail_password").val(),
-                    mail_encryption: $("#mail_encryption").val(),
-                    mail_from_address: $("#mail_from_address").val(),
-                    mail_from_name: $("#mail_from_name").val(),
+                    mail_driver: ($emailBox.find('[name="mail_driver"]').val() || 'smtp').trim(),
+                    mail_host: ($emailBox.find('[name="mail_host"]').val() || '').trim(),
+                    mail_port: ($emailBox.find('[name="mail_port"]').val() || '').trim(),
+                    mail_username: ($emailBox.find('[name="mail_username"]').val() || '').trim(),
+                    mail_password: $emailBox.find('[name="mail_password"]').val() || '',
+                    mail_encryption: ($emailBox.find('[name="mail_encryption"]').val() || 'tls').trim(),
+                    mail_from_address: ($emailBox.find('[name="mail_from_address"]').val() || '').trim(),
+                    mail_from_name: ($emailBox.find('[name="mail_from_name"]').val() || '').trim(),
                 }, function(data) {
                     $('#commonModal .body').html(data);
                 });
@@ -732,7 +733,7 @@
                                         <div class="row">
                                             <div class="col-lg-4 col-md-6 col-sm-6 form-group">
                                                 {{ Form::label('mail_driver', __('Mail Driver'), ['class' => 'col-form-label mail_driver']) }}
-                                                {{ Form::text('mail_driver', isset($settings['mail_driver']) ? $settings['mail_driver'] : '', ['class' => 'form-control ', 'placeholder' => __('Enter Mail Driver')]) }}
+                                                {{ Form::text('mail_driver', isset($settings['mail_driver']) ? $settings['mail_driver'] : 'smtp', ['class' => 'form-control', 'id' => 'email_setting_mail_driver', 'placeholder' => __('Enter Mail Driver'), 'required' => 'required']) }}
                                                 @error('mail_driver')
                                                     <span class="text-xs text-danger invalid-mail_driver"
                                                         role="alert">{{ $message }}</span>
@@ -740,7 +741,7 @@
                                             </div>
                                             <div class="col-lg-4 col-md-6 col-sm-6 form-group">
                                                 {{ Form::label('mail_host', __('Mail Host'), ['class' => 'col-form-label']) }}
-                                                {{ Form::text('mail_host', isset($settings['mail_host']) ? $settings['mail_host'] : '', ['class' => 'form-control ', 'placeholder' => __('Enter Mail Host')]) }}
+                                                {{ Form::text('mail_host', isset($settings['mail_host']) ? $settings['mail_host'] : '', ['class' => 'form-control', 'id' => 'email_setting_mail_host', 'placeholder' => __('Enter Mail Host'), 'required' => 'required']) }}
                                                 @error('mail_host')
                                                     <span class="text-xs text-danger invalid-mail_host"
                                                         role="alert">{{ $message }}</span>
@@ -748,7 +749,7 @@
                                             </div>
                                             <div class="col-lg-4 col-md-6 col-sm-6 form-group">
                                                 {{ Form::label('mail_port', __('Mail Port'), ['class' => 'col-form-label']) }}
-                                                {{ Form::text('mail_port', isset($settings['mail_port']) ? $settings['mail_port'] : '', ['class' => 'form-control', 'placeholder' => __('Enter Mail Port')]) }}
+                                                {{ Form::text('mail_port', isset($settings['mail_port']) ? $settings['mail_port'] : '', ['class' => 'form-control', 'id' => 'email_setting_mail_port', 'placeholder' => __('Enter Mail Port'), 'required' => 'required']) }}
                                                 @error('mail_port')
                                                     <span class="text-xs text-danger invalid-mail_port"
                                                         role="alert">{{ $message }}</span>
@@ -756,7 +757,7 @@
                                             </div>
                                             <div class="col-lg-4 col-md-6 col-sm-6 form-group">
                                                 {{ Form::label('mail_username', __('Mail Username'), ['class' => 'col-form-label']) }}
-                                                {{ Form::text('mail_username', isset($settings['mail_username']) ? $settings['mail_username'] : '', ['class' => 'form-control', 'placeholder' => __('Enter Mail Username')]) }}
+                                                {{ Form::text('mail_username', isset($settings['mail_username']) ? $settings['mail_username'] : '', ['class' => 'form-control', 'id' => 'email_setting_mail_username', 'placeholder' => __('Enter Mail Username'), 'required' => 'required']) }}
                                                 @error('mail_username')
                                                     <span class="text-xs text-danger invalid-mail_username"
                                                         role="alert">{{ $message }}</span>
@@ -764,7 +765,7 @@
                                             </div>
                                             <div class="col-lg-4 col-md-6 col-sm-6 form-group">
                                                 {{ Form::label('mail_password', __('Mail Password'), ['class' => 'col-form-label']) }}
-                                                {{ Form::text('mail_password', isset($settings['mail_password']) ? $settings['mail_password'] : '', ['class' => 'form-control', 'placeholder' => __('Enter Mail Password')]) }}
+                                                {{ Form::text('mail_password', isset($settings['mail_password']) ? $settings['mail_password'] : '', ['class' => 'form-control', 'id' => 'email_setting_mail_password', 'placeholder' => __('Enter Mail Password'), 'required' => 'required', 'autocomplete' => 'off']) }}
                                                 @error('mail_password')
                                                     <span class="text-xs text-danger invalid-mail_password"
                                                         role="alert">{{ $message }}</span>
@@ -772,7 +773,7 @@
                                             </div>
                                             <div class="col-lg-4 col-md-6 col-sm-6 form-group">
                                                 {{ Form::label('mail_encryption', __('Mail Encryption'), ['class' => 'col-form-label']) }}
-                                                {{ Form::text('mail_encryption', isset($settings['mail_encryption']) ? $settings['mail_encryption'] : '', ['class' => 'form-control', 'placeholder' => __('Enter Mail Encryption')]) }}
+                                                {{ Form::text('mail_encryption', isset($settings['mail_encryption']) ? $settings['mail_encryption'] : 'tls', ['class' => 'form-control', 'id' => 'email_setting_mail_encryption', 'placeholder' => __('Enter Mail Encryption'), 'required' => 'required']) }}
                                                 @error('mail_encryption')
                                                     <span class="text-xs text-danger invalid-mail_encryption"
                                                         role="alert">{{ $message }}</span>
@@ -780,7 +781,7 @@
                                             </div>
                                             <div class="col-lg-4 col-md-6 col-sm-6 form-group">
                                                 {{ Form::label('mail_from_address', __('Mail From Address'), ['class' => 'col-form-label']) }}
-                                                {{ Form::text('mail_from_address', isset($settings['mail_from_address']) ? $settings['mail_from_address'] : '', ['class' => 'form-control', 'placeholder' => __('Enter Mail From Address')]) }}
+                                                {{ Form::text('mail_from_address', isset($settings['mail_from_address']) ? $settings['mail_from_address'] : '', ['class' => 'form-control', 'id' => 'email_setting_mail_from_address', 'placeholder' => __('Enter Mail From Address'), 'required' => 'required']) }}
                                                 @error('mail_from_address')
                                                     <span class="text-xs text-danger invalid-mail_from_address"
                                                         role="alert">{{ $message }}</span>
@@ -788,7 +789,7 @@
                                             </div>
                                             <div class="col-lg-4 col-md-6 col-sm-6 form-group">
                                                 {{ Form::label('mail_from_name', __('Mail From Name'), ['class' => 'col-form-label']) }}
-                                                {{ Form::text('mail_from_name', isset($settings['mail_from_name']) ? $settings['mail_from_name'] : '', ['class' => 'form-control', 'placeholder' => __('Enter Mail From Name')]) }}
+                                                {{ Form::text('mail_from_name', isset($settings['mail_from_name']) ? $settings['mail_from_name'] : '', ['class' => 'form-control', 'id' => 'email_setting_mail_from_name', 'placeholder' => __('Enter Mail From Name'), 'required' => 'required']) }}
                                                 @error('mail_from_name')
                                                     <span class="text-xs text-danger invalid-mail_from_name"
                                                         role="alert">{{ $message }}</span>

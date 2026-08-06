@@ -1253,10 +1253,10 @@
                                                         </span>
                                                     </td>
                                                     <td class="pe-3 text-end">
-                                                        <a href="{{ route('leave.edit', $leave->id) }}" class="btn btn-sm btn-light border me-1" data-bs-toggle="tooltip" title="{{ __('View') }}">
+                                                        <a href="{{ route('leave.action', $leave->id) }}" class="btn btn-sm btn-light border me-1" data-bs-toggle="tooltip" title="{{ __('View') }}">
                                                             <i class="ti ti-eye"></i>
                                                         </a>
-                                                        <a href="{{ route('leave.edit', $leave->id) }}#approve" class="btn btn-sm btn-success" data-bs-toggle="tooltip" title="{{ __('Approve') }}">
+                                                        <a href="{{ route('leave.action', $leave->id) }}" class="btn btn-sm btn-success" data-bs-toggle="tooltip" title="{{ __('Approve') }}">
                                                             <i class="ti ti-check"></i>
                                                         </a>
                                                     </td>

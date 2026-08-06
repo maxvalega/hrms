@@ -28,7 +28,7 @@ use App\Exports\MonthlyAttendanceExport;
 use App\Support\TenantHost;
 use Maatwebsite\Excel\Facades\Excel;
 
-class AttendanceEmployeeController extends Controller
+class AttendanceEmployeeController extends Controller      
 {
     /** Minimum saved image size (bytes) to reject empty/corrupt camera captures */
     private const MIN_ATTENDANCE_PHOTO_BYTES = 500;

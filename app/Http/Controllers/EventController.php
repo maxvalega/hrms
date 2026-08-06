@@ -17,7 +17,9 @@ use App\Exports\EventExport;
 use App\Models\AttendanceEmployee;
 use App\Models\AttendanceModificationRequest;
 use App\Models\Holiday;
+use App\Models\Leave;
 use App\Models\Webhook;
+use App\Support\TenantHost;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Schema;
 use Maatwebsite\Excel\Facades\Excel;
@@ -442,16 +444,82 @@ class EventController extends Controller
             $onlyEmployeeId = $emp ? (int) $emp->id : null;
         }
 
-        $attendanceEvents = $this->buildAttendanceCalendarEvents($onlyEmployeeId);
+        $isSpectal = TenantHost::subdomainFromHost() === 'spectal';
+
+        // Spectal: every user sees who is on leave (approved leave + attendance leave for all staff).
+        $attendanceEvents = $this->buildAttendanceCalendarEvents($onlyEmployeeId, $isSpectal);
         $arrayJson = array_merge($arrayJson, $attendanceEvents);
+
+        if ($isSpectal) {
+            $arrayJson = array_merge($arrayJson, $this->buildSpectalApprovedLeaveCalendarEvents());
+        }
 
         return response()->json($arrayJson);
     }
 
     /**
-     * One calendar entry per employee per day: Present / Absent / Leave / Half Day + Late in / Early out.
+     * Spectal only: approved leave applications for all employees, visible to every user.
      */
-    protected function buildAttendanceCalendarEvents(?int $onlyEmployeeId): array
+    protected function buildSpectalApprovedLeaveCalendarEvents(): array
+    {
+        $creatorId = \Auth::user()->creatorId();
+        $dateFrom = Carbon::now()->subMonths(4)->startOfMonth()->format('Y-m-d');
+        $dateTo = Carbon::now()->addMonths(6)->endOfMonth()->format('Y-m-d');
+
+        $leaves = Leave::query()
+            ->where('created_by', $creatorId)
+            ->where('status', 'Approved')
+            ->where('start_date', '<=', $dateTo)
+            ->where('end_date', '>=', $dateFrom)
+            ->with(['employees:id,name', 'leaveType:id,title'])
+            ->orderBy('start_date')
+            ->get();
+
+        if ($leaves->isEmpty()) {
+            return [];
+        }
+
+        $canOpenLeave = \Auth::user()->can('Manage Leave');
+        $out = [];
+
+        foreach ($leaves as $leave) {
+            $empName = optional($leave->employees)->name ?: __('Employee');
+            $leaveType = optional($leave->leaveType)->title ?: __('Leave');
+
+            $dayType = strtolower(trim((string) ($leave->day_type ?? 'full_day')));
+            $suffix = in_array($dayType, ['first_half', 'second_half', 'half_day'], true)
+                ? ' (' . __('Half Day') . ')'
+                : '';
+
+            $end = Carbon::parse($leave->end_date)->addDay()->format('Y-m-d H:i:s');
+
+            $event = [
+                'id' => 'leave-' . $leave->id,
+                'title' => $empName . ': ' . $leaveType . $suffix,
+                'start' => $leave->start_date,
+                'end' => $end,
+                'allDay' => true,
+                'className' => 'attn-cal-leave',
+                'classNames' => ['attn-cal-leave'],
+            ];
+
+            if ($canOpenLeave) {
+                $event['url'] = route('leave.action', $leave->id);
+            }
+
+            $out[] = $event;
+        }
+
+        return $out;
+    }
+
+    /**
+     * One calendar entry per employee per day: Present / Absent / Leave / Half Day + Late in / Early out.
+     *
+     * When $shareCompanyLeave is true (Spectal), employees still see only their own attendance
+     * for present/absent/etc., but leave-status rows for the whole company are included and named.
+     */
+    protected function buildAttendanceCalendarEvents(?int $onlyEmployeeId, bool $shareCompanyLeave = false): array
     {
         $creatorId = \Auth::user()->creatorId();
         $dateFrom = Carbon::now()->subMonths(4)->startOfMonth()->format('Y-m-d');
@@ -465,7 +533,14 @@ class EventController extends Controller
             ->orderBy('id');
 
         if ($onlyEmployeeId !== null) {
-            $query->where('employee_id', $onlyEmployeeId);
+            if ($shareCompanyLeave) {
+                $query->where(function ($q) use ($onlyEmployeeId) {
+                    $q->where('employee_id', $onlyEmployeeId)
+                        ->orWhereRaw("LOWER(TRIM(status)) = 'leave'");
+                });
+            } else {
+                $query->where('employee_id', $onlyEmployeeId);
+            }
         }
 
         $records = $query->get();
@@ -527,10 +602,12 @@ class EventController extends Controller
                 return $el !== '' && $el !== '00:00:00';
             });
 
-            // Leave days tied to swipe requests (or Leave status from swipe flow)
-            // should show as Attendance Swipe Request on the calendar.
-            if ($hasSwipeRequest || $mainStatus === 'leave') {
+            // Leave days tied to swipe requests should show as Attendance Swipe Request.
+            // On Spectal, plain leave status is labeled "On Leave" so team leave is clear.
+            if ($hasSwipeRequest) {
                 $statusLabel = __('Attendance Swipe Request');
+            } elseif ($mainStatus === 'leave') {
+                $statusLabel = $shareCompanyLeave ? __('On Leave') : __('Attendance Swipe Request');
             } else {
                 $statusLabel = match ($mainStatus) {
                     'absent' => __('Absent'),
@@ -549,9 +626,17 @@ class EventController extends Controller
                 }
             }
 
-            $title = $onlyEmployeeId !== null
-                ? implode(' · ', $parts)
-                : $empName . ': ' . implode(' · ', $parts);
+            // Spectal: always name leave entries (and any other employee's rows) so everyone can see who is off.
+            $showEmployeeName = $onlyEmployeeId === null
+                || ($shareCompanyLeave && (
+                    (int) $sample->employee_id !== $onlyEmployeeId
+                    || $mainStatus === 'leave'
+                    || $hasSwipeRequest
+                ));
+
+            $title = $showEmployeeName
+                ? $empName . ': ' . implode(' · ', $parts)
+                : implode(' · ', $parts);
 
             $className = match (true) {
                 $hasSwipeRequest || $mainStatus === 'leave' => 'attn-cal-leave',

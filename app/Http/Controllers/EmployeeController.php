@@ -1515,14 +1515,23 @@ class EmployeeController extends Controller
 
 
         $user                 = User::where('id', $id)->first();
+        if (! $user) {
+            return redirect()->back()->with('error', __('User not found.'));
+        }
+
         $user->forceFill([
             'password' => Hash::make($request->password),
             'is_login_enable' => 1,
         ])->save();
 
+        $resp = Utility::sendLoginCredentialsEmail($user, $request->password);
+        $mailNote = (! empty($resp) && ($resp['is_success'] ?? false) === false && ! empty($resp['error']))
+            ? '<br> <span class="text-danger">' . $resp['error'] . '</span>'
+            : '';
+
         return redirect()->route('employee.index')->with(
             'success',
-            'Employee Password successfully updated.'
+            __('Employee Password successfully updated. Login credentials have been sent to their email.') . $mailNote
         );
     }
 }

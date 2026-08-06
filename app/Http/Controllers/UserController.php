@@ -381,15 +381,32 @@ class UserController extends Controller
     {
         $eId        = \Crypt::decrypt($id);
         $user = User::find($eId);
+        if (! $user) {
+            return redirect()->back()->with('error', __('User not found.'));
+        }
+
         if ($user->is_login_enable == 1) {
             $user->is_login_enable = 0;
             $user->save();
             return redirect()->back()->with('success', 'User login disable successfully.');
-        } else {
-            $user->is_login_enable = 1;
-            $user->save();
-            return redirect()->back()->with('success', 'User login enable successfully.');
         }
+
+        // Re-enable: generate a new password (old one cannot be recovered) and email credentials.
+        $plainPassword = \Illuminate\Support\Str::random(8);
+        $user->forceFill([
+            'password' => Hash::make($plainPassword),
+            'is_login_enable' => 1,
+        ])->save();
+
+        $resp = Utility::sendLoginCredentialsEmail($user, $plainPassword);
+        $mailNote = (! empty($resp) && ($resp['is_success'] ?? false) === false && ! empty($resp['error']))
+            ? '<br> <span class="text-danger">' . $resp['error'] . '</span>'
+            : '';
+
+        return redirect()->back()->with(
+            'success',
+            __('User login enabled successfully. Login credentials have been sent to their email.') . $mailNote
+        );
     }
 
     public function userPassword($id)
@@ -420,14 +437,23 @@ class UserController extends Controller
 
 
         $user                 = User::where('id', $id)->first();
+        if (! $user) {
+            return redirect()->back()->with('error', __('User not found.'));
+        }
+
         $user->forceFill([
             'password' => Hash::make($request->password),
             'is_login_enable' => 1,
         ])->save();
 
+        $resp = Utility::sendLoginCredentialsEmail($user, $request->password);
+        $mailNote = (! empty($resp) && ($resp['is_success'] ?? false) === false && ! empty($resp['error']))
+            ? '<br> <span class="text-danger">' . $resp['error'] . '</span>'
+            : '';
+
         return redirect()->route('user.index')->with(
             'success',
-            'User Password successfully updated.'
+            __('User Password successfully updated. Login credentials have been sent to their email.') . $mailNote
         );
     }
 
@@ -541,8 +567,22 @@ class UserController extends Controller
     {
         if (!empty($request->id) && !empty($request->company_id)) {
             if ($request->name == 'user') {
+                $user = User::find($request->id);
+                $wasDisabled = $user && (int) $user->is_disable === 0;
+
                 User::where('id', $request->id)->update(['is_disable' => $request->is_disable]);
                 $data = $this->userCounter($request->company_id);
+
+                // Account re-enabled: issue new password and email username + password.
+                if ($wasDisabled && (int) $request->is_disable === 1 && $user) {
+                    $plainPassword = \Illuminate\Support\Str::random(8);
+                    $user->forceFill([
+                        'password' => Hash::make($plainPassword),
+                        'is_login_enable' => 1,
+                        'is_disable' => 1,
+                    ])->save();
+                    Utility::sendLoginCredentialsEmail($user->fresh(), $plainPassword);
+                }
             }
             if ($data['is_success']) {
                 $users_data = $data['response']['users_data'];

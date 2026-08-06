@@ -666,6 +666,30 @@ class Utility extends Model
         return self::$getsettings;
     }
 
+    /**
+     * Email login username (email) + plain password after account enable / password set.
+     * Uses new_employee template for employees, new_user for other roles.
+     */
+    public static function sendLoginCredentialsEmail(User $user, string $plainPassword): array
+    {
+        if (empty($user->email) || $plainPassword === '') {
+            return ['is_success' => false, 'error' => __('Email or password missing.')];
+        }
+
+        if (strtolower((string) $user->type) === 'employee') {
+            return self::sendEmailTemplate('new_employee', [$user->id => $user->email], [
+                'employee_name' => $user->name,
+                'employee_email' => $user->email,
+                'employee_password' => $plainPassword,
+            ]);
+        }
+
+        return self::sendEmailTemplate('new_user', [$user->id => $user->email], [
+            'email' => $user->email,
+            'password' => $plainPassword,
+        ]);
+    }
+
     public static function sendEmailTemplate($emailTemplate, $mailTo, $obj)
     {
         $usr = \Auth::user();

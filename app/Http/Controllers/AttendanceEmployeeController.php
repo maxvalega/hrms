@@ -49,7 +49,11 @@ class AttendanceEmployeeController extends Controller
      */
     private function isVimalBulkAttendancePortal(?Request $request = null): bool
     {
-        return TenantHost::subdomainFromHost($request ? $request->getHost() : null) === 'vimalindustrial';
+        $host = $request ? $request->getHost() : null;
+        $subdomain = TenantHost::subdomainFromHost($host);
+
+        // Live portal is vic.jemini.co.in; keep legacy alias if used.
+        return in_array($subdomain, ['vic', 'vimalindustrial'], true);
     }
 
     /**

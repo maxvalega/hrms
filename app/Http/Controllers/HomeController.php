@@ -330,7 +330,10 @@ class HomeController extends Controller
                     ->get();
 
                 $users = User::find(\Auth::user()->creatorId());
-                $plan = $users ? Plan::find($users->plan) : null;
+                if (! $users) {
+                    $users = \Auth::user();
+                }
+                $plan = Plan::find($users->plan);
                 if ($plan && (float) ($plan->storage_limit ?? 0) > 0) {
                     $storage_limit = (($users->storage_limit ?? 0) / $plan->storage_limit) * 100;
                 } else {

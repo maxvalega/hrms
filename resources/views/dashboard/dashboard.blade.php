@@ -1274,16 +1274,16 @@
             <div class="col-xxl-12">
                 <div class="row g-3">
                     <div class="col-xl-5">
-                        @if (\Auth::user()->type == 'company')
+                        @if (\Auth::user()->type == 'company' && !empty($users) && !empty($plan))
                             <div class="card dash-section-card mb-3">
                                 <div class="card-header">
                                     <h5 class="dash-section-title"><i class="ti ti-database"></i>{{ __('Storage Status') }}</h5>
                                     <small class="dash-section-meta">
-                                        <strong>{{ $users->storage_limit }}MB</strong> / {{ $plan->storage_limit }}MB
+                                        <strong>{{ $users->storage_limit ?? 0 }}MB</strong> / {{ $plan->storage_limit ?? 0 }}MB
                                     </small>
                                 </div>
                                 <div class="card-body">
-                                    @php $storagePct = $plan->storage_limit > 0 ? round(($users->storage_limit / $plan->storage_limit) * 100, 1) : 0; @endphp
+                                    @php $storagePct = ($plan->storage_limit ?? 0) > 0 ? round((($users->storage_limit ?? 0) / $plan->storage_limit) * 100, 1) : 0; @endphp
                                     <div class="d-flex justify-content-between mb-2" style="font-size:.78rem;">
                                         <span class="text-muted">{{ __('Used') }}</span>
                                         <strong>{{ $storagePct }}%</strong>

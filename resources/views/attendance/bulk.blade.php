@@ -158,7 +158,7 @@
                     <div class="row align-items-end g-3">
                         <div class="col-md-3">
                             {{ Form::label('date', __('View date'), ['class' => 'form-label']) }}
-                            {{ Form::date('date', $viewDate, ['class' => 'form-control', 'id' => 'bulk_view_date']) }}
+                            <input type="date" name="date" id="bulk_view_date" class="form-control" value="{{ $viewDate }}">
                             <small class="text-muted">{{ __('Only to view / edit marked attendance') }}</small>
                         </div>
                         <div class="col-md-3">

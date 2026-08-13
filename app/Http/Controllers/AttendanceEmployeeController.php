@@ -2085,22 +2085,26 @@ class AttendanceEmployeeController extends Controller
             $department->prepend('Select Department', '');
 
             $isVimalBulkMode = $this->isVimalBulkAttendancePortal($request);
+            $viewDate = $request->get('date') ?: date('Y-m-d');
             $employees = collect();
 
             if ($isVimalBulkMode) {
-                // Vimal only: branch / department optional; search by date alone lists all employees.
-                $query = Employee::where('created_by', \Auth::user()->creatorId())->orderBy('name');
+                // VIC: always show all employees — filters are optional only.
+                $query = Employee::with(['branch', 'department'])
+                    ->where('created_by', \Auth::user()->creatorId())
+                    ->orderBy('name');
                 if (!empty($request->branch)) {
                     $query->where('branch_id', $request->branch);
                 }
                 if (!empty($request->department)) {
                     $query->where('department_id', $request->department);
                 }
-                $employees = $request->hasAny(['date', 'branch', 'department']) ? $query->get() : collect();
+                $employees = $query->get();
             } else {
                 // Other portals: keep original branch + department requirement.
                 if (!empty($request->branch) && !empty($request->department)) {
-                    $employees = Employee::where('created_by', \Auth::user()->creatorId())
+                    $employees = Employee::with(['branch', 'department'])
+                        ->where('created_by', \Auth::user()->creatorId())
                         ->where('branch_id', $request->branch)
                         ->where('department_id', $request->department)
                         ->orderBy('name')
@@ -2108,7 +2112,16 @@ class AttendanceEmployeeController extends Controller
                 }
             }
 
-            return view('attendance.bulk', compact('employees', 'branch', 'department', 'isVimalBulkMode'));
+            $importPreview = session('bulk_import_preview');
+
+            return view('attendance.bulk', compact(
+                'employees',
+                'branch',
+                'department',
+                'isVimalBulkMode',
+                'viewDate',
+                'importPreview'
+            ));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
@@ -2194,34 +2207,82 @@ class AttendanceEmployeeController extends Controller
             $request->validate(['file' => 'required|file|mimes:csv,txt,xlsx,xls']);
 
             $cid = \Auth::user()->creatorId();
-            $path = $request->file('file')->getRealPath();
-            $handle = fopen($path, 'r');
-            if (!$handle) return redirect()->back()->with('error', 'Unable to read uploaded file.');
+            $ext = strtolower($request->file('file')->getClientOriginalExtension());
+            $dataRows = [];
 
-            $header = fgetcsv($handle);
-            if (!$header) { fclose($handle); return redirect()->back()->with('error', 'Empty file.'); }
+            if (in_array($ext, ['xlsx', 'xls'], true)) {
+                $sheets = Excel::toArray(new class implements \Maatwebsite\Excel\Concerns\ToArray {
+                    public function array(array $array)
+                    {
+                        return $array;
+                    }
+                }, $request->file('file'));
+                $sheet = $sheets[0] ?? [];
+                if (empty($sheet)) {
+                    return redirect()->back()->with('error', __('Empty file.'));
+                }
+                $header = array_map(fn($v) => trim((string) $v), array_shift($sheet));
+                foreach ($sheet as $row) {
+                    $dataRows[] = array_map(fn($v) => is_null($v) ? '' : trim((string) $v), $row);
+                }
+            } else {
+                $path = $request->file('file')->getRealPath();
+                $handle = fopen($path, 'r');
+                if (!$handle) {
+                    return redirect()->back()->with('error', 'Unable to read uploaded file.');
+                }
+                $header = fgetcsv($handle);
+                if (!$header) {
+                    fclose($handle);
+                    return redirect()->back()->with('error', 'Empty file.');
+                }
+                while (($row = fgetcsv($handle)) !== false) {
+                    $dataRows[] = $row;
+                }
+                fclose($handle);
+            }
 
-            $created = 0; $updated = 0; $skipped = 0; $errors = [];
+            $created = 0;
+            $updated = 0;
+            $skipped = 0;
+            $errors = [];
+            $touchedDates = [];
+            $preview = [];
             $rowNum = 1;
-            while (($row = fgetcsv($handle)) !== false) {
+
+            foreach ($dataRows as $row) {
                 $rowNum++;
-                if (count(array_filter($row, fn($v) => trim((string)$v) !== '')) === 0) continue;
+                if (count(array_filter($row, fn($v) => trim((string) $v) !== '')) === 0) {
+                    continue;
+                }
 
                 $empIdRaw = trim($row[0] ?? '');
-                $date     = trim($row[2] ?? '');
-                $status   = trim($row[3] ?? 'Present');
-                $clockIn  = trim($row[4] ?? '00:00');
+                $date = trim($row[2] ?? '');
+                $status = trim($row[3] ?? 'Present');
+                $clockIn = trim($row[4] ?? '00:00');
                 $clockOut = trim($row[5] ?? '00:00');
 
-                if (!$empIdRaw || !$date) { $skipped++; continue; }
+                if (!$empIdRaw || !$date) {
+                    $skipped++;
+                    continue;
+                }
 
                 $empIdNum = (int) preg_replace('/[^0-9]/', '', $empIdRaw);
                 $employee = Employee::where('created_by', $cid)->where('employee_id', $empIdNum)->first();
-                if (!$employee) { $errors[] = "Row $rowNum: Employee ID '$empIdRaw' not found"; $skipped++; continue; }
+                if (!$employee) {
+                    $errors[] = "Row $rowNum: Employee ID '$empIdRaw' not found";
+                    $skipped++;
+                    continue;
+                }
 
-                try { $date = date('Y-m-d', strtotime($date)); } catch (\Throwable $e) { $skipped++; continue; }
+                try {
+                    $date = date('Y-m-d', strtotime($date));
+                } catch (\Throwable $e) {
+                    $skipped++;
+                    continue;
+                }
 
-                $in  = ($clockIn  && $clockIn  !== '00:00') ? date('H:i:s', strtotime($clockIn))  : '00:00:00';
+                $in = ($clockIn && $clockIn !== '00:00') ? date('H:i:s', strtotime($clockIn)) : '00:00:00';
                 $out = ($clockOut && $clockOut !== '00:00') ? date('H:i:s', strtotime($clockOut)) : '00:00:00';
 
                 $existing = AttendanceEmployee::where('employee_id', $employee->id)->where('date', $date)->first();
@@ -2232,43 +2293,69 @@ class AttendanceEmployeeController extends Controller
                         (int) $employee->id, $date, $in, $out, $existing->id ?? null
                     );
                     $att = $existing ?: new AttendanceEmployee();
-                    $att->employee_id   = $employee->id;
-                    $att->created_by    = $cid;
-                    $att->date          = $date;
-                    $att->status        = $metrics['attendance_status'];
-                    $att->clock_in      = $in;
-                    $att->clock_out     = $out;
-                    $att->late          = $metrics['late'];
+                    $att->employee_id = $employee->id;
+                    $att->created_by = $cid;
+                    $att->date = $date;
+                    $att->status = $metrics['attendance_status'];
+                    $att->clock_in = $in;
+                    $att->clock_out = $out;
+                    $att->late = $metrics['late'];
                     $att->early_leaving = $metrics['early_leaving'];
-                    $att->overtime      = $metrics['overtime'];
-                    $att->late_mark     = $metrics['late_mark'];
-                    $att->early_mark    = $metrics['early_mark'];
-                    $att->less_hours_mark  = $metrics['less_hours_mark'];
-                    $att->deduction_units  = $metrics['deduction_units'];
-                    $att->total_rest    = '00:00:00';
+                    $att->overtime = $metrics['overtime'];
+                    $att->late_mark = $metrics['late_mark'];
+                    $att->early_mark = $metrics['early_mark'];
+                    $att->less_hours_mark = $metrics['less_hours_mark'];
+                    $att->deduction_units = $metrics['deduction_units'];
+                    $att->total_rest = '00:00:00';
                     $att->save();
                 } else {
                     $att = $existing ?: new AttendanceEmployee();
-                    $att->employee_id   = $employee->id;
-                    $att->created_by    = $cid;
-                    $att->date          = $date;
-                    $att->status        = ucfirst(strtolower($status)); // Absent, Leave
-                    $att->clock_in      = '00:00:00';
-                    $att->clock_out     = '00:00:00';
-                    $att->late          = '00:00:00';
+                    $att->employee_id = $employee->id;
+                    $att->created_by = $cid;
+                    $att->date = $date;
+                    $att->status = ucfirst(strtolower($status));
+                    $att->clock_in = '00:00:00';
+                    $att->clock_out = '00:00:00';
+                    $att->late = '00:00:00';
                     $att->early_leaving = '00:00:00';
-                    $att->overtime      = '00:00:00';
-                    $att->total_rest    = '00:00:00';
+                    $att->overtime = '00:00:00';
+                    $att->total_rest = '00:00:00';
                     $att->save();
                 }
 
                 $isUpdate ? $updated++ : $created++;
+                $touchedDates[$date] = ($touchedDates[$date] ?? 0) + 1;
+                if (count($preview) < 50) {
+                    $preview[] = [
+                        'employee_id' => \Auth::user()->employeeIdFormat($employee->employee_id),
+                        'name' => $employee->name,
+                        'date' => $date,
+                        'status' => $att->status,
+                        'clock_in' => $att->clock_in,
+                        'clock_out' => $att->clock_out,
+                    ];
+                }
             }
-            fclose($handle);
 
+            if ($created + $updated === 0) {
+                $msg = "Nothing imported. Skipped: $skipped";
+                if ($errors) {
+                    $msg .= ' | Errors: ' . implode('; ', array_slice($errors, 0, 5));
+                }
+                return redirect()->route('attendanceemployee.bulkattendance')->with('error', $msg);
+            }
+
+            arsort($touchedDates);
+            $focusDate = array_key_first($touchedDates) ?: date('Y-m-d');
             $msg = "Created: $created, Updated: $updated, Skipped: $skipped";
-            if ($errors) $msg .= ' | Errors: ' . implode('; ', array_slice($errors, 0, 5));
-            return redirect()->back()->with('success', $msg);
+            if ($errors) {
+                $msg .= ' | Errors: ' . implode('; ', array_slice($errors, 0, 5));
+            }
+
+            return redirect()
+                ->route('attendanceemployee.bulkattendance', ['date' => $focusDate])
+                ->with('success', $msg)
+                ->with('bulk_import_preview', $preview);
         } catch (\Throwable $e) {
             \Log::error('Bulk attendance import failed: ' . $e->getMessage());
             return redirect()->back()->with('error', 'Import failed: ' . $e->getMessage());
@@ -2364,6 +2451,8 @@ class AttendanceEmployeeController extends Controller
             $updated = 0;
             $skipped = 0;
             $errors = [];
+            $touchedDates = [];
+            $preview = [];
 
             for ($r = $headerRowIndex + 1; $r < count($rows); $r++) {
                 $row = $rows[$r];
@@ -2441,6 +2530,17 @@ class AttendanceEmployeeController extends Controller
 
                     $att->save();
                     $isUpdate ? $updated++ : $created++;
+                    $touchedDates[$dateYmd] = ($touchedDates[$dateYmd] ?? 0) + 1;
+                    if (count($preview) < 50) {
+                        $preview[] = [
+                            'employee_id' => \Auth::user()->employeeIdFormat($employee->employee_id),
+                            'name' => $employee->name,
+                            'date' => $dateYmd,
+                            'status' => $att->status,
+                            'clock_in' => $att->clock_in,
+                            'clock_out' => $att->clock_out,
+                        ];
+                    }
                 }
             }
 
@@ -2449,7 +2549,17 @@ class AttendanceEmployeeController extends Controller
                 $msg .= ' | ' . implode('; ', array_slice($errors, 0, 3));
             }
 
-            return redirect()->back()->with('success', $msg);
+            if ($created + $updated === 0) {
+                return redirect()->route('attendanceemployee.bulkattendance')->with('error', $msg);
+            }
+
+            arsort($touchedDates);
+            $focusDate = array_key_first($touchedDates) ?: ($monthHint . '-01');
+
+            return redirect()
+                ->route('attendanceemployee.bulkattendance', ['date' => $focusDate])
+                ->with('success', $msg)
+                ->with('bulk_import_preview', $preview);
         } catch (\Throwable $e) {
             \Log::error('Bulk attendance register import failed: ' . $e->getMessage());
             return redirect()->back()->with('error', 'Register import failed: ' . $e->getMessage());

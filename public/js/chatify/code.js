@@ -332,11 +332,20 @@ let app_modal = function ({
  *-------------------------------------------------------------
  */
 function scrollToBottom(container) {
-  $(container)
-    .stop()
-    .animate({
-      scrollTop: $(container)[0].scrollHeight,
-    });
+  const $requested = $(container);
+  if (!$requested.length || !$requested[0]) {
+    return;
+  }
+
+  // Prefer the messages list scrollport when the composer is pinned outside it
+  const $messages = $requested.is(".messages")
+    ? $requested
+    : $requested.find(".messages").first();
+  const $target = $messages.length ? $messages : $requested;
+
+  $target.stop().animate({
+    scrollTop: $target[0].scrollHeight,
+  });
 }
 
 /**
@@ -623,18 +632,26 @@ function fetchMessages(id, type, newFetch = false) {
 
         setMessagesLoading(false);
         if (messagesPage == 1) {
-          messagesElement.html(data.messages);
-          scrollToBottom(messagesContainer);
-
-          if (
+          const contentUnchanged =
             hasLoadedMessagesOnce &&
-            previousLastMessageId &&
-            incomingLastMessageId &&
-            previousLastMessageId != incomingLastMessageId
-          ) {
-            playNotificationTone();
-            playVoiceNotification("New chat message");
-            showTopMessageTooltip("New chat message");
+            String(previousLastMessageId ?? "") === String(incomingLastMessageId ?? "");
+
+          // Avoid full DOM rewrite every poll — this was causing the chat flicker
+          // and the composer jumping up/down on empty conversations.
+          if (!contentUnchanged) {
+            messagesElement.html(data.messages);
+            scrollToBottom(messagesContainer);
+
+            if (
+              hasLoadedMessagesOnce &&
+              previousLastMessageId &&
+              incomingLastMessageId &&
+              previousLastMessageId != incomingLastMessageId
+            ) {
+              playNotificationTone();
+              playVoiceNotification("New chat message");
+              showTopMessageTooltip("New chat message");
+            }
           }
 
           hasLoadedMessagesOnce = true;
@@ -643,10 +660,11 @@ function fetchMessages(id, type, newFetch = false) {
           const lastMsg = messagesElement.find(
             messagesElement.find(".message-card")[0]
           );
+          const scrollEl = messagesElement;
           const curOffset =
-            lastMsg.offset().top - messagesContainer.scrollTop();
+            lastMsg.offset().top - scrollEl.scrollTop();
           messagesElement.prepend(data.messages);
-          messagesContainer.scrollTop(lastMsg.offset().top - curOffset);
+          scrollEl.scrollTop(lastMsg.offset().top - curOffset);
         }
         // trigger seen event
         makeSeen(true);
@@ -717,7 +735,7 @@ function initPollingFallback() {
     if (getMessengerId() && getMessengerId() != 0) {
       fetchMessages(getMessengerId(), getMessengerType(), true);
     }
-  }, 2000);
+  }, 5000);
 }
 initPollingFallback();
 

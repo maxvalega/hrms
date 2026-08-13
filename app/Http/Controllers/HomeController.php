@@ -330,11 +330,17 @@ class HomeController extends Controller
                     ->get();
 
                 $users = User::find(\Auth::user()->creatorId());
-                $plan = Plan::find($users->plan);
-                if ($plan->storage_limit > 0) {
-                    $storage_limit = ($users->storage_limit / $plan->storage_limit) * 100;
+                $plan = $users ? Plan::find($users->plan) : null;
+                if ($plan && (float) ($plan->storage_limit ?? 0) > 0) {
+                    $storage_limit = (($users->storage_limit ?? 0) / $plan->storage_limit) * 100;
                 } else {
                     $storage_limit = 0;
+                }
+                if (! $plan) {
+                    $plan = new Plan([
+                        'name' => 'Default',
+                        'storage_limit' => 0,
+                    ]);
                 }
 
                 // Month-wise employee joining count (from Apr 2025 to current month)

@@ -49,8 +49,10 @@
            MESSENGER CONTAINER - Increased Size
         ================================================ */
         .messenger {
-            min-height: 85vh !important;
-            max-height: 90vh;
+            display: flex !important;
+            height: calc(100vh - 140px) !important;
+            min-height: 560px !important;
+            max-height: calc(100vh - 100px);
             border-radius: 16px;
             overflow: hidden;
             background: #f0f2f5;
@@ -65,6 +67,8 @@
             width: 35%;
             min-width: 320px;
             max-width: 420px;
+            height: 100%;
+            flex-shrink: 0;
         }
 
         .messenger-listView .m-header {
@@ -190,6 +194,12 @@
         .messenger-messagingView {
             background: #efeae2;
             position: relative;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-width: 0;
+            height: 100%;
+            overflow: hidden;
         }
 
         /* WhatsApp Chat Background Pattern */
@@ -204,13 +214,34 @@
             background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23d4cfc4' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
             opacity: 0.5;
             z-index: 0;
+            pointer-events: none;
         }
 
         .messenger-messagingView .m-body {
             position: relative;
             z-index: 1;
-            padding: 12px;
+            padding: 0;
             background: transparent;
+            flex: 1;
+            min-height: 0;
+            height: auto !important;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .messenger-messagingView .messages {
+            flex: 1;
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+            padding: 12px 12px 8px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .messenger-messagingView .typing-indicator {
+            flex-shrink: 0;
         }
 
         /* Chat Header - WhatsApp Style */
@@ -220,6 +251,7 @@
             padding: 10px 16px !important;
             z-index: 2;
             position: relative;
+            flex-shrink: 0;
         }
 
         .m-header-messaging nav {
@@ -370,7 +402,12 @@
             padding: 10px 16px;
             border-top: 1px solid #e9edef;
             z-index: 2;
-            position: relative;
+            position: relative !important;
+            bottom: auto !important;
+            left: auto !important;
+            width: 100%;
+            flex-shrink: 0;
+            margin-top: auto;
         }
 
         .messenger-sendCard form {
@@ -484,6 +521,8 @@
         .messenger-infoView {
             background: #ffffff;
             border-left: 1px solid #e9edef;
+            height: 100%;
+            flex-shrink: 0;
         }
 
         .messenger-infoView nav a {
@@ -548,6 +587,17 @@
         .message-hint {
             z-index: 1;
             position: relative;
+            margin: auto !important;
+            margin-top: auto !important;
+            margin-bottom: auto !important;
+            text-align: center;
+            width: 100%;
+        }
+
+        .message-hint.center-el,
+        .messages > .message-hint {
+            margin-top: auto !important;
+            margin-bottom: auto !important;
         }
 
         .message-hint span {
@@ -557,6 +607,7 @@
             border-radius: 8px;
             font-size: 14px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            display: inline-block;
         }
 
         /* ================================================
@@ -761,7 +812,7 @@
                     {{-- Messaging area --}}
                     <div class="m-body app-scroll">
                         <div class="messages">
-                            <p class="message-hint" style="margin-top: calc(30% - 126.2px);">
+                            <p class="message-hint center-el">
                                 <span>{{ __('Please select a chat to start messaging') }}</span>
                             </p>
                         </div>
@@ -1259,10 +1310,12 @@
                 bottom: 0;
                 z-index: 10;
                 display: none;
+                flex-direction: column;
+                overflow: hidden;
             }
 
             .cards.chat-embedded .messenger-messagingView.show-messages-view {
-                display: block;
+                display: flex;
             }
 
             .cards.chat-embedded .messenger-messagingView::before {
@@ -1337,7 +1390,20 @@
                 background: transparent;
                 z-index: 1;
                 position: relative;
-                height: calc(100% - 60px);
+                height: auto !important;
+                flex: 1;
+                min-height: 0;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                padding: 0;
+            }
+
+            .cards.chat-embedded .messenger-messagingView .messages {
+                flex: 1;
+                min-height: 0;
+                overflow-y: auto;
+                padding: 12px;
             }
 
             /* Hide Info View by default in embedded */
@@ -1374,7 +1440,10 @@
                 background: #f0f2f5;
                 padding: 10px 12px;
                 z-index: 2;
-                position: relative;
+                position: relative !important;
+                bottom: auto !important;
+                flex-shrink: 0;
+                width: 100%;
             }
 
             .cards.chat-embedded .messenger-sendCard form {
@@ -1455,8 +1524,8 @@
             }
 
             loadGroupItems();
-            setInterval(loadGroupItems, 4000);
-            setInterval(buildCombinedConversations, 3000);
+            setInterval(loadGroupItems, 15000);
+            setInterval(buildCombinedConversations, 10000);
 
             const listContainer = document.querySelector('.listOfContacts');
             if (listContainer && typeof MutationObserver !== 'undefined') {

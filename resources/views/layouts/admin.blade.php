@@ -1211,7 +1211,9 @@
                 panel.classList.add('show');
                 panel.setAttribute('aria-hidden', 'false');
                 loadContent();
-                refreshTimer = setInterval(loadContent, 8000);
+                refreshTimer = setInterval(function () {
+                    if (!document.hidden) loadContent();
+                }, 30000);
             }
             function closePanel() {
                 isOpen = false;
@@ -1252,7 +1254,9 @@
 
                 // Load messages immediately then poll
                 fetchMessages();
-                threadTimer = setInterval(fetchMessages, 3000);
+                threadTimer = setInterval(function () {
+                    if (!document.hidden) fetchMessages();
+                }, 15000);
             }
 
             function closeThread() {
@@ -1274,7 +1278,9 @@
                     '<i class="ti ti-messages"></i> {{ __("Messenger") }}';
 
                 // Resume list refresh
-                refreshTimer = setInterval(loadContent, 8000);
+                refreshTimer = setInterval(function () {
+                    if (!document.hidden) loadContent();
+                }, 30000);
                 loadContent();
             }
 
@@ -1449,7 +1455,9 @@
                 document.getElementById('tcfHeaderTitle').innerHTML =
                     '<i class="ti ti-users-group"></i> ' + escHtml(name);
                 fetchMessages();
-                threadTimer = setInterval(fetchMessages, 3000);
+                threadTimer = setInterval(function () {
+                    if (!document.hidden) fetchMessages();
+                }, 15000);
             });
 
             /* ─── Fetch & render list ─── */

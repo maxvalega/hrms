@@ -730,8 +730,12 @@
             }
 
             var _pollingTimers = [
-                setInterval(fetchContactsAndUpdateHeader, 10000),
-                setInterval(fetchGroupNotifications, 10000)
+                setInterval(function () {
+                    if (!document.hidden) fetchContactsAndUpdateHeader();
+                }, 60000),
+                setInterval(function () {
+                    if (!document.hidden) fetchGroupNotifications();
+                }, 60000)
             ];
 
             function stopPolling() {

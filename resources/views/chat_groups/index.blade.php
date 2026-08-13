@@ -1095,7 +1095,9 @@
         scrollBottom();
     }
 
-    setInterval(pollMessages, 4000);
+    setInterval(function () {
+        if (!document.hidden) pollMessages();
+    }, 20000);
     @endif
 
     /* ──────────────────────── Auto-scroll ─────────────────── */

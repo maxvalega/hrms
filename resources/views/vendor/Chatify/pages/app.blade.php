@@ -1524,8 +1524,12 @@
             }
 
             loadGroupItems();
-            setInterval(loadGroupItems, 15000);
-            setInterval(buildCombinedConversations, 10000);
+            setInterval(function () {
+                if (!document.hidden) loadGroupItems();
+            }, 60000);
+            setInterval(function () {
+                if (!document.hidden) buildCombinedConversations();
+            }, 60000);
 
             const listContainer = document.querySelector('.listOfContacts');
             if (listContainer && typeof MutationObserver !== 'undefined') {

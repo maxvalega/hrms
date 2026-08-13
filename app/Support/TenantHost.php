@@ -39,7 +39,22 @@ class TenantHost
 
     public static function shouldEnforce(?Request $request = null): bool
     {
-        if (!Schema::hasColumn('users', 'subdomain')) {
+        static $hasSubdomainColumn = null;
+        if ($hasSubdomainColumn === null) {
+            try {
+                $hasSubdomainColumn = (bool) \Illuminate\Support\Facades\Cache::remember(
+                    'schema_users_has_subdomain',
+                    3600,
+                    fn () => Schema::hasColumn('users', 'subdomain')
+                );
+            } catch (\Throwable $e) {
+                // If DB is unavailable (e.g. hourly connection limit), skip tenant enforcement
+                // instead of crashing every page with a 500.
+                return false;
+            }
+        }
+
+        if (!$hasSubdomainColumn) {
             return false;
         }
 

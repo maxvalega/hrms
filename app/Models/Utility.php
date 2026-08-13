@@ -25,9 +25,42 @@ class Utility extends Model
     public static function settings()
     {
         if (self::$settings === null) {
-            self::$settings = self::fetchSettings();
+            $creatorId = \Auth::check() ? \Auth::user()->creatorId() : 1;
+            try {
+                self::$settings = \Illuminate\Support\Facades\Cache::remember(
+                    'utility_settings_' . $creatorId,
+                    300,
+                    fn () => self::fetchSettings()
+                );
+            } catch (\Throwable $e) {
+                // Fallback when cache/DB is unavailable so pages can still render defaults.
+                try {
+                    self::$settings = self::fetchSettings();
+                } catch (\Throwable $inner) {
+                    self::$settings = [
+                        'site_currency' => 'USD',
+                        'site_currency_symbol' => '$',
+                        'company_name' => '',
+                        'theme_color' => 'theme-2',
+                        'cust_darklayout' => 'off',
+                        'SITE_RTL' => 'off',
+                        'default_language' => 'en',
+                    ];
+                }
+            }
         }
         return self::$settings;
+    }
+
+    public static function clearSettingsCache($creatorId = null): void
+    {
+        self::$settings = null;
+        self::$getsettings = null;
+        $creatorId = $creatorId ?? (\Auth::check() ? \Auth::user()->creatorId() : null);
+        if ($creatorId) {
+            \Illuminate\Support\Facades\Cache::forget('utility_settings_' . $creatorId);
+        }
+        \Illuminate\Support\Facades\Cache::forget('utility_settings_1');
     }
 
     public static function fetchSettings($user_id = null)

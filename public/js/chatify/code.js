@@ -730,12 +730,23 @@ function initPollingFallback() {
   if (fallbackPollInterval) {
     clearInterval(fallbackPollInterval);
   }
+
+  // Hostinger caps MySQL at 500 connections/hour shared across portals.
+  // Poll slowly, and only when the tab is visible.
+  let contactTick = 0;
   fallbackPollInterval = setInterval(function () {
-    getContacts(true);
+    if (typeof document !== "undefined" && document.hidden) {
+      return;
+    }
+    contactTick++;
+    // Contacts every ~60s (every 2nd tick)
+    if (contactTick % 2 === 0) {
+      getContacts(true);
+    }
     if (getMessengerId() && getMessengerId() != 0) {
       fetchMessages(getMessengerId(), getMessengerType(), true);
     }
-  }, 5000);
+  }, 30000);
 }
 initPollingFallback();
 

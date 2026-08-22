@@ -293,6 +293,10 @@
                                                 href="{{ route('attendanceemployee.bulkattendance') }}">{{ __('Bulk Attendance') }}</a>
                                         </li>
                                     @endcan
+                                    <li class="dash-item {{ request()->routeIs('attendance.regularisation.*') ? 'active' : '' }}">
+                                        <a class="dash-link"
+                                            href="{{ route('attendance.regularisation.index') }}">{{ __('On Ground Regularisation') }}</a>
+                                    </li>
                                 </ul>
                             </li>
                         @endcan

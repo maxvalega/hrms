@@ -27,6 +27,19 @@
         <i class="ti ti-gift"></i>
     </a>
 
+    @if(!empty($isSpectal) && \Auth::user()->type != 'employee')
+        <a href="#" data-url="{{ route('leave.opening.balance') }}" data-ajax-popup="true"
+            data-title="{{ __('Set PL Opening Balance') }}" data-size="lg" data-bs-toggle="tooltip"
+            class="btn btn-sm btn-secondary me-1" data-bs-original-title="{{ __('PL Opening Balance') }}">
+            <i class="ti ti-adjustments"></i>
+        </a>
+        <a href="#" data-url="{{ route('leave.bereavement.grant') }}" data-ajax-popup="true"
+            data-title="{{ __('Grant Bereavement Leave') }}" data-size="lg" data-bs-toggle="tooltip"
+            class="btn btn-sm btn-warning me-1" data-bs-original-title="{{ __('Grant Bereavement') }}">
+            <i class="ti ti-heart"></i>
+        </a>
+    @endif
+
     @can('Create Leave')
         <a href="#" data-url="{{ route('leave.create') }}" data-ajax-popup="true"
             data-title="{{ __('Create New Leave') }}" data-size="lg" data-bs-toggle="tooltip" title=""
@@ -52,6 +65,17 @@
                         @endif
                     </div>
                     <small class="text-muted">{{ $date['label'] ?? '' }}</small>
+                </div>
+            </div>
+        @endif
+
+        @if(!empty($isSpectal))
+            <div class="col-xl-12 mb-3">
+                <div class="alert alert-secondary mb-0 d-flex align-items-center justify-content-between">
+                    <span>{{ __('On Ground is not leave — request attendance regularisation instead.') }}</span>
+                    <a href="{{ route('attendance.regularisation.index') }}" class="btn btn-sm btn-outline-dark">
+                        {{ __('On Ground Regularisation') }}
+                    </a>
                 </div>
             </div>
         @endif
@@ -130,6 +154,18 @@
                                                     <h6 class="text-success">{{ $balance['available'] }}</h6>
                                                 </div>
                                             </div>
+                                            @if ($policyCode === 'pl' && (!empty($isSpectal) || ($balance['opening_balance'] ?? 0) > 0))
+                                                <div class="row text-center mt-1">
+                                                    <div class="col-6">
+                                                        <small class="text-muted d-block">{{ __('Opening Balance') }}</small>
+                                                        <h6 class="text-secondary">{{ $balance['opening_balance'] ?? 0 }}</h6>
+                                                    </div>
+                                                    <div class="col-6">
+                                                        <small class="text-muted d-block">{{ __('Accrued to Date') }}</small>
+                                                        <h6 class="text-info">{{ $balance['accrued_to_date'] ?? 0 }}</h6>
+                                                    </div>
+                                                </div>
+                                            @endif
                                             @if ($isVacationLeave || $policyCode === 'pl')
                                                 <div class="row text-center mt-1">
                                                     <div class="col-6">

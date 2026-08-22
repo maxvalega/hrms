@@ -5,8 +5,10 @@ namespace App\Services;
 use App\Models\Employee;
 use App\Models\EmployeeType;
 use App\Models\Leave as LocalLeave;
+use App\Models\LeaveBalanceEntry;
 use App\Models\LeaveType;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Company leave policy matrix rules (SL / PL / CL / Comp-off / Optional Holiday / WFH / Bereavement).
@@ -310,6 +312,15 @@ class LeavePolicyService
     }
 
     /**
+     * Leave categories visible on Spectal balance while on probation.
+     * (Applications remain blocked separately.)
+     */
+    public static function spectalProbationVisibleCodes(): array
+    {
+        return ['sick', 'comp_off'];
+    }
+
+    /**
      * Whether this leave type should appear on Spectal Leave Balance Summary.
      */
     public function shouldShowOnSpectalBalance(LeaveType $leaveType, ?Employee $employee = null, ?Carbon $asOf = null): bool
@@ -329,12 +340,77 @@ class LeavePolicyService
             }
         }
 
-        // Comp-off is earned — still show (0 quota) so employees know it exists
-        if ($code === 'comp_off') {
-            return $this->employeeEligibleForSpectalType($leaveType, $employee);
+        // Bereavement: only after manager grants days
+        if ($code === 'bereavement') {
+            if (!$employee) {
+                return true; // company-wide dashboard still lists the type
+            }
+            if (!$this->employeeEligibleForSpectalType($leaveType, $employee)) {
+                return false;
+            }
+
+            return $this->grantedDays($employee->id, $leaveType->id, LeaveBalanceEntry::TYPE_GRANT) > 0;
         }
 
-        return $this->employeeEligibleForSpectalType($leaveType, $employee);
+        if (!$this->employeeEligibleForSpectalType($leaveType, $employee)) {
+            return false;
+        }
+
+        // Probation: only Sick + Comp (bereavement handled above when granted)
+        if ($employee && $this->isEmployeeInProbation($employee)) {
+            $visible = self::spectalProbationVisibleCodes();
+            if ($code === 'bereavement') {
+                return true;
+            }
+
+            return in_array($code, $visible, true);
+        }
+
+        return true;
+    }
+
+    /**
+     * Lightweight probation check (mirrors LeaveController without circular deps).
+     */
+    public function isEmployeeInProbation(?Employee $employee): bool
+    {
+        if (!$employee || empty($employee->company_doj)) {
+            return false;
+        }
+
+        $settings = \App\Models\Utility::settings();
+        $probationMonths = (int) ($settings['probation_months'] ?? 0);
+        if ($probationMonths <= 0) {
+            return false;
+        }
+
+        $doj = Carbon::parse($employee->company_doj);
+        $probationEnd = $doj->copy()->addMonths($probationMonths);
+
+        return Carbon::now()->lt($probationEnd);
+    }
+
+    public function grantedDays(int $employeeId, int $leaveTypeId, string $entryType = LeaveBalanceEntry::TYPE_GRANT, ?string $periodKey = null): float
+    {
+        if (!Schema::hasTable('leave_balance_entries')) {
+            return 0.0;
+        }
+
+        $q = LeaveBalanceEntry::where('employee_id', $employeeId)
+            ->where('leave_type_id', $leaveTypeId)
+            ->where('entry_type', $entryType);
+
+        if ($periodKey !== null) {
+            $q->where('period_key', $periodKey);
+        }
+
+        return (float) $q->sum('days');
+    }
+
+    public function openingBalanceDays(int $employeeId, int $leaveTypeId, ?string $periodKey = null): float
+    {
+        return $this->grantedDays($employeeId, $leaveTypeId, LeaveBalanceEntry::TYPE_OPENING, $periodKey)
+            + $this->grantedDays($employeeId, $leaveTypeId, LeaveBalanceEntry::TYPE_ADJUSTMENT, $periodKey);
     }
 
     public function employeeEligibleForSpectalType(LeaveType $leaveType, ?Employee $employee): bool
@@ -384,11 +460,25 @@ class LeavePolicyService
         $code = self::resolvePolicyCode($leaveType);
 
         if ($code === 'on_ground') {
-            return __('On Ground is not a leave entitlement. Please use attendance regularisation.');
+            return __('On Ground is not a leave entitlement. Please use Attendance Regularisation (On Ground).');
         }
 
         if (!$this->employeeEligibleForSpectalType($leaveType, $employee)) {
             return __('This leave type is not applicable for your employment type.');
+        }
+
+        if ($this->isEmployeeInProbation($employee)) {
+            $visible = self::spectalProbationVisibleCodes();
+            if ($code && !in_array($code, $visible, true) && $code !== 'bereavement') {
+                return __('This leave type is not available during probation.');
+            }
+        }
+
+        if ($code === 'bereavement') {
+            $granted = $this->grantedDays((int) $employee->id, (int) $leaveType->id, LeaveBalanceEntry::TYPE_GRANT);
+            if ($granted <= 0) {
+                return __('Bereavement leave is available only after your manager grants entitlement.');
+            }
         }
 
         if ($code === 'cl') {

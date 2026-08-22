@@ -46,6 +46,7 @@ use App\Http\Controllers\IncomeTypeController;
 use App\Http\Controllers\ExpenseController;
 use App\Http\Controllers\ExpenseTypeController;
 use App\Http\Controllers\AttendanceEmployeeController;
+use App\Http\Controllers\AttendanceRegularisationController;
 use App\Http\Controllers\ChatGroupController;
 use App\Http\Controllers\LeaveController;
 use App\Http\Controllers\LeaveTypeController;
@@ -1065,6 +1066,10 @@ Route::group(['middleware' => ['verified']], function () {
     Route::post('leave/claim-compensatory', [LeaveController::class, 'storeCompensatoryLeaveClaim'])->name('leave.claim.compensatory.store')->middleware(['auth', 'XSS']);
     Route::get('leave/award-compensatory', [LeaveController::class, 'awardCompensatoryLeaveView'])->name('leave.award.compensatory')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
     Route::post('leave/award-compensatory', [LeaveController::class, 'storeAwardCompensatoryLeave'])->name('leave.award.compensatory.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::get('leave/opening-balance', [LeaveController::class, 'setOpeningBalanceView'])->name('leave.opening.balance')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::post('leave/opening-balance', [LeaveController::class, 'storeOpeningBalance'])->name('leave.opening.balance.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::get('leave/grant-bereavement', [LeaveController::class, 'grantBereavementView'])->name('leave.bereavement.grant')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::post('leave/grant-bereavement', [LeaveController::class, 'storeGrantBereavement'])->name('leave.bereavement.grant.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
 
     Route::get('ticket/{id}/reply', [TicketController::class, 'reply'])->name('ticket.reply')->middleware(
         [
@@ -1220,6 +1225,12 @@ Route::group(['middleware' => ['verified']], function () {
             'XSS',
         ]
     );
+
+    Route::get('attendance/regularisation', [AttendanceRegularisationController::class, 'index'])->name('attendance.regularisation.index')->middleware(['auth', 'XSS']);
+    Route::get('attendance/regularisation/create', [AttendanceRegularisationController::class, 'create'])->name('attendance.regularisation.create')->middleware(['auth', 'XSS']);
+    Route::post('attendance/regularisation', [AttendanceRegularisationController::class, 'store'])->name('attendance.regularisation.store')->middleware(['auth', 'XSS']);
+    Route::get('attendance/regularisation/{id}/action', [AttendanceRegularisationController::class, 'action'])->name('attendance.regularisation.action')->middleware(['auth', 'XSS']);
+    Route::post('attendance/regularisation/{id}/action', [AttendanceRegularisationController::class, 'changeAction'])->name('attendance.regularisation.change.action')->middleware(['auth', 'XSS']);
 
     Route::post('attendance/sync-for-payroll', [AttendanceEmployeeController::class, 'syncForPayroll'])->name('attendance.sync-for-payroll')->middleware(['auth', 'XSS']);
     Route::get('attendance/export-monthly-excel', [AttendanceEmployeeController::class, 'exportMonthlyExcel'])->name('attendance.export-monthly-excel')->middleware(['auth', 'XSS']);

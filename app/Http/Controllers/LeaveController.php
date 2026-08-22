@@ -68,7 +68,7 @@ class LeaveController extends Controller
             'badge' => $badge,
             'can_apply' => !$onProbation || \Auth::user()->type !== 'employee',
             'note' => $onProbation
-                ? __('You can view leave balances during probation, but leave applications are restricted until probation ends.')
+                ? __('During probation you can view Sick Leave and Comp-off. Leave applications are restricted until probation ends.')
                 : null,
         ];
     }
@@ -142,6 +142,8 @@ class LeaveController extends Controller
                         'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
                         'carry_forward' => $summary['carry_forward'] ?? 0,
                         'encashable_leave' => $summary['encashable_leave'] ?? 0,
+                        'opening_balance' => $summary['opening_balance'] ?? 0,
+                        'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
                         'note' => $summary['note'] ?? null,
                     ];
                 }
@@ -179,6 +181,8 @@ class LeaveController extends Controller
                         'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
                         'carry_forward' => $summary['carry_forward'] ?? 0,
                         'encashable_leave' => $summary['encashable_leave'] ?? 0,
+                        'opening_balance' => $summary['opening_balance'] ?? 0,
+                        'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
                         'note' => $summary['note'] ?? null,
                     ];
                 }
@@ -1374,7 +1378,7 @@ class LeaveController extends Controller
                 $leaveType->annual_credit = 7;
                 $leaveType->days = 7;
                 $leaveType->monthly_credit = 0;
-                $note = __('Event-based: 7 paid days when a qualifying bereavement occurs (manager applied).');
+                $note = __('Event-based: appears after manager grants 7 paid days for a qualifying bereavement.');
             }
             if ($policyCode === 'cl') {
                 $leaveType->credit_frequency = 'seasonal';
@@ -1406,6 +1410,8 @@ class LeaveController extends Controller
                 'monthly_accrual' => 0,
                 'eligible_months' => 0,
                 'credited_months' => 0,
+                'opening_balance' => 0,
+                'accrued_to_date' => 0,
                 'credit_mode' => 'earned',
                 'carry_forward' => 0,
                 'note' => __('Credited when compensatory off is earned.'),
@@ -1421,25 +1427,41 @@ class LeaveController extends Controller
                 'monthly_accrual' => 0,
                 'eligible_months' => 0,
                 'credited_months' => 0,
+                'opening_balance' => 0,
+                'accrued_to_date' => 0,
                 'credit_mode' => 'seasonal',
                 'carry_forward' => 0,
                 'note' => $note,
             ];
         }
 
-        // Event-based (bereavement): show flat entitlement, no monthly accrual
+        // Event-based (bereavement): only what manager granted
         if ($typeFrequency === 'event') {
-            $entitlement = (float) ($leaveType->annual_credit ?? $leaveType->days ?? 7);
+            $granted = 0.0;
+            if ($isSpectal && $employee) {
+                $granted = $this->leavePolicy()->grantedDays(
+                    (int) $employee->id,
+                    (int) $leaveType->id,
+                    \App\Models\LeaveBalanceEntry::TYPE_GRANT
+                );
+            } elseif (!$isSpectal) {
+                $granted = (float) ($leaveType->annual_credit ?? $leaveType->days ?? 7);
+            }
+
             return [
-                'allowed' => $entitlement,
-                'display_total' => $entitlement,
-                'total_annual' => $entitlement,
+                'allowed' => $granted,
+                'display_total' => $granted,
+                'total_annual' => $granted,
                 'monthly_accrual' => 0,
                 'eligible_months' => 0,
                 'credited_months' => 0,
+                'opening_balance' => 0,
+                'accrued_to_date' => 0,
                 'credit_mode' => 'event',
                 'carry_forward' => 0,
-                'note' => $note,
+                'note' => $granted > 0
+                    ? __('Granted by manager: :days day(s).', ['days' => $granted])
+                    : $note,
             ];
         }
 
@@ -1457,6 +1479,9 @@ class LeaveController extends Controller
         if ($typeFrequency === 'monthly_cap' && !empty($leaveType->monthly_limit)) {
             $monthlyAccrual = (float) $leaveType->monthly_limit;
         }
+
+        $openingBalance = 0.0;
+        $accruedToDate = 0.0;
 
         $normalizedCycle = $this->normalizeCycleDates($cycleDates);
         $cycleStart = Carbon::parse($normalizedCycle['start_date'])->startOfMonth();
@@ -1506,10 +1531,31 @@ class LeaveController extends Controller
                     : $annualCredit * ($eligibleMonths / 12), 2);
             }
             $allowed = $proratedTotal;
+            $accruedToDate = $allowed;
+            $openingBalance = 0.0;
         } else {
             $accruedToDate = round($monthlyAccrual * $creditedMonths, 2);
             $allowed = min($accruedToDate, round($monthlyAccrual * $eligibleMonths, 2));
             $proratedTotal = round($monthlyAccrual * $eligibleMonths, 2);
+            $openingBalance = 0.0;
+
+            // Spectal PL: opening balance ledger + monthly accrual
+            if ($isSpectal && $policyCode === 'pl' && $employee) {
+                $periodKey = (string) ($cycleDates['year'] ?? date('Y'));
+                $openingBalance = $this->leavePolicy()->openingBalanceDays(
+                    (int) $employee->id,
+                    (int) $leaveType->id,
+                    $periodKey
+                );
+                $allowed = round($openingBalance + $accruedToDate, 2);
+                $proratedTotal = round($openingBalance + ($monthlyAccrual * $eligibleMonths), 2);
+                $note = __('Opening :open + Accrued :accrued (:months × :rate).', [
+                    'open' => $openingBalance,
+                    'accrued' => $accruedToDate,
+                    'months' => $creditedMonths,
+                    'rate' => $monthlyAccrual,
+                ]);
+            }
         }
 
         // monthly_cap (WFH): only current month allowance
@@ -1567,6 +1613,8 @@ class LeaveController extends Controller
             'monthly_accrual' => max(0, round($monthlyAccrual, 2)),
             'eligible_months' => $eligibleMonths,
             'credited_months' => $creditedMonths,
+            'opening_balance' => max(0, round($openingBalance ?? 0, 2)),
+            'accrued_to_date' => max(0, round($accruedToDate ?? $allowed, 2)),
             'credit_mode' => $creditMode,
             'carry_forward' => max(0, round($carryForward, 2)),
             'note' => $note,
@@ -1604,6 +1652,8 @@ class LeaveController extends Controller
             'credit_mode' => $allowance['credit_mode'] ?? 'lump_sum',
             'carry_forward' => $allowance['carry_forward'] ?? 0,
             'encashable_leave' => $this->calculateEncashableLeave($available, $leaveType),
+            'opening_balance' => $allowance['opening_balance'] ?? 0,
+            'accrued_to_date' => $allowance['accrued_to_date'] ?? 0,
             'note' => $allowance['note'] ?? null,
         ];
     }
@@ -2052,6 +2102,153 @@ class LeaveController extends Controller
             \Log::error('Error awarding compensatory leave: ' . $e->getMessage());
             return redirect()->back()->with('error', __('Failed to award compensatory leave. Please try again.'));
         }
+    }
+
+    /**
+     * Spectal: set PL opening balance for an employee (then monthly accrual continues).
+     */
+    public function setOpeningBalanceView()
+    {
+        if (!\Auth::user()->can('Manage Leave') || \Auth::user()->type == 'employee') {
+            return response()->json(['error' => __('Permission denied.')], 401);
+        }
+
+        $employees = Employee::where('created_by', \Auth::user()->creatorId())
+            ->get()
+            ->pluck('name', 'id');
+
+        $leaveTypes = LeaveType::where('created_by', \Auth::user()->creatorId())->get()
+            ->filter(function ($lt) {
+                return LeavePolicyService::resolvePolicyCode($lt) === 'pl';
+            })
+            ->pluck('title', 'id');
+
+        $cycle = $this->leaveCycleDates();
+
+        return view('leave.set_opening_balance', compact('employees', 'leaveTypes', 'cycle'));
+    }
+
+    public function storeOpeningBalance(Request $request)
+    {
+        if (!\Auth::user()->can('Manage Leave') || \Auth::user()->type == 'employee') {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        if (!Schema::hasTable('leave_balance_entries')) {
+            return redirect()->back()->with('error', __('Leave balance ledger is not installed. Run migrations first.'));
+        }
+
+        $validator = \Validator::make($request->all(), [
+            'employee_id' => 'required|integer|exists:employees,id',
+            'leave_type_id' => 'required|integer|exists:leave_types,id',
+            'days' => 'required|numeric|min:0',
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->with('error', $validator->getMessageBag()->first());
+        }
+
+        $employee = Employee::find($request->employee_id);
+        $leaveType = LeaveType::find($request->leave_type_id);
+        if (!$employee || !$leaveType
+            || $employee->created_by != \Auth::user()->creatorId()
+            || $leaveType->created_by != \Auth::user()->creatorId()) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        if (LeavePolicyService::resolvePolicyCode($leaveType) !== 'pl') {
+            return redirect()->back()->with('error', __('Opening balance is only supported for Privilege Leave.'));
+        }
+
+        $periodKey = (string) ($this->leaveCycleDates()['year'] ?? date('Y'));
+
+        // Replace existing opening for this cycle (keep a single opening row)
+        \App\Models\LeaveBalanceEntry::where('employee_id', $employee->id)
+            ->where('leave_type_id', $leaveType->id)
+            ->where('entry_type', \App\Models\LeaveBalanceEntry::TYPE_OPENING)
+            ->where('period_key', $periodKey)
+            ->delete();
+
+        \App\Models\LeaveBalanceEntry::create([
+            'employee_id' => $employee->id,
+            'leave_type_id' => $leaveType->id,
+            'entry_type' => \App\Models\LeaveBalanceEntry::TYPE_OPENING,
+            'days' => (float) $request->days,
+            'period_key' => $periodKey,
+            'notes' => $request->notes,
+            'created_by' => \Auth::user()->creatorId(),
+        ]);
+
+        return redirect()->back()->with('success', __('Opening balance set for :name.', ['name' => $employee->name]));
+    }
+
+    /**
+     * Spectal: grant bereavement entitlement (typically 7 days).
+     */
+    public function grantBereavementView()
+    {
+        if (!\Auth::user()->can('Manage Leave') || \Auth::user()->type == 'employee') {
+            return response()->json(['error' => __('Permission denied.')], 401);
+        }
+
+        $employees = Employee::where('created_by', \Auth::user()->creatorId())
+            ->get()
+            ->pluck('name', 'id');
+
+        $leaveTypes = LeaveType::where('created_by', \Auth::user()->creatorId())->get()
+            ->filter(function ($lt) {
+                return LeavePolicyService::resolvePolicyCode($lt) === 'bereavement';
+            })
+            ->pluck('title', 'id');
+
+        return view('leave.grant_bereavement', compact('employees', 'leaveTypes'));
+    }
+
+    public function storeGrantBereavement(Request $request)
+    {
+        if (!\Auth::user()->can('Manage Leave') || \Auth::user()->type == 'employee') {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        if (!Schema::hasTable('leave_balance_entries')) {
+            return redirect()->back()->with('error', __('Leave balance ledger is not installed. Run migrations first.'));
+        }
+
+        $validator = \Validator::make($request->all(), [
+            'employee_id' => 'required|integer|exists:employees,id',
+            'leave_type_id' => 'required|integer|exists:leave_types,id',
+            'days' => 'required|numeric|min:0.5|max:7',
+            'notes' => 'required|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->with('error', $validator->getMessageBag()->first());
+        }
+
+        $employee = Employee::find($request->employee_id);
+        $leaveType = LeaveType::find($request->leave_type_id);
+        if (!$employee || !$leaveType
+            || $employee->created_by != \Auth::user()->creatorId()
+            || $leaveType->created_by != \Auth::user()->creatorId()) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        if (LeavePolicyService::resolvePolicyCode($leaveType) !== 'bereavement') {
+            return redirect()->back()->with('error', __('Please select a Bereavement leave type.'));
+        }
+
+        \App\Models\LeaveBalanceEntry::create([
+            'employee_id' => $employee->id,
+            'leave_type_id' => $leaveType->id,
+            'entry_type' => \App\Models\LeaveBalanceEntry::TYPE_GRANT,
+            'days' => (float) $request->days,
+            'period_key' => date('Y-m'),
+            'notes' => $request->notes,
+            'created_by' => \Auth::user()->creatorId(),
+        ]);
+
+        return redirect()->back()->with('success', __('Bereavement leave granted to :name.', ['name' => $employee->name]));
     }
 
     /**

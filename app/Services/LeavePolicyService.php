@@ -121,18 +121,18 @@ class LeavePolicyService
                 'days' => 7,
                 'monthly_credit' => round(7 / 12, 2),
                 'annual_credit' => 7,
-                'credit_frequency' => 'monthly',
+                'credit_frequency' => 'annual',
                 'is_prorata' => true,
                 'is_carry_forward' => 0,
                 'max_carry_forward' => 0,
                 'is_encashable' => 0,
                 'eligible_employee_types' => ['intern', 'full_time'],
-                'policy_notes' => 'Yearly 7 days. Prorata on joining. Monthly credit. No CF. No encashment. Intern + Full time.',
+                'policy_notes' => 'Yearly 7 days. Prorata / transition load. No CF. Intern + Full time.',
             ],
             'pl' => [
                 'title' => 'Privilege Leave (PL)',
                 'days' => 18,
-                'monthly_credit' => round(18 / 12, 2),
+                'monthly_credit' => 1.5,
                 'annual_credit' => 18,
                 'credit_frequency' => 'monthly',
                 'is_prorata' => true,
@@ -141,29 +141,28 @@ class LeavePolicyService
                 'is_encashable' => 1,
                 'max_encash_on_exit' => 30,
                 'eligible_employee_types' => ['full_time'],
-                // OLD vague rule kept for reference:
-                // ['min' => 5.01, 'max' => null, 'calendar_days' => 21], // "More than 5 days = 3 weeks"
                 'notice_rules' => [
                     ['min' => 0.5, 'max' => 2, 'working_days' => 3],
                     ['min' => 3, 'max' => 5, 'calendar_days' => 7],
-                    ['min' => 5.01, 'max' => 10, 'calendar_days' => 28], // 4 weeks
-                    ['min' => 10.01, 'max' => null, 'calendar_days' => 42], // 6 weeks
+                    ['min' => 5.01, 'max' => 10, 'calendar_days' => 28],
+                    ['min' => 10.01, 'max' => null, 'calendar_days' => 42],
                 ],
-                'policy_notes' => 'Yearly 18. Monthly credit. CF yes. Encash on exit max 30 days. Full time only. Notice by leave length.',
+                'policy_notes' => 'Yearly 18. Monthly 1.5 credit (not loaded upfront). Full time only.',
             ],
             'cl' => [
                 'title' => 'Casual Leave (CL)',
-                'days' => 7,
-                'monthly_credit' => round(7 / 12, 2),
-                'annual_credit' => 7,
-                'credit_frequency' => 'monthly',
-                'is_prorata' => true,
+                'days' => 0,
+                'monthly_credit' => 0,
+                'annual_credit' => 0,
+                'credit_frequency' => 'seasonal',
+                'is_prorata' => false,
                 'is_carry_forward' => 0,
                 'max_carry_forward' => 0,
                 'is_encashable' => 0,
                 'eligible_employee_types' => ['full_time'],
-                'min_notice_days' => 14, // 2 weeks in advance
-                'policy_notes' => 'Yearly 7. Monthly credit. No CF/encash. Full time. Apply 2 weeks in advance.',
+                'seasonal_months' => [5, 6, 7], // May–Jul only
+                'min_notice_days' => 14,
+                'policy_notes' => 'Not a separate annual bank. Apply only during May–Jul summer window.',
             ],
             'comp_off' => [
                 'title' => 'Compensatory Off',
@@ -176,8 +175,8 @@ class LeavePolicyService
                 'is_encashable' => 0,
                 'is_as_earned' => true,
                 'eligible_employee_types' => ['intern', 'full_time'],
-                'min_notice_days' => 7, // A week in advance
-                'policy_notes' => 'As and when earned. Week off/Holidays attendance mandatory. 4 hrs = 1/2 day, 8 hrs = Full day. Apply 1 week in advance. Intern + Full time.',
+                'min_notice_days' => 7,
+                'policy_notes' => 'As earned. Intern + Full time.',
             ],
             'optional_holiday' => [
                 'title' => 'Optional Holiday',
@@ -189,37 +188,219 @@ class LeavePolicyService
                 'is_carry_forward' => 0,
                 'is_encashable' => 0,
                 'eligible_employee_types' => ['intern', 'full_time'],
-                'policy_notes' => 'Yearly 2. Annual credit. Prorata on joining. Intern + Full time.',
+                'policy_notes' => 'Yearly 2. Annual credit. Intern + Full time.',
             ],
             'wfh' => [
                 'title' => 'Work From Home (WFH)',
-                'days' => 24, // 2 per month × 12 (tracking yearly pool with monthly_limit)
+                'days' => 24,
                 'monthly_credit' => 2,
                 'annual_credit' => 24,
                 'credit_frequency' => 'monthly_cap',
-                'is_prorata' => true,
+                'is_prorata' => false,
                 'is_carry_forward' => 0,
                 'is_encashable' => 0,
                 'monthly_limit' => 2,
-                'max_consecutive_days' => 2, // can only apply 2 together
-                'eligible_employee_types' => ['intern', 'full_time'],
-                'policy_notes' => 'Monthly 2 days. Annual credit pool. Max 2 days together. Intern + Full time.',
+                'max_consecutive_days' => 2,
+                'eligible_employee_types' => ['full_time'],
+                'policy_notes' => '2 days per month only (not an accumulating annual bank). Full time only.',
             ],
             'bereavement' => [
                 'title' => 'Bereavement Leave',
                 'days' => 7,
-                'monthly_credit' => round(7 / 12, 2),
+                'monthly_credit' => 0,
                 'annual_credit' => 7,
-                'credit_frequency' => 'monthly',
-                'is_prorata' => true,
+                'credit_frequency' => 'event',
+                'is_prorata' => false,
                 'is_carry_forward' => 0,
                 'is_encashable' => 0,
-                'eligible_employee_types' => [], // empty = all employees
+                'eligible_employee_types' => ['full_time'],
                 'requires_family_relation' => true,
-                'policy_notes' => 'Yearly 7. Monthly credit. All employees. Immediate family only.',
+                'policy_notes' => 'Event-based 7 days when a qualifying bereavement occurs. No monthly accrual.',
+            ],
+            'on_ground' => [
+                'title' => 'On Ground',
+                'days' => 0,
+                'monthly_credit' => 0,
+                'annual_credit' => 0,
+                'credit_frequency' => 'hidden',
+                'is_prorata' => false,
+                'eligible_employee_types' => [],
+                'hide_from_balance' => true,
+                'policy_notes' => 'Not a leave entitlement. Use attendance regularisation instead.',
             ],
         ];
     }
+
+    public static function isSpectalPortal(?string $host = null): bool
+    {
+        return \App\Support\TenantHost::subdomainFromHost($host) === 'spectal';
+    }
+
+    /**
+     * Spectal 2026 go-live is 1 Aug — transition cycle Aug–Dec 2026.
+     * From 2027 onward: full calendar year.
+     */
+    public static function spectalCycleDates(?Carbon $asOf = null): array
+    {
+        $asOf = $asOf ? $asOf->copy() : Carbon::now('Asia/Kolkata');
+        $year = (int) $asOf->year;
+
+        if ($year === 2026) {
+            $cycleStart = '2026-08-01';
+            $cycleEnd = '2026-12-31';
+            $label = '2026 (Aug–Dec transition)';
+        } else {
+            $cycleStart = $year . '-01-01';
+            $cycleEnd = $year . '-12-31';
+            $label = (string) $year;
+        }
+
+        return [
+            'start_date' => date('Y-m-d', strtotime($cycleStart . ' -1 day')),
+            'end_date' => date('Y-m-d', strtotime($cycleEnd . ' +1 day')),
+            'cycle_start' => $cycleStart,
+            'cycle_end' => $cycleEnd,
+            'year' => (string) $year,
+            'label' => $label,
+        ];
+    }
+
+    public static function resolvePolicyCode(LeaveType $leaveType): ?string
+    {
+        if (!empty($leaveType->policy_code)) {
+            return strtolower(trim((string) $leaveType->policy_code));
+        }
+
+        $t = strtolower((string) $leaveType->title);
+        if (str_contains($t, 'privilege') || preg_match('/\bpl\b/', $t)) {
+            return 'pl';
+        }
+        if (str_contains($t, 'sick') || str_contains($t, 'seek')) {
+            return 'sick';
+        }
+        if (str_contains($t, 'casual')) {
+            return 'cl';
+        }
+        if (str_contains($t, 'comp')) {
+            return 'comp_off';
+        }
+        if (str_contains($t, 'optional')) {
+            return 'optional_holiday';
+        }
+        if (str_contains($t, 'wfh') || str_contains($t, 'work from home')) {
+            return 'wfh';
+        }
+        if (str_contains($t, 'bereavement')) {
+            return 'bereavement';
+        }
+        if (str_contains($t, 'on ground') || str_contains($t, 'onground')) {
+            return 'on_ground';
+        }
+
+        return null;
+    }
+
+    public static function employeeTypeCode(?Employee $employee): ?string
+    {
+        if (!$employee || empty($employee->employee_type_id)) {
+            return null;
+        }
+
+        return EmployeeType::where('id', $employee->employee_type_id)->value('code');
+    }
+
+    /**
+     * Whether this leave type should appear on Spectal Leave Balance Summary.
+     */
+    public function shouldShowOnSpectalBalance(LeaveType $leaveType, ?Employee $employee = null, ?Carbon $asOf = null): bool
+    {
+        $code = self::resolvePolicyCode($leaveType);
+        $defs = self::policyDefinitions();
+
+        if ($code === 'on_ground' || (!empty($defs[$code]['hide_from_balance']))) {
+            return false;
+        }
+
+        // Casual Leave: balance only during May–Jul window
+        if ($code === 'cl') {
+            $asOf = $asOf ? $asOf->copy() : Carbon::now('Asia/Kolkata');
+            if (!in_array((int) $asOf->month, [5, 6, 7], true)) {
+                return false;
+            }
+        }
+
+        // Comp-off is earned — still show (0 quota) so employees know it exists
+        if ($code === 'comp_off') {
+            return $this->employeeEligibleForSpectalType($leaveType, $employee);
+        }
+
+        return $this->employeeEligibleForSpectalType($leaveType, $employee);
+    }
+
+    public function employeeEligibleForSpectalType(LeaveType $leaveType, ?Employee $employee): bool
+    {
+        if (!$employee) {
+            return true;
+        }
+
+        $code = self::resolvePolicyCode($leaveType);
+        $defs = self::policyDefinitions();
+        $allowed = $leaveType->eligible_employee_types;
+        if (empty($allowed) || !is_array($allowed)) {
+            $allowed = $defs[$code]['eligible_employee_types'] ?? null;
+        }
+
+        // Empty allowed = all types (legacy); Spectal on_ground has []
+        if ($code === 'on_ground') {
+            return false;
+        }
+        if ($allowed === null) {
+            return true;
+        }
+        if ($allowed === []) {
+            return true; // bereavement historically all — Spectal defs set full_time
+        }
+
+        $empCode = self::employeeTypeCode($employee);
+        if (!$empCode) {
+            // Without classification, hide restricted types rather than over-grant
+            return in_array($code, ['sick', 'comp_off'], true);
+        }
+
+        // Interns: Sick + Comp only
+        if ($empCode === 'intern') {
+            return in_array($code, ['sick', 'comp_off'], true);
+        }
+
+        return in_array($empCode, $allowed, true);
+    }
+
+    public function validateSpectalApplication(LeaveType $leaveType, Employee $employee, string $startDate): ?string
+    {
+        if (!self::isSpectalPortal()) {
+            return null;
+        }
+
+        $code = self::resolvePolicyCode($leaveType);
+
+        if ($code === 'on_ground') {
+            return __('On Ground is not a leave entitlement. Please use attendance regularisation.');
+        }
+
+        if (!$this->employeeEligibleForSpectalType($leaveType, $employee)) {
+            return __('This leave type is not applicable for your employment type.');
+        }
+
+        if ($code === 'cl') {
+            $month = (int) Carbon::parse($startDate)->month;
+            if (!in_array($month, [5, 6, 7], true)) {
+                return __('Casual Leave can only be applied between May and July.');
+            }
+        }
+
+        return null;
+    }
+
 
     public static function hoursToCompOffDays(float $hours): float
     {

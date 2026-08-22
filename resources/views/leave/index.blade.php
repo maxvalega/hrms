@@ -38,12 +38,30 @@
 
 @section('content')
     <div class="row">
+        @if(!empty($isSpectal) && !empty($employmentStatus))
+            <div class="col-xl-12 mb-3">
+                <div class="alert alert-{{ $employmentStatus['badge'] === 'success' ? 'success' : ($employmentStatus['badge'] === 'warning' ? 'warning' : 'info') }} d-flex align-items-center justify-content-between mb-0">
+                    <div>
+                        <strong>{{ __('Employment Status') }}:</strong>
+                        <span class="badge bg-{{ $employmentStatus['badge'] }} ms-1">{{ $employmentStatus['label'] }}</span>
+                        @if(!empty($employmentStatus['type_code']))
+                            <small class="text-muted ms-2">({{ $employmentStatus['type_code'] }})</small>
+                        @endif
+                        @if(!empty($employmentStatus['note']))
+                            <div class="small mt-1">{{ $employmentStatus['note'] }}</div>
+                        @endif
+                    </div>
+                    <small class="text-muted">{{ $date['label'] ?? '' }}</small>
+                </div>
+            </div>
+        @endif
+
         @if(!empty($leaveBalance) && count($leaveBalance) > 0)
             <div class="col-xl-12 mb-3">
                 <div class="card">
                     <div class="card-header d-flex align-items-center justify-content-between bg-light">
                         <h5 class="card-title mb-0">{{ __('Leave Balance Summary') }}</h5>
-                        <small class="text-muted">{{ __('Current Year') }} | {{ $date['label'] ?? $date['year'] ?? date('Y') }}</small>
+                        <small class="text-muted">{{ $date['label'] ?? __('Current Year') }} | {{ $date['year'] ?? date('Y') }}</small>
                     </div>
                     <div class="card-body">
                         <div class="row">
@@ -51,16 +69,34 @@
                                 @php
                                     $leaveTypeName = strtolower((string) ($balance['leave_type'] ?? ''));
                                     $isVacationLeave = preg_match('/(vacation|vaction|vactine|vacatine|vacat)/', $leaveTypeName) === 1;
+                                    $policyCode = $balance['policy_code'] ?? '';
+                                    $isProbationView = !empty($employmentStatus['on_probation']);
                                 @endphp
                                 <div class="col-lg-4 col-md-6 mb-3">
-                                    <div class="border rounded p-3">
+                                    <div class="border rounded p-3 {{ $isProbationView ? 'border-info' : '' }}" style="{{ $isProbationView ? 'background:#f0f9ff;' : '' }}">
                                         <div class="d-flex justify-content-between align-items-start mb-2">
                                             <div>
                                                 <h6 class="mb-0">{{ $balance['leave_type'] }}</h6>
+                                                @if(!empty($balance['note']))
+                                                    <small class="text-muted">{{ $balance['note'] }}</small>
+                                                @endif
                                             </div>
                                             <span class="badge bg-primary">{{ $balance['total'] }} {{ __('days') }}</span>
                                         </div>
-                                        <small class="text-muted d-block">{{ __('Mode') }}: {{ ($balance['credit_mode'] ?? 'lump_sum') === 'monthly' ? __('Monthly') : __('Lump Sum') }}</small>
+                                        <small class="text-muted d-block">
+                                            {{ __('Mode') }}:
+                                            @php
+                                                $mode = $balance['credit_mode'] ?? 'lump_sum';
+                                                $modeLabel = match ($mode) {
+                                                    'monthly' => __('Monthly accrual'),
+                                                    'event' => __('Event-based'),
+                                                    'seasonal' => __('Seasonal window'),
+                                                    'earned' => __('As earned'),
+                                                    default => __('Loaded for period'),
+                                                };
+                                            @endphp
+                                            {{ $modeLabel }}
+                                        </small>
                                         <div class="mt-3">
                                             <div class="row text-center">
                                                 <div class="col-4">
@@ -84,17 +120,17 @@
                                             </div>
                                             <div class="row text-center mt-1">
                                                 <div class="col-6">
-                                                    <small class="text-muted d-block">{{ __('Total Annual Leave') }}</small>
+                                                    <small class="text-muted d-block">{{ __('Credited / Total') }}</small>
                                                     <h6 class="text-info">{{ $balance['total'] }}</h6>
                                                 </div>
                                                 <div class="col-6">
                                                     <small class="text-muted d-block">
-                                                        {{ __('Available Leave (Total - Used - Pending)') }}
+                                                        {{ __('Available (Total − Used − Pending)') }}
                                                     </small>
                                                     <h6 class="text-success">{{ $balance['available'] }}</h6>
                                                 </div>
                                             </div>
-                                            @if ($isVacationLeave)
+                                            @if ($isVacationLeave || $policyCode === 'pl')
                                                 <div class="row text-center mt-1">
                                                     <div class="col-6">
                                                         <small class="text-muted d-block">{{ __('Carry Forward') }}</small>
@@ -105,18 +141,12 @@
                                                         <h6 class="text-dark">{{ $balance['encashable_leave'] ?? 0 }}</h6>
                                                     </div>
                                                 </div>
-                                                @if (!empty($leavePolicy['carry_forward']) && (float)($balance['carry_forward'] ?? 0) <= 0)
-                                                    <small class="text-muted d-block mt-1">
-                                                        {{ __('Carry forward is 0 because previous leave cycle had no remaining eligible balance (or employee joined in current cycle).') }}
-                                                    </small>
-                                                @endif
                                             @endif
-                                            <!-- Progress Bar -->
                                             @php
                                                 $percentage = $balance['total'] > 0 ? round(($balance['used'] / $balance['total']) * 100) : 0;
                                             @endphp
                                             <div class="progress mt-2" style="height: 20px;">
-                                                <div class="progress-bar bg-danger" role="progressbar" style="width: {{ $percentage }}%" 
+                                                <div class="progress-bar bg-danger" role="progressbar" style="width: {{ min($percentage, 100) }}%"
                                                      aria-valuenow="{{ $percentage }}" aria-valuemin="0" aria-valuemax="100">
                                                     {{ $percentage }}%
                                                 </div>

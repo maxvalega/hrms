@@ -31,13 +31,55 @@ class LeaveController extends Controller
         return app(LeavePolicyService::class);
     }
 
+    protected function isSpectalPortal(): bool
+    {
+        return LeavePolicyService::isSpectalPortal();
+    }
+
+    protected function leaveCycleDates(): array
+    {
+        if ($this->isSpectalPortal()) {
+            return LeavePolicyService::spectalCycleDates();
+        }
+
+        return Utility::AnnualLeaveCycle();
+    }
+
+    protected function employmentStatusMeta(?Employee $employee): array
+    {
+        $typeCode = LeavePolicyService::employeeTypeCode($employee);
+        $onProbation = $this->isEmployeeInProbation($employee);
+
+        if ($typeCode === 'intern') {
+            $label = __('Intern');
+            $badge = 'warning';
+        } elseif ($onProbation) {
+            $label = __('Probation');
+            $badge = 'info';
+        } else {
+            $label = __('Permanent');
+            $badge = 'success';
+        }
+
+        return [
+            'type_code' => $typeCode,
+            'on_probation' => $onProbation,
+            'label' => $label,
+            'badge' => $badge,
+            'can_apply' => !$onProbation || \Auth::user()->type !== 'employee',
+            'note' => $onProbation
+                ? __('You can view leave balances during probation, but leave applications are restricted until probation ends.')
+                : null,
+        ];
+    }
+
     public function index()
     {
 
         if (\Auth::user()->can('Manage Leave')) {
             $leaveBalance = [];
             $showEmployeeColumn = \Auth::user()->type != 'employee';
-            $date = Utility::AnnualLeaveCycle();
+            $date = $this->leaveCycleDates();
             $settings = Utility::settings();
             $leavePolicy = [
                 'carry_forward' => ($settings['leave_carry_forward'] ?? 'off') === 'on',
@@ -45,10 +87,13 @@ class LeaveController extends Controller
                 'encashment' => ($settings['leave_encashment'] ?? 'off') === 'on',
                 'encashment_min_balance' => (float) ($settings['leave_encashment_min_balance'] ?? 0),
             ];
+            $employmentStatus = null;
+            $isSpectal = $this->isSpectalPortal();
 
             if (\Auth::user()->type == 'employee') {
                 $user     = \Auth::user();
                 $employee = Employee::where('user_id', '=', $user->id)->first();
+                $employmentStatus = $this->employmentStatusMeta($employee);
 
                 $employeeIds = [];
                 if (!empty($employee)) {
@@ -78,13 +123,17 @@ class LeaveController extends Controller
                     ->orderByDesc('id')
                     ->get();
 
-                // Calculate leave balance for employee
                 $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
                 foreach ($leaveTypes as $leaveType) {
+                    if ($isSpectal && !$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $employee)) {
+                        continue;
+                    }
+
                     $summary = $this->calculateLeaveBalanceSummary((int) $employee->id, $leaveType, $date);
 
                     $leaveBalance[] = [
                         'leave_type' => $leaveType->title,
+                        'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
                         'total' => $summary['total'],
                         'monthly_accrual' => $summary['monthly_accrual'],
                         'used' => $summary['used'],
@@ -93,6 +142,7 @@ class LeaveController extends Controller
                         'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
                         'carry_forward' => $summary['carry_forward'] ?? 0,
                         'encashable_leave' => $summary['encashable_leave'] ?? 0,
+                        'note' => $summary['note'] ?? null,
                     ];
                 }
             } else {
@@ -103,30 +153,46 @@ class LeaveController extends Controller
                     ->orderByDesc('id')
                     ->get();
 
-                // Calculate leave balance for all leave types
                 $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
                 foreach ($leaveTypes as $leaveType) {
-                    $allowance = $this->getLeaveAllowanceDetails($leaveType, null, $date);
-                    $usage = $this->getLeaveUsageByCycle(null, (int) $leaveType->id, $date);
-                    $used = $usage['used'];
-                    $pending = $usage['pending'];
-                    $available = $this->calculateAvailableLeaveByCreditMode($allowance, $usage);
+                    if ($isSpectal && !$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, null)) {
+                        // Still hide On Ground / out-of-season CL for company dashboard aggregates
+                        $code = LeavePolicyService::resolvePolicyCode($leaveType);
+                        if (in_array($code, ['on_ground'], true)) {
+                            continue;
+                        }
+                        if ($code === 'cl' && !in_array((int) date('n'), [5, 6, 7], true)) {
+                            continue;
+                        }
+                    }
+
+                    $summary = $this->calculateLeaveBalanceSummary(0, $leaveType, $date, true);
 
                     $leaveBalance[] = [
                         'leave_type' => $leaveType->title,
-                        'total' => $allowance['total_annual'],
-                        'monthly_accrual' => $allowance['monthly_accrual'],
-                        'used' => $used,
-                        'pending' => $pending,
-                        'available' => $available,
-                        'credit_mode' => $allowance['credit_mode'] ?? 'lump_sum',
-                        'carry_forward' => $allowance['carry_forward'] ?? 0,
-                        'encashable_leave' => $this->calculateEncashableLeave($available, $leaveType),
+                        'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
+                        'total' => $summary['total'],
+                        'monthly_accrual' => $summary['monthly_accrual'],
+                        'used' => $summary['used'],
+                        'pending' => $summary['pending'],
+                        'available' => $summary['available'],
+                        'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
+                        'carry_forward' => $summary['carry_forward'] ?? 0,
+                        'encashable_leave' => $summary['encashable_leave'] ?? 0,
+                        'note' => $summary['note'] ?? null,
                     ];
                 }
             }
 
-            return view('leave.index', compact('leaves', 'leaveBalance', 'date', 'leavePolicy', 'showEmployeeColumn'));
+            return view('leave.index', compact(
+                'leaves',
+                'leaveBalance',
+                'date',
+                'leavePolicy',
+                'showEmployeeColumn',
+                'employmentStatus',
+                'isSpectal'
+            ));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
@@ -148,7 +214,11 @@ class LeaveController extends Controller
                 $employees = Employee::where('created_by', '=', \Auth::user()->creatorId())->get()->pluck('name', 'id');
             }
             $leavetypes      = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
-            // $leavetypes_days = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
+            if ($this->isSpectalPortal() && Auth::user()->type == 'employee' && !empty($employees)) {
+                $leavetypes = $leavetypes->filter(function ($lt) use ($employees) {
+                    return $this->leavePolicy()->shouldShowOnSpectalBalance($lt, $employees);
+                })->values();
+            }
 
             $substitutes = [];
             if (Auth::user()->type == 'employee' && !empty($employees)) {
@@ -245,7 +315,7 @@ class LeaveController extends Controller
             $endDate = new \DateTime($request->end_date);
             $endDate->add(new \DateInterval('P1D'));
             // $total_leave_days = !empty($startDate->diff($endDate)) ? $startDate->diff($endDate)->days : 0;
-            $date = Utility::AnnualLeaveCycle();
+            $date = $this->leaveCycleDates();
 
             if (\Auth::user()->type == 'employee') {
                 $employee = Employee::where('user_id', '=', \Auth::id())->first();
@@ -267,6 +337,10 @@ class LeaveController extends Controller
                 return redirect()->back()->with('error', $this->getProbationLeaveNotAllowedMessage($employee));
             }
 
+            if ($spectalError = $this->leavePolicy()->validateSpectalApplication($leave_type, $employee, $request->start_date)) {
+                return redirect()->back()->with('error', $spectalError);
+            }
+
             // NEW: per-type policy matrix (eligibility, notice, WFH caps, bereavement family)
             $policyError = $this->leavePolicy()->validateApplication(
                 $leave_type,
@@ -281,7 +355,13 @@ class LeaveController extends Controller
                 return redirect()->back()->with('error', $policyError);
             }
 
-            $usage = $this->getLeaveUsageByCycle((int) $employee->id, (int) $leave_type->id, $date);
+            // For monthly_cap (WFH), compare against this month's usage
+            $policyCode = LeavePolicyService::resolvePolicyCode($leave_type);
+            if (($leave_type->credit_frequency === 'monthly_cap') || $policyCode === 'wfh') {
+                $usage = $this->getLeaveUsageForCurrentMonth((int) $employee->id, (int) $leave_type->id, $date);
+            } else {
+                $usage = $this->getLeaveUsageByCycle((int) $employee->id, (int) $leave_type->id, $date);
+            }
             $leaves_used = $usage['used'];
             $leaves_pending = $usage['pending'];
 
@@ -290,15 +370,15 @@ class LeaveController extends Controller
             }
 
             $allowance = $this->getLeaveAllowanceDetails($leave_type, $employee, $date);
-            $available = $this->calculateAvailableLeaveByCreditMode($allowance, $usage);
+            $available = max(0, round(((float) ($allowance['display_total'] ?? $allowance['allowed'] ?? 0)) - $leaves_used - $leaves_pending, 2));
 
             // Comp-off / as-earned: use compensatory claim flow rather than normal balance quota
             $isAsEarned = !empty($leave_type->is_as_earned) || ($leave_type->credit_frequency === 'earned');
             $isMonthlyCap = ($leave_type->credit_frequency === 'monthly_cap');
-            if (!$isAsEarned && !$isMonthlyCap && $total_leave_days > $available) {
+            if (!$isAsEarned && $total_leave_days > $available) {
                 return redirect()->back()->with('error', __('You cannot apply leave more than your available balance.'));
             }
-            // WFH monthly_cap: balance enforced via LeavePolicyService monthly_limit (not cycle pool)
+            // WFH monthly_cap uses current-month available above.
 
             // OLD: if ($leave_type->days >= $total_leave_days) {
             // NEW: allow as-earned or when within type max days (or unlimited max when days=0 and as-earned)
@@ -528,7 +608,7 @@ class LeaveController extends Controller
                 $endDate = new \DateTime($request->end_date);
                 $endDate->add(new \DateInterval('P1D'));
                 // $total_leave_days = !empty($startDate->diff($endDate)) ? $startDate->diff($endDate)->days : 0;
-                $date = Utility::AnnualLeaveCycle();
+                $date = $this->leaveCycleDates();
 
                 if (\Auth::user()->type == 'employee') {
                     $employee = Employee::where('user_id', '=', \Auth::id())->first();
@@ -550,7 +630,16 @@ class LeaveController extends Controller
                     return redirect()->back()->with('error', $this->getProbationLeaveNotAllowedMessage($employee));
                 }
 
-                $usage = $this->getLeaveUsageByCycle((int) $employee->id, (int) $leave_type->id, $date, (int) $leave->id);
+                if ($spectalError = $this->leavePolicy()->validateSpectalApplication($leave_type, $employee, $request->start_date)) {
+                    return redirect()->back()->with('error', $spectalError);
+                }
+
+                $policyCode = LeavePolicyService::resolvePolicyCode($leave_type);
+                if (($leave_type->credit_frequency === 'monthly_cap') || $policyCode === 'wfh') {
+                    $usage = $this->getLeaveUsageForCurrentMonth((int) $employee->id, (int) $leave_type->id, $date, (int) $leave->id);
+                } else {
+                    $usage = $this->getLeaveUsageByCycle((int) $employee->id, (int) $leave_type->id, $date, (int) $leave->id);
+                }
                 $leaves_used = $usage['used'];
                 $leaves_pending = $usage['pending'];
 
@@ -560,7 +649,7 @@ class LeaveController extends Controller
 
                 $allowance = $this->getLeaveAllowanceDetails($leave_type, $employee, $date);
 
-                $available = $this->calculateAvailableLeaveByCreditMode($allowance, $usage);
+                $available = max(0, round(((float) ($allowance['display_total'] ?? $allowance['allowed'] ?? 0)) - $leaves_used - $leaves_pending, 2));
                 if ($total_leave_days > $available) {
                     return redirect()->back()->with('error', __('You cannot apply leave more than your available balance.'));
                 }
@@ -1082,7 +1171,7 @@ class LeaveController extends Controller
             return response()->json([]);
         }
 
-        $date = Utility::AnnualLeaveCycle();
+        $date = $this->leaveCycleDates();
         $employee = Employee::find($request->employee_id);
         if (empty($employee)) {
             return response()->json([]);
@@ -1090,8 +1179,13 @@ class LeaveController extends Controller
 
         $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
         $leaveCounts = [];
+        $isSpectal = $this->isSpectalPortal();
 
         foreach ($leaveTypes as $leaveType) {
+            if ($isSpectal && !$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $employee)) {
+                continue;
+            }
+
             $summary = $this->calculateLeaveBalanceSummary((int) $request->employee_id, $leaveType, $date);
             $leaveCounts[] = [
                 'id' => $leaveType->id,
@@ -1105,6 +1199,8 @@ class LeaveController extends Controller
                 'credit_mode' => $summary['credit_mode'],
                 'carry_forward' => $summary['carry_forward'],
                 'encashable_leave' => $summary['encashable_leave'],
+                'note' => $summary['note'] ?? null,
+                'approval_requirement' => $leaveType->approval_requirement ?? 'na',
             ];
         }
 
@@ -1245,17 +1341,58 @@ class LeaveController extends Controller
     protected function getLeaveAllowanceDetails(LeaveType $leaveType, ?Employee $employee, array $cycleDates, bool $includeCarryForward = true): array
     {
         $settings = Utility::settings();
+        $isSpectal = $this->isSpectalPortal();
+        $policyCode = LeavePolicyService::resolvePolicyCode($leaveType);
+        $defs = LeavePolicyService::policyDefinitions();
+        $note = null;
+
+        // Spectal: apply canonical policy defaults when DB leave types are misconfigured
+        if ($isSpectal && $policyCode && isset($defs[$policyCode])) {
+            $def = $defs[$policyCode];
+            if (empty($leaveType->credit_frequency) || $policyCode === 'sick' || $policyCode === 'pl'
+                || $policyCode === 'wfh' || $policyCode === 'bereavement' || $policyCode === 'cl') {
+                $leaveType->credit_frequency = $def['credit_frequency'] ?? $leaveType->credit_frequency;
+            }
+            if ($policyCode === 'pl') {
+                $leaveType->monthly_credit = 1.5;
+                $leaveType->annual_credit = 18;
+                $leaveType->days = 18;
+            }
+            if ($policyCode === 'sick') {
+                $leaveType->annual_credit = 7;
+                $leaveType->days = 7;
+                $leaveType->credit_frequency = 'annual';
+                $leaveType->is_prorata = true;
+            }
+            if ($policyCode === 'wfh') {
+                $leaveType->monthly_limit = 2;
+                $leaveType->monthly_credit = 2;
+                $leaveType->credit_frequency = 'monthly_cap';
+            }
+            if ($policyCode === 'bereavement') {
+                $leaveType->credit_frequency = 'event';
+                $leaveType->annual_credit = 7;
+                $leaveType->days = 7;
+                $leaveType->monthly_credit = 0;
+                $note = __('Event-based: 7 paid days when a qualifying bereavement occurs (manager applied).');
+            }
+            if ($policyCode === 'cl') {
+                $leaveType->credit_frequency = 'seasonal';
+                $leaveType->days = 0;
+                $leaveType->annual_credit = 0;
+                $leaveType->monthly_credit = 0;
+                $note = __('Casual Leave is only available during the May–July window and is not an annual leave bank.');
+            }
+        }
 
         // NEW: per-type credit frequency from policy matrix
-        // OLD (kept for fallback when policy_code / credit_frequency not set):
-        // $creditMode = $settings['leave_credit_mode'] ?? 'lump_sum';
         $typeFrequency = $leaveType->credit_frequency ?? null;
-        if ($typeFrequency === 'annual') {
+        if ($typeFrequency === 'annual' || $typeFrequency === 'event') {
             $creditMode = 'lump_sum';
         } elseif (in_array($typeFrequency, ['monthly', 'monthly_cap'], true)) {
             $creditMode = 'monthly';
-        } elseif ($typeFrequency === 'earned') {
-            $creditMode = 'earned';
+        } elseif ($typeFrequency === 'earned' || $typeFrequency === 'seasonal') {
+            $creditMode = $typeFrequency === 'seasonal' ? 'seasonal' : 'earned';
         } else {
             $creditMode = $settings['leave_credit_mode'] ?? 'lump_sum';
         }
@@ -1264,12 +1401,45 @@ class LeaveController extends Controller
         if ($creditMode === 'earned' || !empty($leaveType->is_as_earned)) {
             return [
                 'allowed' => 0,
+                'display_total' => 0,
                 'total_annual' => 0,
                 'monthly_accrual' => 0,
                 'eligible_months' => 0,
                 'credited_months' => 0,
                 'credit_mode' => 'earned',
                 'carry_forward' => 0,
+                'note' => __('Credited when compensatory off is earned.'),
+            ];
+        }
+
+        // Seasonal CL: no accrued balance bank
+        if ($creditMode === 'seasonal' || $typeFrequency === 'seasonal') {
+            return [
+                'allowed' => 0,
+                'display_total' => 0,
+                'total_annual' => 0,
+                'monthly_accrual' => 0,
+                'eligible_months' => 0,
+                'credited_months' => 0,
+                'credit_mode' => 'seasonal',
+                'carry_forward' => 0,
+                'note' => $note,
+            ];
+        }
+
+        // Event-based (bereavement): show flat entitlement, no monthly accrual
+        if ($typeFrequency === 'event') {
+            $entitlement = (float) ($leaveType->annual_credit ?? $leaveType->days ?? 7);
+            return [
+                'allowed' => $entitlement,
+                'display_total' => $entitlement,
+                'total_annual' => $entitlement,
+                'monthly_accrual' => 0,
+                'eligible_months' => 0,
+                'credited_months' => 0,
+                'credit_mode' => 'event',
+                'carry_forward' => 0,
+                'note' => $note,
             ];
         }
 
@@ -1278,23 +1448,29 @@ class LeaveController extends Controller
             $annualCredit = (float) ($leaveType->days ?? 0);
         }
 
-        $monthlyAccrual = $annualCredit > 0
-            ? round($annualCredit / 12, 2)
-            : (float) ($leaveType->monthly_credit ?? 0);
+        $monthlyAccrual = (float) ($leaveType->monthly_credit ?? 0);
+        if ($monthlyAccrual <= 0 && $annualCredit > 0) {
+            $monthlyAccrual = round($annualCredit / 12, 2);
+        }
 
         // WFH: monthly pool of monthly_limit (default 2), not annual/12 from days
         if ($typeFrequency === 'monthly_cap' && !empty($leaveType->monthly_limit)) {
             $monthlyAccrual = (float) $leaveType->monthly_limit;
-            // Annual tracking still uses annual_credit / days for reports
         }
 
         $normalizedCycle = $this->normalizeCycleDates($cycleDates);
         $cycleStart = Carbon::parse($normalizedCycle['start_date'])->startOfMonth();
         $cycleEnd = Carbon::parse($normalizedCycle['end_date'])->startOfMonth();
 
+        // Spectal go-live: never accrue before 1 Aug 2026
+        if ($isSpectal) {
+            $goLive = Carbon::parse('2026-08-01')->startOfMonth();
+            if ($cycleStart->lt($goLive)) {
+                $cycleStart = $goLive->copy();
+            }
+        }
+
         $accrualStart = $cycleStart->copy();
-        // NEW: prorata only when leave type allows it (default true)
-        // OLD: always prorated from join month
         $useProrata = !isset($leaveType->is_prorata) || (bool) $leaveType->is_prorata;
         if ($useProrata && !empty($employee) && !empty($employee->company_doj)) {
             $joinMonth = Carbon::parse($employee->company_doj)->startOfMonth();
@@ -1314,46 +1490,53 @@ class LeaveController extends Controller
             $asOfMonth = $cycleEnd->copy();
         }
 
-        // Calculate credited months based on calendar months from cycle start to now
         if ($eligibleMonths <= 0 || $asOfMonth->lessThan($accrualStart)) {
             $creditedMonths = 0;
         } else {
-            // Count months from accrualStart to asOfMonth (inclusive)
             $creditedMonths = min($eligibleMonths, $accrualStart->diffInMonths($asOfMonth) + 1);
         }
 
-        // For Lump Sum: eligible for full year; For Monthly: eligible for months worked
         if ($creditMode === 'lump_sum') {
-            // Lump sum gets paid on cycle start (or first month), but only if they worked that month
-            $proratedTotal = round($monthlyAccrual * $eligibleMonths, 2);
-            $allowed = $proratedTotal; // Full annual amount
+            // Spectal Sick Leave transition: load Aug–Dec pro-rata upfront (5/12 of 7 = 2.92)
+            if ($isSpectal && $policyCode === 'sick') {
+                $proratedTotal = round($annualCredit * ($eligibleMonths / 12), 2);
+            } else {
+                $proratedTotal = round($monthlyAccrual > 0
+                    ? $monthlyAccrual * $eligibleMonths
+                    : $annualCredit * ($eligibleMonths / 12), 2);
+            }
+            $allowed = $proratedTotal;
         } else {
-            // Monthly accrual: gets paid each month they work
             $accruedToDate = round($monthlyAccrual * $creditedMonths, 2);
             $allowed = min($accruedToDate, round($monthlyAccrual * $eligibleMonths, 2));
+            $proratedTotal = round($monthlyAccrual * $eligibleMonths, 2);
         }
 
-        // monthly_cap (WFH): available is current month's limit residual handled in validate; allowance still accrues
+        // monthly_cap (WFH): only current month allowance
         if ($typeFrequency === 'monthly_cap' && !empty($leaveType->monthly_limit)) {
             $allowed = (float) $leaveType->monthly_limit;
-            $proratedTotal = (float) ($leaveType->annual_credit ?? ($leaveType->monthly_limit * 12));
-        } else {
-            $proratedTotal = round($monthlyAccrual * $eligibleMonths, 2);
+            $proratedTotal = $allowed;
+            $monthlyAccrual = $allowed;
+            $note = __('Monthly allowance only — does not accumulate unused days.');
         }
 
         if (!empty($employee) && $this->isEmployeeInProbation($employee)) {
-            if (($settings['probation_leave_accumulation'] ?? 'during') === 'after') {
+            // Spectal: probation employees can SEE balances (accumulation continues)
+            // Application is blocked separately in store/create.
+            if (!$isSpectal && ($settings['probation_leave_accumulation'] ?? 'during') === 'after') {
                 $allowed = 0;
             }
         }
 
         $carryForward = 0.0;
-        // NEW: prefer per-type is_carry_forward
-        // OLD (company-wide only):
-        // if ($includeCarryForward && ($settings['leave_carry_forward'] ?? 'off') === 'on') { ... }
         $typeAllowsCf = isset($leaveType->is_carry_forward)
             ? ((int) $leaveType->is_carry_forward === 1)
             : (($settings['leave_carry_forward'] ?? 'off') === 'on');
+
+        // Spectal 2026 transition: no prior-cycle CF into Aug go-live
+        if ($isSpectal && ($cycleDates['year'] ?? '') === '2026') {
+            $typeAllowsCf = false;
+        }
 
         if ($includeCarryForward && $typeAllowsCf) {
             $previousCycle = $this->getPreviousCycleDates($cycleDates);
@@ -1362,7 +1545,6 @@ class LeaveController extends Controller
                 $previousUsage = $this->getLeaveUsageByCycle($employee ? (int) $employee->id : null, (int) $leaveType->id, $previousCycle);
                 $previousAvailable = max(0, round(($previousAllowance['allowed'] ?? 0) - ($previousUsage['used'] ?? 0) - ($previousUsage['pending'] ?? 0), 2));
 
-                // Prefer type max_carry_forward, else company setting
                 $carryForwardMax = (float) ($leaveType->max_carry_forward ?? 0);
                 if ($carryForwardMax <= 0) {
                     $carryForwardMax = (float) ($settings['leave_carry_forward_max'] ?? 0);
@@ -1372,35 +1554,78 @@ class LeaveController extends Controller
             }
         }
 
+        // For monthly accrual, dashboard "Total" = credited-to-date (same base as Available).
+        // For lump sum / event, Total = full loaded entitlement for the cycle.
+        $displayTotal = in_array($creditMode, ['monthly'], true) && $typeFrequency !== 'monthly_cap'
+            ? $allowed
+            : $allowed;
+
         return [
             'allowed' => max(0, round($allowed, 2)),
+            'display_total' => max(0, round($displayTotal, 2)),
             'total_annual' => max(0, round($proratedTotal, 2)),
             'monthly_accrual' => max(0, round($monthlyAccrual, 2)),
             'eligible_months' => $eligibleMonths,
             'credited_months' => $creditedMonths,
             'credit_mode' => $creditMode,
             'carry_forward' => max(0, round($carryForward, 2)),
+            'note' => $note,
         ];
     }
 
-    protected function calculateLeaveBalanceSummary(int $employeeId, LeaveType $leaveType, array $cycleDates): array
+    protected function calculateLeaveBalanceSummary(int $employeeId, LeaveType $leaveType, array $cycleDates, bool $companyWide = false): array
     {
-        $employee = Employee::find($employeeId);
+        $employee = $employeeId > 0 ? Employee::find($employeeId) : null;
         $allowance = $this->getLeaveAllowanceDetails($leaveType, $employee, $cycleDates);
-        $usage = $this->getLeaveUsageByCycle($employeeId, (int) $leaveType->id, $cycleDates);
+        $usageEmployeeId = $companyWide ? null : ($employeeId > 0 ? $employeeId : null);
 
-        $available = $this->calculateAvailableLeaveByCreditMode($allowance, $usage);
+        $policyCode = LeavePolicyService::resolvePolicyCode($leaveType);
+        $isMonthlyCap = ($leaveType->credit_frequency === 'monthly_cap') || $policyCode === 'wfh';
+
+        if ($isMonthlyCap) {
+            $usage = $this->getLeaveUsageForCurrentMonth($usageEmployeeId, (int) $leaveType->id, $cycleDates);
+        } else {
+            $usage = $this->getLeaveUsageByCycle($usageEmployeeId, (int) $leaveType->id, $cycleDates);
+        }
+
+        // Display total must be the same entitlement base used for Available
+        // (fixes "Total 18 / Available 30" style mismatches).
+        $total = (float) ($allowance['display_total'] ?? $allowance['allowed'] ?? 0);
+        $used = (float) ($usage['used'] ?? 0);
+        $pending = (float) ($usage['pending'] ?? 0);
+        $available = max(0, round($total - $used - $pending, 2));
 
         return [
-            'total' => $allowance['total_annual'],
+            'total' => max(0, round($total, 2)),
             'monthly_accrual' => $allowance['monthly_accrual'],
-            'used' => $usage['used'],
-            'pending' => $usage['pending'],
+            'used' => $used,
+            'pending' => $pending,
             'available' => $available,
             'credit_mode' => $allowance['credit_mode'] ?? 'lump_sum',
             'carry_forward' => $allowance['carry_forward'] ?? 0,
             'encashable_leave' => $this->calculateEncashableLeave($available, $leaveType),
+            'note' => $allowance['note'] ?? null,
         ];
+    }
+
+    protected function getLeaveUsageForCurrentMonth(?int $employeeId, int $leaveTypeId, array $cycleDates, ?int $excludeLeaveId = null): array
+    {
+        $monthStart = Carbon::now()->startOfMonth()->toDateString();
+        $monthEnd = Carbon::now()->endOfMonth()->toDateString();
+
+        // Clamp to cycle bounds
+        $normalized = $this->normalizeCycleDates($cycleDates);
+        if ($monthStart < $normalized['start_date']) {
+            $monthStart = $normalized['start_date'];
+        }
+        if ($monthEnd > $normalized['end_date']) {
+            $monthEnd = $normalized['end_date'];
+        }
+
+        return $this->getLeaveUsageByCycle($employeeId, $leaveTypeId, [
+            'start_date' => Carbon::parse($monthStart)->subDay()->toDateString(),
+            'end_date' => Carbon::parse($monthEnd)->addDay()->toDateString(),
+        ], $excludeLeaveId);
     }
 
     protected function calculateAvailableLeaveByCreditMode(array $allowance, array $usage): float

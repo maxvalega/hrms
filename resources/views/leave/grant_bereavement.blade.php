@@ -3,34 +3,51 @@
     <div class="alert alert-warning mb-3">
         {{ __('Bereavement leave stays hidden until you grant entitlement (usually 7 days) for a qualifying event.') }}
     </div>
-    <div class="row">
-        <div class="col-md-12">
-            <div class="form-group">
-                {{ Form::label('employee_id', __('Employee'), ['class' => 'col-form-label']) }}<x-required></x-required>
-                {{ Form::select('employee_id', $employees, null, ['class' => 'form-control select', 'required' => 'required', 'placeholder' => __('Select Employee')]) }}
+    <div class="row g-2">
+        <div class="col-12">
+            <div class="form-group mb-2">
+                {{ Form::label('employee_id', __('Grant to Employee'), ['class' => 'form-label fw-semibold']) }}<x-required></x-required>
+                <select name="employee_id" id="bereavement_employee_id" class="form-control form-select" required style="min-height: 44px; font-size: 16px;">
+                    <option value="">{{ __('Select employee…') }}</option>
+                    @foreach($employees as $id => $name)
+                        <option value="{{ $id }}">{{ $name }}</option>
+                    @endforeach
+                </select>
+                <small class="text-muted">{{ __('Choose whom you are granting bereavement leave to.') }}</small>
             </div>
         </div>
-        <div class="col-md-12">
-            <div class="form-group">
-                {{ Form::label('leave_type_id', __('Bereavement Leave Type'), ['class' => 'col-form-label']) }}<x-required></x-required>
-                {{ Form::select('leave_type_id', $leaveTypes, null, ['class' => 'form-control select', 'required' => 'required', 'placeholder' => __('Select Leave Type')]) }}
+        <div class="col-12">
+            <div class="form-group mb-2">
+                {{ Form::label('leave_type_id', __('Bereavement Leave Type'), ['class' => 'form-label fw-semibold']) }}<x-required></x-required>
+                <select name="leave_type_id" id="bereavement_leave_type_id" class="form-control form-select" required style="min-height: 44px; font-size: 16px;">
+                    <option value="">{{ __('Select leave type…') }}</option>
+                    @foreach($leaveTypes as $id => $title)
+                        <option value="{{ $id }}">{{ $title }}</option>
+                    @endforeach
+                </select>
             </div>
         </div>
-        <div class="col-md-12">
-            <div class="form-group">
-                {{ Form::label('days', __('Days to Grant'), ['class' => 'col-form-label']) }}<x-required></x-required>
-                {{ Form::number('days', 7, ['class' => 'form-control', 'required' => 'required', 'min' => '0.5', 'max' => '7', 'step' => '0.5']) }}
+        <div class="col-12 col-sm-6">
+            <div class="form-group mb-2">
+                {{ Form::label('days', __('Days to Grant'), ['class' => 'form-label fw-semibold']) }}<x-required></x-required>
+                {{ Form::number('days', 7, ['class' => 'form-control', 'required' => 'required', 'min' => '0.5', 'max' => '7', 'step' => '0.5', 'style' => 'min-height:44px;font-size:16px;']) }}
             </div>
         </div>
-        <div class="col-md-12">
-            <div class="form-group">
-                {{ Form::label('notes', __('Reason / Relation'), ['class' => 'col-form-label']) }}<x-required></x-required>
-                {{ Form::textarea('notes', null, ['class' => 'form-control', 'required' => 'required', 'rows' => '3', 'placeholder' => __('e.g. Immediate family — parent')]) }}
+        <div class="col-12">
+            <div class="form-group mb-0">
+                {{ Form::label('notes', __('Reason / Relation (remark)'), ['class' => 'form-label fw-semibold']) }}<x-required></x-required>
+                {{ Form::textarea('notes', null, [
+                    'class' => 'form-control',
+                    'required' => 'required',
+                    'rows' => '4',
+                    'placeholder' => __('e.g. Immediate family — parent / spouse'),
+                    'style' => 'min-height:110px;font-size:16px;color:#212529;background:#fff;',
+                ]) }}
             </div>
         </div>
     </div>
 </div>
-<div class="modal-footer">
+<div class="modal-footer flex-column flex-sm-row gap-2 align-items-stretch">
     <button type="button" class="btn btn-light" data-bs-dismiss="modal">{{ __('Cancel') }}</button>
     <input type="submit" value="{{ __('Grant Bereavement') }}" class="btn btn-primary">
 </div>

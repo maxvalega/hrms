@@ -17,6 +17,47 @@
     </a>
 @endsection
 
+@push('css-page')
+<style>
+    .leave-action-detail th,
+    .leave-action-detail td {
+        vertical-align: top;
+        word-break: break-word;
+    }
+    @media (max-width: 575.98px) {
+        .leave-action-detail,
+        .leave-action-detail tbody,
+        .leave-action-detail tr,
+        .leave-action-detail th,
+        .leave-action-detail td {
+            display: block;
+            width: 100% !important;
+        }
+        .leave-action-detail tr {
+            border-bottom: 1px solid #e9ecef;
+            padding: 0.65rem 0;
+        }
+        .leave-action-detail th {
+            border: 0 !important;
+            padding-bottom: 0.15rem !important;
+            background: transparent !important;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            color: #6c757d;
+        }
+        .leave-action-detail td {
+            border: 0 !important;
+            padding-top: 0.15rem !important;
+            font-size: 0.95rem;
+        }
+        .leave-action-footer .btn {
+            width: 100%;
+        }
+    }
+</style>
+@endpush
+
 @section('content')
     @php
         $startDate = \Carbon\Carbon::parse($leave->start_date);
@@ -36,7 +77,7 @@
     @endphp
 
     <div class="row justify-content-center">
-        <div class="col-12 col-xl-8">
+        <div class="col-12 col-lg-10 col-xl-8">
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">{{ __('Leave Request Details') }}</h5>
@@ -44,14 +85,25 @@
 
                 {{ Form::open(['url' => 'leave/changeaction', 'method' => 'post']) }}
                 @csrf
-                <div class="card-body">
+                <div class="card-body px-3 px-sm-4">
                     <div class="table-responsive">
-                        <table class="table table-bordered mb-0">
+                        <table class="table table-bordered mb-0 leave-action-detail">
                             <tbody>
                                 <tr>
                                     <th class="bg-light" width="30%">{{ __('Employee') }}</th>
                                     <td>{{ !empty($employee->name) ? $employee->name : '-' }}</td>
                                 </tr>
+                                @if (!empty($employmentStatus))
+                                    <tr>
+                                        <th class="bg-light">{{ __('Employee Type / Status') }}</th>
+                                        <td>
+                                            <span class="badge bg-{{ $employmentStatus['badge'] }}">{{ $employmentStatus['label'] }}</span>
+                                            @if(!empty($employmentStatus['type_code']))
+                                                <small class="text-muted ms-1">({{ $employmentStatus['type_code'] }})</small>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endif
                                 @if ($designation || $department)
                                     <tr>
                                         <th class="bg-light">{{ __('Position') }}</th>
@@ -140,7 +192,7 @@
                 </div>
 
                 @if (($canTakeAction ?? false) && $leave->status === 'Pending')
-                    <div class="card-footer d-flex justify-content-end gap-2 flex-wrap">
+                    <div class="card-footer leave-action-footer d-flex flex-column flex-sm-row justify-content-sm-end gap-2">
                         <button type="submit" class="btn btn-success" name="status" value="Approved">
                             <i class="ti ti-check me-1"></i>{{ __('Accept Leave') }}
                         </button>

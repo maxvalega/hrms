@@ -155,37 +155,38 @@ class LeaveController extends Controller
                     ->orderByDesc('id')
                     ->get();
 
-                $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
-                foreach ($leaveTypes as $leaveType) {
-                    if ($isSpectal && !$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, null)) {
-                        // Still hide On Ground / out-of-season CL for company dashboard aggregates
-                        $code = LeavePolicyService::resolvePolicyCode($leaveType);
-                        if (in_array($code, ['on_ground'], true)) {
-                            continue;
-                        }
-                        if ($code === 'cl' && !in_array((int) date('n'), [5, 6, 7], true)) {
-                            continue;
-                        }
+                // Spectal HR/company: do NOT show company-wide balance cards.
+                // Allowance is per-employee (e.g. PL 1.5) but usage was summed across all staff,
+                // which wrongly showed "Pending 3" on Rohan's HR dashboard.
+                if (!$isSpectal) {
+                    $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
+                    foreach ($leaveTypes as $leaveType) {
+                        $summary = $this->calculateLeaveBalanceSummary(0, $leaveType, $date, true);
+
+                        $leaveBalance[] = [
+                            'leave_type' => $leaveType->title,
+                            'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
+                            'total' => $summary['total'],
+                            'monthly_accrual' => $summary['monthly_accrual'],
+                            'used' => $summary['used'],
+                            'pending' => $summary['pending'],
+                            'available' => $summary['available'],
+                            'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
+                            'carry_forward' => $summary['carry_forward'] ?? 0,
+                            'encashable_leave' => $summary['encashable_leave'] ?? 0,
+                            'opening_balance' => $summary['opening_balance'] ?? 0,
+                            'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
+                            'note' => $summary['note'] ?? null,
+                        ];
                     }
-
-                    $summary = $this->calculateLeaveBalanceSummary(0, $leaveType, $date, true);
-
-                    $leaveBalance[] = [
-                        'leave_type' => $leaveType->title,
-                        'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
-                        'total' => $summary['total'],
-                        'monthly_accrual' => $summary['monthly_accrual'],
-                        'used' => $summary['used'],
-                        'pending' => $summary['pending'],
-                        'available' => $summary['available'],
-                        'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
-                        'carry_forward' => $summary['carry_forward'] ?? 0,
-                        'encashable_leave' => $summary['encashable_leave'] ?? 0,
-                        'opening_balance' => $summary['opening_balance'] ?? 0,
-                        'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
-                        'note' => $summary['note'] ?? null,
-                    ];
                 }
+            }
+
+            // Attach employment status label for table / filters (Spectal)
+            if ($isSpectal) {
+                $leaves->each(function ($leave) {
+                    $leave->employment_status_meta = $this->employmentStatusMeta($leave->employees);
+                });
             }
 
             return view('leave.index', compact(
@@ -767,8 +768,9 @@ class LeaveController extends Controller
         $employee  = Employee::find($leave->employee_id);
         $leavetype = LeaveType::find($leave->leave_type_id);
         $canTakeAction = \Auth::user()->can('Manage Leave');
+        $employmentStatus = $this->isSpectalPortal() ? $this->employmentStatusMeta($employee) : null;
 
-        return view('leave.action', compact('employee', 'leavetype', 'leave', 'canTakeAction'));
+        return view('leave.action', compact('employee', 'leavetype', 'leave', 'canTakeAction', 'employmentStatus'));
     }
 
     public function changeaction(Request $request)
@@ -2114,6 +2116,7 @@ class LeaveController extends Controller
         }
 
         $employees = Employee::where('created_by', \Auth::user()->creatorId())
+            ->orderBy('name')
             ->get()
             ->pluck('name', 'id');
 
@@ -2122,6 +2125,10 @@ class LeaveController extends Controller
                 return LeavePolicyService::resolvePolicyCode($lt) === 'pl';
             })
             ->pluck('title', 'id');
+
+        if ($leaveTypes->isEmpty()) {
+            return response()->json(['error' => __('No Privilege Leave type found. Create one under Leave Type first.')], 422);
+        }
 
         $cycle = $this->leaveCycleDates();
 
@@ -2193,6 +2200,7 @@ class LeaveController extends Controller
         }
 
         $employees = Employee::where('created_by', \Auth::user()->creatorId())
+            ->orderBy('name')
             ->get()
             ->pluck('name', 'id');
 
@@ -2201,6 +2209,10 @@ class LeaveController extends Controller
                 return LeavePolicyService::resolvePolicyCode($lt) === 'bereavement';
             })
             ->pluck('title', 'id');
+
+        if ($leaveTypes->isEmpty()) {
+            return response()->json(['error' => __('No Bereavement leave type found. Create one under Leave Type first.')], 422);
+        }
 
         return view('leave.grant_bereavement', compact('employees', 'leaveTypes'));
     }

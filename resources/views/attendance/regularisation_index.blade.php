@@ -17,18 +17,71 @@
     </a>
 @endsection
 
+@push('css-page')
+<style>
+    .ar-reason {
+        word-break: break-word;
+        display: -webkit-box;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    @media (max-width: 767.98px) {
+        .ar-desktop-table { display: none !important; }
+        .ar-mobile-list { display: block !important; }
+    }
+    @media (min-width: 768px) {
+        .ar-mobile-list { display: none !important; }
+        .ar-desktop-table { display: block !important; }
+    }
+</style>
+@endpush
+
 @section('content')
     <div class="row">
-        <div class="col-xl-12 mb-3">
+        <div class="col-12 mb-3">
             <div class="alert alert-info mb-0">
                 {{ __('On Ground is not a leave type. Use this form to regularise attendance when you were on ground / field duty.') }}
             </div>
         </div>
-        <div class="col-xl-12">
+        <div class="col-12">
             <div class="card">
-                <div class="card-body table-border-style">
-                    <div class="table-responsive">
-                        <table class="table" id="pc-dt-simple">
+                <div class="card-body">
+                    <div class="ar-mobile-list">
+                        @forelse ($rows as $row)
+                            <div class="border rounded p-3 mb-3">
+                                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                                    <div class="min-w-0">
+                                        @if (\Auth::user()->type != 'employee')
+                                            <div class="fw-semibold">{{ $row->employee->name ?? '-' }}</div>
+                                        @endif
+                                        <div class="text-muted small">{{ \Auth::user()->dateFormat($row->date) }} · {{ __('On Ground') }}</div>
+                                    </div>
+                                    @if ($row->status == 'Approved')
+                                        <span class="badge bg-success">{{ __('Approved') }}</span>
+                                    @elseif ($row->status == 'Reject')
+                                        <span class="badge bg-danger">{{ __('Rejected') }}</span>
+                                    @else
+                                        <span class="badge bg-warning">{{ __('Pending') }}</span>
+                                    @endif
+                                </div>
+                                <div class="small ar-reason mb-3">{{ $row->reason }}</div>
+                                @if (\Auth::user()->type != 'employee' && $row->status == 'Pending')
+                                    <a href="#" class="btn btn-sm btn-success"
+                                        data-url="{{ route('attendance.regularisation.action', $row->id) }}"
+                                        data-ajax-popup="true"
+                                        data-title="{{ __('Review Regularisation') }}">
+                                        <i class="ti ti-check"></i> {{ __('Review') }}
+                                    </a>
+                                @endif
+                            </div>
+                        @empty
+                            <p class="text-muted text-center mb-0">{{ __('No requests yet.') }}</p>
+                        @endforelse
+                    </div>
+
+                    <div class="ar-desktop-table table-responsive">
+                        <table class="table mb-0" id="pc-dt-simple">
                             <thead>
                                 <tr>
                                     @if (\Auth::user()->type != 'employee')
@@ -49,7 +102,7 @@
                                         @endif
                                         <td>{{ \Auth::user()->dateFormat($row->date) }}</td>
                                         <td>{{ __('On Ground') }}</td>
-                                        <td>{{ $row->reason }}</td>
+                                        <td style="max-width: 280px; white-space: normal;">{{ $row->reason }}</td>
                                         <td>
                                             @if ($row->status == 'Approved')
                                                 <span class="badge bg-success">{{ __('Approved') }}</span>

@@ -6,34 +6,49 @@
             <br><small>{{ __('Cycle') }}: {{ $cycle['label'] }}</small>
         @endif
     </div>
-    <div class="row">
-        <div class="col-md-12">
-            <div class="form-group">
-                {{ Form::label('employee_id', __('Employee'), ['class' => 'col-form-label']) }}<x-required></x-required>
-                {{ Form::select('employee_id', $employees, null, ['class' => 'form-control select', 'required' => 'required', 'placeholder' => __('Select Employee')]) }}
+    <div class="row g-2">
+        <div class="col-12">
+            <div class="form-group mb-2">
+                {{ Form::label('employee_id', __('Employee'), ['class' => 'form-label fw-semibold']) }}<x-required></x-required>
+                <select name="employee_id" id="opening_employee_id" class="form-control form-select" required style="min-height: 44px; font-size: 16px;">
+                    <option value="">{{ __('Select employee…') }}</option>
+                    @foreach($employees as $id => $name)
+                        <option value="{{ $id }}">{{ $name }}</option>
+                    @endforeach
+                </select>
             </div>
         </div>
-        <div class="col-md-12">
-            <div class="form-group">
-                {{ Form::label('leave_type_id', __('Privilege Leave Type'), ['class' => 'col-form-label']) }}<x-required></x-required>
-                {{ Form::select('leave_type_id', $leaveTypes, null, ['class' => 'form-control select', 'required' => 'required', 'placeholder' => __('Select Leave Type')]) }}
+        <div class="col-12">
+            <div class="form-group mb-2">
+                {{ Form::label('leave_type_id', __('Privilege Leave Type'), ['class' => 'form-label fw-semibold']) }}<x-required></x-required>
+                <select name="leave_type_id" id="opening_leave_type_id" class="form-control form-select" required style="min-height: 44px; font-size: 16px;">
+                    <option value="">{{ __('Select leave type…') }}</option>
+                    @foreach($leaveTypes as $id => $title)
+                        <option value="{{ $id }}">{{ $title }}</option>
+                    @endforeach
+                </select>
             </div>
         </div>
-        <div class="col-md-12">
-            <div class="form-group">
-                {{ Form::label('days', __('Opening Balance (days)'), ['class' => 'col-form-label']) }}<x-required></x-required>
-                {{ Form::number('days', 0, ['class' => 'form-control', 'required' => 'required', 'min' => '0', 'step' => '0.5']) }}
+        <div class="col-12 col-sm-6">
+            <div class="form-group mb-2">
+                {{ Form::label('days', __('Opening Balance (days)'), ['class' => 'form-label fw-semibold']) }}<x-required></x-required>
+                {{ Form::number('days', 0, ['class' => 'form-control', 'required' => 'required', 'min' => '0', 'step' => '0.5', 'style' => 'min-height:44px;font-size:16px;']) }}
             </div>
         </div>
-        <div class="col-md-12">
-            <div class="form-group">
-                {{ Form::label('notes', __('Notes'), ['class' => 'col-form-label']) }}
-                {{ Form::textarea('notes', null, ['class' => 'form-control', 'rows' => '2', 'placeholder' => __('Optional notes')]) }}
+        <div class="col-12">
+            <div class="form-group mb-0">
+                {{ Form::label('notes', __('Notes / Remark'), ['class' => 'form-label fw-semibold']) }}
+                {{ Form::textarea('notes', null, [
+                    'class' => 'form-control',
+                    'rows' => '3',
+                    'placeholder' => __('Optional notes'),
+                    'style' => 'min-height:90px;font-size:16px;color:#212529;background:#fff;',
+                ]) }}
             </div>
         </div>
     </div>
 </div>
-<div class="modal-footer">
+<div class="modal-footer flex-column flex-sm-row gap-2 align-items-stretch">
     <button type="button" class="btn btn-light" data-bs-dismiss="modal">{{ __('Cancel') }}</button>
     <input type="submit" value="{{ __('Save Opening Balance') }}" class="btn btn-primary">
 </div>

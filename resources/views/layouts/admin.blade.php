@@ -434,7 +434,9 @@
             if ($(this).hasClass('attn-cal-present') || $(this).hasClass('attn-cal-absent') ||
                 $(this).hasClass('attn-cal-late') || $(this).hasClass('attn-cal-leave') ||
                 $(this).hasClass('attn-cal-halfday') || $(this).hasClass('spectal-leave-cal') ||
-                (url && url.indexOf('attendanceemployee') !== -1)) {
+                $(this).hasClass('spectal-onground-cal') ||
+                (url && url.indexOf('attendanceemployee') !== -1) ||
+                (url && url.indexOf('attendance/regularisation') !== -1)) {
                 window.location.href = url;
                 return;
             }

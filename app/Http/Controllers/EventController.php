@@ -16,6 +16,7 @@ use App\Imports\EventImport;
 use App\Exports\EventExport;
 use App\Models\AttendanceEmployee;
 use App\Models\AttendanceModificationRequest;
+use App\Models\AttendanceRegularisation;
 use App\Models\Holiday;
 use App\Models\Leave;
 use App\Models\Webhook;
@@ -446,11 +447,14 @@ class EventController extends Controller
 
         $isSpectal = TenantHost::subdomainFromHost() === 'spectal';
 
-        // Spectal: approved leave first (one chip per day), then attendance — skip duplicate "On Leave".
+        // Spectal: leave (Pending+Approved) first, then On Ground, then attendance.
         $leaveCoveredKeys = [];
         if ($isSpectal) {
-            $leaveEvents = $this->buildSpectalApprovedLeaveCalendarEvents($leaveCoveredKeys);
+            $leaveEvents = $this->buildSpectalLeaveCalendarEvents($leaveCoveredKeys);
             $arrayJson = array_merge($arrayJson, $leaveEvents);
+
+            $onGroundEvents = $this->buildSpectalOnGroundCalendarEvents($leaveCoveredKeys, $onlyEmployeeId);
+            $arrayJson = array_merge($arrayJson, $onGroundEvents);
         }
 
         $attendanceEvents = $this->buildAttendanceCalendarEvents(
@@ -464,11 +468,12 @@ class EventController extends Controller
     }
 
     /**
-     * Spectal only: approved leave for all employees, one event per day (avoids cut-off multi-day bars).
+     * Spectal: Pending + Approved leave for all employees, one event per day.
+     * (Pending was previously excluded — applied WFH/leave on future dates never appeared.)
      *
      * @param  array<string, bool>  $leaveCoveredKeys  filled with "employeeId|Y-m-d" keys for dedupe
      */
-    protected function buildSpectalApprovedLeaveCalendarEvents(array &$leaveCoveredKeys = []): array
+    protected function buildSpectalLeaveCalendarEvents(array &$leaveCoveredKeys = []): array
     {
         $creatorId = \Auth::user()->creatorId();
         $dateFrom = Carbon::now()->subMonths(4)->startOfMonth()->format('Y-m-d');
@@ -476,7 +481,10 @@ class EventController extends Controller
 
         $leaves = Leave::query()
             ->where('created_by', $creatorId)
-            ->where('status', 'Approved')
+            ->whereIn('status', ['Approved', 'Pending'])
+            ->where(function ($q) {
+                $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
+            })
             ->where('start_date', '<=', $dateTo)
             ->where('end_date', '>=', $dateFrom)
             ->with(['employees:id,name', 'leaveType:id,title'])
@@ -493,11 +501,15 @@ class EventController extends Controller
         foreach ($leaves as $leave) {
             $empName = optional($leave->employees)->name ?: __('Employee');
             $leaveType = optional($leave->leaveType)->title ?: __('Leave');
+            $isPending = strcasecmp((string) $leave->status, 'Pending') === 0;
 
             $dayType = strtolower(trim((string) ($leave->day_type ?? 'full_day')));
             $suffix = in_array($dayType, ['first_half', 'second_half', 'half_day'], true)
                 ? ' (' . __('Half Day') . ')'
                 : '';
+            if ($isPending) {
+                $suffix .= ' [' . __('Pending') . ']';
+            }
 
             $title = $empName . ' · ' . $leaveType . $suffix;
             $rangeStart = Carbon::parse($leave->start_date)->startOfDay();
@@ -510,6 +522,10 @@ class EventController extends Controller
                 $dateStr = $day->toDateString();
                 $leaveCoveredKeys[(int) $leave->employee_id . '|' . $dateStr] = true;
 
+                $classes = $isPending
+                    ? ['attn-cal-halfday', 'spectal-leave-cal', 'spectal-leave-pending']
+                    : ['attn-cal-leave', 'spectal-leave-cal'];
+
                 $event = [
                     'id' => 'leave-' . $leave->id . '-' . $day->format('Ymd'),
                     'title' => $title,
@@ -517,8 +533,8 @@ class EventController extends Controller
                     'end' => $day->copy()->addDay()->format('Y-m-d H:i:s'),
                     'allDay' => true,
                     'display' => 'block',
-                    'className' => 'attn-cal-leave spectal-leave-cal',
-                    'classNames' => ['attn-cal-leave', 'spectal-leave-cal'],
+                    'className' => implode(' ', $classes),
+                    'classNames' => $classes,
                 ];
 
                 if ($canOpenLeave) {
@@ -527,6 +543,82 @@ class EventController extends Controller
 
                 $out[] = $event;
             }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Spectal: On Ground attendance regularisation chips on the dashboard calendar.
+     *
+     * @param  array<string, bool>  $leaveCoveredKeys
+     */
+    protected function buildSpectalOnGroundCalendarEvents(array &$leaveCoveredKeys, ?int $onlyEmployeeId = null): array
+    {
+        if (!Schema::hasTable('attendance_regularisations')) {
+            return [];
+        }
+
+        $creatorId = \Auth::user()->creatorId();
+        $dateFrom = Carbon::now()->subMonths(4)->startOfMonth()->format('Y-m-d');
+        $dateTo = Carbon::now()->addMonths(6)->endOfMonth()->format('Y-m-d');
+
+        $employeeIds = Employee::where('created_by', $creatorId)->pluck('id');
+        if ($onlyEmployeeId !== null) {
+            $employeeIds = $employeeIds->filter(fn ($id) => (int) $id === (int) $onlyEmployeeId)->values();
+        }
+        if ($employeeIds->isEmpty()) {
+            return [];
+        }
+
+        $rows = AttendanceRegularisation::query()
+            ->whereIn('employee_id', $employeeIds)
+            ->whereIn('status', ['Pending', 'Approved'])
+            ->whereBetween('date', [$dateFrom, $dateTo])
+            ->with(['employee:id,name'])
+            ->orderBy('date')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return [];
+        }
+
+        $canManage = \Auth::user()->can('Manage Attendance') || \Auth::user()->can('Manage Leave');
+        $out = [];
+
+        foreach ($rows as $row) {
+            $dateStr = Carbon::parse($row->date)->toDateString();
+            $coverKey = (int) $row->employee_id . '|' . $dateStr;
+            $leaveCoveredKeys[$coverKey] = true;
+
+            $empName = optional($row->employee)->name ?: __('Employee');
+            $isPending = strcasecmp((string) $row->status, 'Pending') === 0;
+            $title = $empName . ' · ' . __('On Ground');
+            if ($isPending) {
+                $title .= ' [' . __('Pending') . ']';
+            }
+
+            $classes = ['attn-cal-present', 'spectal-onground-cal'];
+            if ($isPending) {
+                $classes[] = 'spectal-leave-pending';
+            }
+
+            $event = [
+                'id' => 'onground-' . $row->id,
+                'title' => $title,
+                'start' => $dateStr,
+                'end' => Carbon::parse($dateStr)->addDay()->format('Y-m-d H:i:s'),
+                'allDay' => true,
+                'display' => 'block',
+                'className' => implode(' ', $classes),
+                'classNames' => $classes,
+            ];
+
+            if ($canManage) {
+                $event['url'] = route('attendance.regularisation.index');
+            }
+
+            $out[] = $event;
         }
 
         return $out;
@@ -547,7 +639,8 @@ class EventController extends Controller
     ): array {
         $creatorId = \Auth::user()->creatorId();
         $dateFrom = Carbon::now()->subMonths(4)->startOfMonth()->format('Y-m-d');
-        $dateTo = Carbon::now()->addMonth()->endOfMonth()->format('Y-m-d');
+        // Match leave window so future applied days in the current month are not cut off.
+        $dateTo = Carbon::now()->addMonths(6)->endOfMonth()->format('Y-m-d');
 
         $query = AttendanceEmployee::query()
             ->where('created_by', $creatorId)

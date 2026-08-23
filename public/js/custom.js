@@ -225,8 +225,15 @@ $(document).on('click', 'a[data-ajax-popup="true"], button[data-ajax-popup="true
 
         },
         error: function (data) {
-            data = data.responseJSON;
-            show_toastr('Error', data.error, 'error')
+            var payload = (data && data.responseJSON) ? data.responseJSON : {};
+            var msg = payload.error || payload.message || 'Something went wrong. Please try again.';
+            if (typeof show_toastr === 'function') {
+                show_toastr('Error', msg, 'error');
+            } else if (typeof toastrs === 'function') {
+                toastrs('Error', msg, 'error');
+            } else {
+                alert(msg);
+            }
         }
     });
 

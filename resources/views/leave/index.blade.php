@@ -460,5 +460,58 @@
                 }
             });
         });
+
+        // Bereavement grant modal (works even when inline scripts in ajax HTML are stripped)
+        function syncBereavementGrantPreview() {
+            var $emp = $('#bereavement_employee_id');
+            if (!$emp.length) return;
+            var val = $emp.val();
+            var text = $emp.find('option:selected').text();
+            if (val) {
+                $('#grant-to-name').text(text);
+                $('#grant-to-preview').removeClass('d-none');
+            } else {
+                $('#grant-to-preview').addClass('d-none');
+            }
+        }
+
+        $(document).on('change', '#bereavement_employee_id', syncBereavementGrantPreview);
+        $(document).on('shown.bs.modal', '#commonModal', function () {
+            setTimeout(syncBereavementGrantPreview, 50);
+        });
+
+        $(document).on('submit', '#grant-bereavement-form', function (e) {
+            e.preventDefault();
+            var $form = $(this);
+            var $btn = $('#grant-bereavement-submit');
+            var $alert = $('#grant-bereavement-alert');
+            $alert.addClass('d-none').removeClass('alert-danger alert-success').text('');
+            $btn.prop('disabled', true);
+
+            $.ajax({
+                url: $form.attr('action'),
+                method: 'POST',
+                data: $form.serialize(),
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+                success: function (res) {
+                    var msg = (res && res.success) ? res.success : '{{ __('Bereavement leave granted.') }}';
+                    $alert.removeClass('d-none alert-danger').addClass('alert-success').text(msg);
+                    if (typeof show_toastr === 'function') show_toastr('Success', msg, 'success');
+                    setTimeout(function () {
+                        $('#commonModal').modal('hide');
+                        window.location.reload();
+                    }, 900);
+                },
+                error: function (xhr) {
+                    var msg = '{{ __('Unable to grant bereavement leave.') }}';
+                    if (xhr.responseJSON) {
+                        msg = xhr.responseJSON.error || xhr.responseJSON.message || msg;
+                    }
+                    $alert.removeClass('d-none alert-success').addClass('alert-danger').text(msg);
+                    if (typeof show_toastr === 'function') show_toastr('Error', msg, 'error');
+                    $btn.prop('disabled', false);
+                }
+            });
+        });
     </script>
 @endpush

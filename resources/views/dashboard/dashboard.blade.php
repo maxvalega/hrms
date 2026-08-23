@@ -555,6 +555,26 @@
             font-size: 0.72rem;
             line-height: 1.25;
         }
+        .fc .fc-event.spectal-leave-pending,
+        .fc-event.spectal-leave-pending {
+            background-color: #fff3cd !important;
+            border: 1px solid #ffc107 !important;
+            color: #664d03 !important;
+        }
+        .fc .fc-event.spectal-leave-pending .fc-event-main,
+        .fc .fc-event.spectal-leave-pending .fc-event-title {
+            color: #664d03 !important;
+        }
+        .fc .fc-event.spectal-onground-cal,
+        .fc-event.spectal-onground-cal {
+            background-color: #d1e7dd !important;
+            border: 1px solid #198754 !important;
+            color: #0f5132 !important;
+            font-weight: 600;
+            white-space: normal !important;
+            height: auto !important;
+            padding: 2px 5px !important;
+        }
         .fc-more-popover {
             max-width: min(360px, 92vw);
             z-index: 1080 !important;

@@ -129,14 +129,22 @@
                     <div class="card-body py-3">
                         <form method="get" action="{{ route('leave.index') }}" class="row g-2 align-items-end">
                             <div class="col-12 col-md-8">
-                                <label class="form-label fw-semibold mb-1">{{ __('View leave balances for employee') }}</label>
+                                <label class="form-label fw-semibold mb-1">{{ __('Leave balance dashboard') }}</label>
                                 <select name="balance_employee_id" class="form-control form-select" style="min-height:44px;font-size:16px;" onchange="this.form.submit()">
-                                    <option value="">{{ __('Select employee to load balance dashboard…') }}</option>
+                                    <option value="">{{ __('Select employee…') }}</option>
                                     @foreach($previewEmployees as $id => $name)
-                                        <option value="{{ $id }}" @selected((int)($previewEmployeeId ?? 0) === (int)$id)>{{ $name }}</option>
+                                        <option value="{{ $id }}" @selected((int)($previewEmployeeId ?? 0) === (int)$id)>
+                                            {{ $name }}@if(!empty($selfEmployeeId) && (int)$selfEmployeeId === (int)$id) ({{ __('You') }})@endif
+                                        </option>
                                     @endforeach
                                 </select>
-                                <small class="text-muted">{{ __('HR sees company leave requests below. Personal balance cards load after you pick an employee.') }}</small>
+                                <small class="text-muted">
+                                    @if(!empty($selfEmployeeId))
+                                        {{ __('Your own balances load by default. Switch employee to preview someone else.') }}
+                                    @else
+                                        {{ __('No employee profile linked to this HR login — pick an employee to view balances. Link Rohan’s user to an employee record if his personal dashboard should appear automatically.') }}
+                                    @endif
+                                </small>
                             </div>
                             <div class="col-12 col-md-4">
                                 <button type="submit" class="btn btn-primary w-100">{{ __('Show Balances') }}</button>
@@ -475,9 +483,33 @@
             }
         }
 
+        function syncBereavementEndDefault() {
+            var start = $('#bereavement_start_date').val();
+            if (!start) return;
+            var $end = $('#bereavement_end_date');
+            if ($end.val()) return;
+            var d = new Date(start + 'T00:00:00');
+            d.setDate(d.getDate() + 6); // 7 calendar days inclusive
+            var yyyy = d.getFullYear();
+            var mm = String(d.getMonth() + 1).padStart(2, '0');
+            var dd = String(d.getDate()).padStart(2, '0');
+            $end.val(yyyy + '-' + mm + '-' + dd);
+        }
+
         $(document).on('change', '#bereavement_employee_id', syncBereavementGrantPreview);
+        $(document).on('change', '#bereavement_start_date', syncBereavementEndDefault);
         $(document).on('shown.bs.modal', '#commonModal', function () {
-            setTimeout(syncBereavementGrantPreview, 50);
+            setTimeout(function () {
+                syncBereavementGrantPreview();
+                if (!$('#bereavement_start_date').val()) {
+                    var now = new Date();
+                    var yyyy = now.getFullYear();
+                    var mm = String(now.getMonth() + 1).padStart(2, '0');
+                    var dd = String(now.getDate()).padStart(2, '0');
+                    $('#bereavement_start_date').val(yyyy + '-' + mm + '-' + dd);
+                    syncBereavementEndDefault();
+                }
+            }, 50);
         });
 
         $(document).on('submit', '#grant-bereavement-form', function (e) {

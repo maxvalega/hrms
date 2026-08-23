@@ -155,48 +155,65 @@ class LeaveController extends Controller
                     ->orderByDesc('id')
                     ->get();
 
-                // Spectal HR: preview a selected employee's personal balances (not company-wide totals)
+                // Spectal HR/admin: show personal balances if they have an employee profile,
+                // otherwise (or when picking someone) preview that employee's balances.
                 if ($isSpectal) {
+                    $selfEmployee = Employee::where('user_id', \Auth::id())
+                        ->where('created_by', \Auth::user()->creatorId())
+                        ->first();
+
                     $previewEmployeeId = (int) request()->get('balance_employee_id', 0);
+                    if ($previewEmployeeId <= 0 && $selfEmployee) {
+                        $previewEmployeeId = (int) $selfEmployee->id;
+                    }
+
                     $previewEmployees = Employee::where('created_by', \Auth::user()->creatorId())
                         ->orderBy('name')
                         ->get()
                         ->pluck('name', 'id');
 
+                    $previewEmployee = null;
                     if ($previewEmployeeId > 0) {
                         $previewEmployee = Employee::where('created_by', \Auth::user()->creatorId())
                             ->where('id', $previewEmployeeId)
                             ->first();
-                        if ($previewEmployee) {
-                            $employmentStatus = $this->employmentStatusMeta($previewEmployee);
-                            $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
-                            foreach ($leaveTypes as $leaveType) {
-                                if (!$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $previewEmployee)) {
-                                    continue;
-                                }
-                                $summary = $this->calculateLeaveBalanceSummary((int) $previewEmployee->id, $leaveType, $date);
-                                $leaveBalance[] = [
-                                    'leave_type' => $leaveType->title,
-                                    'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
-                                    'total' => $summary['total'],
-                                    'monthly_accrual' => $summary['monthly_accrual'],
-                                    'used' => $summary['used'],
-                                    'pending' => $summary['pending'],
-                                    'available' => $summary['available'],
-                                    'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
-                                    'carry_forward' => $summary['carry_forward'] ?? 0,
-                                    'encashable_leave' => $summary['encashable_leave'] ?? 0,
-                                    'opening_balance' => $summary['opening_balance'] ?? 0,
-                                    'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
-                                    'note' => $summary['note'] ?? null,
-                                ];
+                    }
+
+                    if ($previewEmployee) {
+                        $employmentStatus = $this->employmentStatusMeta($previewEmployee);
+                        if ($selfEmployee && (int) $previewEmployee->id === (int) $selfEmployee->id) {
+                            $employmentStatus['note'] = __('Your personal leave balance dashboard.');
+                        } else {
+                            $employmentStatus['note'] = __('Viewing leave balances for :name.', ['name' => $previewEmployee->name]);
+                        }
+
+                        $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
+                        foreach ($leaveTypes as $leaveType) {
+                            if (!$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $previewEmployee)) {
+                                continue;
                             }
+                            $summary = $this->calculateLeaveBalanceSummary((int) $previewEmployee->id, $leaveType, $date);
+                            $leaveBalance[] = [
+                                'leave_type' => $leaveType->title,
+                                'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
+                                'total' => $summary['total'],
+                                'monthly_accrual' => $summary['monthly_accrual'],
+                                'used' => $summary['used'],
+                                'pending' => $summary['pending'],
+                                'available' => $summary['available'],
+                                'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
+                                'carry_forward' => $summary['carry_forward'] ?? 0,
+                                'encashable_leave' => $summary['encashable_leave'] ?? 0,
+                                'opening_balance' => $summary['opening_balance'] ?? 0,
+                                'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
+                                'note' => $summary['note'] ?? null,
+                            ];
                         }
                     }
 
-                    // Pass selector data to view
                     view()->share('previewEmployees', $previewEmployees);
                     view()->share('previewEmployeeId', $previewEmployeeId);
+                    view()->share('selfEmployeeId', $selfEmployee ? (int) $selfEmployee->id : 0);
                 } elseif (!$isSpectal) {
                     $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
                     foreach ($leaveTypes as $leaveType) {
@@ -2292,8 +2309,12 @@ class LeaveController extends Controller
         $validator = \Validator::make($request->all(), [
             'employee_id' => 'required|integer|exists:employees,id',
             'leave_type_id' => 'required|integer|exists:leave_types,id',
-            'days' => 'required|numeric|min:0.5|max:7',
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'days' => 'nullable|numeric|min:0.5|max:7',
             'notes' => 'required|string|max:500',
+            'create_leave' => 'nullable|in:0,1',
+            'auto_approve' => 'nullable|in:0,1',
         ]);
 
         if ($validator->fails()) {
@@ -2317,18 +2338,66 @@ class LeaveController extends Controller
             return $respond(false, __('Please select a Bereavement leave type.'));
         }
 
+        $startDate = Carbon::parse($request->start_date)->toDateString();
+        $endDate = Carbon::parse($request->end_date)->toDateString();
+        $totalDays = $this->calculateLeaveDays($startDate, $endDate, 'full_day', (int) \Auth::user()->creatorId());
+        if ($totalDays <= 0) {
+            return $respond(false, __('Selected dates result in 0 leave days. Please choose working days.'));
+        }
+        if ($totalDays > 7) {
+            return $respond(false, __('Bereavement leave cannot exceed 7 days.'));
+        }
+
+        $grantDays = $request->filled('days') ? (float) $request->days : (float) $totalDays;
+        $grantDays = min(7, max(0.5, $grantDays));
+
         \App\Models\LeaveBalanceEntry::create([
             'employee_id' => $employee->id,
             'leave_type_id' => $leaveType->id,
             'entry_type' => \App\Models\LeaveBalanceEntry::TYPE_GRANT,
-            'days' => (float) $request->days,
+            'days' => $grantDays,
             'period_key' => date('Y-m'),
             'notes' => $request->notes,
             'created_by' => \Auth::user()->creatorId(),
         ]);
 
-        return $respond(true, __('Bereavement leave (:days days) granted to :name.', [
-            'days' => (float) $request->days,
+        $createLeave = $request->boolean('create_leave', true);
+        $autoApprove = $request->boolean('auto_approve', true);
+
+        if ($createLeave) {
+            $leave = new LocalLeave();
+            $leave->employee_id = $employee->id;
+            $leave->leave_type_id = $leaveType->id;
+            $leave->applied_on = Carbon::now()->toDateString();
+            $leave->start_date = $startDate;
+            $leave->end_date = $endDate;
+            $leave->day_type = 'full_day';
+            $leave->total_leave_days = $totalDays;
+            $leave->leave_reason = trim(
+                __('Bereavement leave applied by HR (:hr) on behalf of employee.', ['hr' => \Auth::user()->name])
+                . ' ' . $request->notes
+            );
+            $leave->remark = __('HR on-behalf grant');
+            $leave->status = $autoApprove ? 'Approved' : 'Pending';
+            $leave->substitute_status = 'Accepted';
+            $leave->created_by = \Auth::user()->creatorId();
+            $leave->save();
+
+            if ($employee->user_id) {
+                \App\Services\InAppNotifier::notifyUser($employee->user_id, [
+                    'module' => 'leave',
+                    'action' => strtolower($leave->status),
+                    'title' => __('Bereavement Leave') . ' — ' . __($leave->status),
+                    'message' => $startDate . ' to ' . $endDate . ' (' . $totalDays . ' ' . __('days') . ')',
+                    'link' => route('leave.index'),
+                ]);
+            }
+        }
+
+        return $respond(true, __('Bereavement leave (:days days, :start to :end) granted to :name on their behalf.', [
+            'days' => $totalDays,
+            'start' => $startDate,
+            'end' => $endDate,
             'name' => $employee->name,
         ]));
     }

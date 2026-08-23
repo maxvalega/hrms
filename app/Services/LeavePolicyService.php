@@ -308,7 +308,45 @@ class LeavePolicyService
             return null;
         }
 
-        return EmployeeType::where('id', $employee->employee_type_id)->value('code');
+        $raw = EmployeeType::where('id', $employee->employee_type_id)->value('code');
+
+        return self::normalizeEmployeeTypeCode($raw !== null ? (string) $raw : null);
+    }
+
+    /**
+     * Normalize messy DB codes (e.g. ConsultantID) to canonical leave-policy codes.
+     */
+    public static function normalizeEmployeeTypeCode(?string $code): ?string
+    {
+        if ($code === null || trim($code) === '') {
+            return null;
+        }
+
+        $c = strtolower(trim($code));
+        $c = str_replace([' ', '-'], '_', $c);
+
+        if ($c === 'intern' || str_contains($c, 'intern')) {
+            return 'intern';
+        }
+        if (str_contains($c, 'consultant')) {
+            return 'consultant';
+        }
+        if (in_array($c, ['full_time', 'fulltime', 'permanent', 'ft', 'full_time_employee'], true)
+            || str_contains($c, 'full_time')
+            || str_contains($c, 'permanent')) {
+            return 'full_time';
+        }
+
+        return $c;
+    }
+
+    /**
+     * Codes that satisfy a "full_time" leave eligibility slot on Spectal.
+     * Consultants are permanent-equivalent for leave balances (not interns).
+     */
+    public static function spectalFullTimeEquivalentCodes(): array
+    {
+        return ['full_time', 'consultant'];
     }
 
     /**
@@ -448,7 +486,17 @@ class LeavePolicyService
             return in_array($code, ['sick', 'comp_off'], true);
         }
 
-        return in_array($empCode, $allowed, true);
+        // Normalize allowed list; consultants count as full_time for Spectal leave matrix
+        $allowedNorm = array_values(array_filter(array_map(
+            fn ($a) => self::normalizeEmployeeTypeCode((string) $a) ?? strtolower((string) $a),
+            $allowed
+        )));
+        $matchCodes = [$empCode];
+        if (in_array($empCode, self::spectalFullTimeEquivalentCodes(), true)) {
+            $matchCodes = array_values(array_unique(array_merge($matchCodes, self::spectalFullTimeEquivalentCodes())));
+        }
+
+        return count(array_intersect($matchCodes, $allowedNorm)) > 0;
     }
 
     public function validateSpectalApplication(LeaveType $leaveType, Employee $employee, string $startDate): ?string

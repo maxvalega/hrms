@@ -53,6 +53,9 @@ class LeaveController extends Controller
         if ($typeCode === 'intern') {
             $label = __('Intern');
             $badge = 'warning';
+        } elseif ($typeCode === 'consultant') {
+            $label = $onProbation ? __('Consultant · Probation') : __('Consultant');
+            $badge = $onProbation ? 'info' : 'success';
         } elseif ($onProbation) {
             $label = __('Probation');
             $badge = 'info';

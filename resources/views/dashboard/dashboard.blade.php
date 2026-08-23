@@ -486,9 +486,16 @@
         .dash-cal-body { padding: 8px 10px 4px; }
         .dash-cal-body .fc { font-size: .82rem; }
         .dash-cal-body .fc .fc-toolbar.fc-header-toolbar { margin-bottom: .35em; }
-        .dash-cal-body .fc .fc-view-harness { min-height: 0; }
-        .dash-cal-body .fc .fc-daygrid-day-frame { min-height: 38px; }
-        /* kill the trailing ~1rem white-strip FullCalendar leaves at the bottom */
+        .dash-cal-body .fc .fc-view-harness { min-height: 280px; }
+        .dash-cal-body .fc .fc-daygrid-body { width: 100% !important; }
+        .dash-cal-body .fc .fc-scrollgrid-sync-table { width: 100% !important; }
+        .dash-cal-body .fc .fc-daygrid-day-frame { min-height: 48px; }
+        /* Do not clip the last week of the month (Aug 23–31 etc.) */
+        .dash-section-card .card-635 {
+            height: auto !important;
+            min-height: 520px;
+            overflow: visible !important;
+        }
         .dash-cal-body .fc .fc-scrollgrid { border-bottom: 0; }
         .dash-cal-body + * { margin-top: 0 !important; }
 
@@ -1398,7 +1405,7 @@
                                     </select>
                                 @endif
                             </div>
-                            <div class="card-body card-635">
+                            <div class="card-body card-635 dash-cal-body">
                                 <div id='calendar' class='calendar'></div>
                             </div>
                         </div>
@@ -1649,12 +1656,13 @@
                             selectable: true,
                             selectMirror: true,
                             editable: true,
-                            dayMaxEvents: 4,
+                            dayMaxEvents: 3,
                             moreLinkClick: 'popover',
                             handleWindowResize: true,
                             events: data,
                             eventDisplay: 'block',
-                            // height: 'auto',
+                            height: 'auto',
+                            contentHeight: 'auto',
                             // timeFormat: 'H(:mm)',
                         });
                         calendar.render();
@@ -1885,9 +1893,9 @@
                         var etype;
                         var etypeclass;
                         var calendar = new FullCalendar.Calendar(document.getElementById('event_calendar'), {
-                            // Compact, fixed height so the card doesn't leave a tall empty strip
-                            // below it next to the meeting-schedule column.
-                            height: 460,
+                            // Grow with month grid so last weeks are not clipped
+                            height: 'auto',
+                            contentHeight: 'auto',
                             handleWindowResize: true,
                             headerToolbar: {
                                 left: 'prev,next today',

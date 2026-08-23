@@ -465,8 +465,15 @@
 
                 },
                 error: function(data) {
-                    data = data.responseJSON;
-                    toastrs('Error', data.error, 'error')
+                    var payload = data.responseJSON || {};
+                    var msg = payload.error || payload.message || '{{ __('Something went wrong. Please try again.') }}';
+                    if (typeof toastrs === 'function') {
+                        toastrs('Error', msg, 'error');
+                    } else if (typeof show_toastr === 'function') {
+                        show_toastr('Error', msg, 'error');
+                    } else {
+                        alert(msg);
+                    }
                 }
             });
         });
@@ -786,12 +793,12 @@
 
     @if ($message = Session::get('success'))
         <script>
-            show_toastr('Success', '{!! $message !!}', 'success');
+            show_toastr('Success', {!! json_encode($message) !!}, 'success');
         </script>
     @endif
     @if ($message = Session::get('error'))
         <script>
-            show_toastr('Error', '{!! $message !!}', 'error');
+            show_toastr('Error', {!! json_encode($message) !!}, 'error');
         </script>
     @endif
 

@@ -155,10 +155,49 @@ class LeaveController extends Controller
                     ->orderByDesc('id')
                     ->get();
 
-                // Spectal HR/company: do NOT show company-wide balance cards.
-                // Allowance is per-employee (e.g. PL 1.5) but usage was summed across all staff,
-                // which wrongly showed "Pending 3" on Rohan's HR dashboard.
-                if (!$isSpectal) {
+                // Spectal HR: preview a selected employee's personal balances (not company-wide totals)
+                if ($isSpectal) {
+                    $previewEmployeeId = (int) request()->get('balance_employee_id', 0);
+                    $previewEmployees = Employee::where('created_by', \Auth::user()->creatorId())
+                        ->orderBy('name')
+                        ->get()
+                        ->pluck('name', 'id');
+
+                    if ($previewEmployeeId > 0) {
+                        $previewEmployee = Employee::where('created_by', \Auth::user()->creatorId())
+                            ->where('id', $previewEmployeeId)
+                            ->first();
+                        if ($previewEmployee) {
+                            $employmentStatus = $this->employmentStatusMeta($previewEmployee);
+                            $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
+                            foreach ($leaveTypes as $leaveType) {
+                                if (!$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $previewEmployee)) {
+                                    continue;
+                                }
+                                $summary = $this->calculateLeaveBalanceSummary((int) $previewEmployee->id, $leaveType, $date);
+                                $leaveBalance[] = [
+                                    'leave_type' => $leaveType->title,
+                                    'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
+                                    'total' => $summary['total'],
+                                    'monthly_accrual' => $summary['monthly_accrual'],
+                                    'used' => $summary['used'],
+                                    'pending' => $summary['pending'],
+                                    'available' => $summary['available'],
+                                    'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
+                                    'carry_forward' => $summary['carry_forward'] ?? 0,
+                                    'encashable_leave' => $summary['encashable_leave'] ?? 0,
+                                    'opening_balance' => $summary['opening_balance'] ?? 0,
+                                    'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
+                                    'note' => $summary['note'] ?? null,
+                                ];
+                            }
+                        }
+                    }
+
+                    // Pass selector data to view
+                    view()->share('previewEmployees', $previewEmployees);
+                    view()->share('previewEmployeeId', $previewEmployeeId);
+                } elseif (!$isSpectal) {
                     $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
                     foreach ($leaveTypes as $leaveType) {
                         $summary = $this->calculateLeaveBalanceSummary(0, $leaveType, $date, true);
@@ -2196,7 +2235,11 @@ class LeaveController extends Controller
     public function grantBereavementView()
     {
         if (!\Auth::user()->can('Manage Leave') || \Auth::user()->type == 'employee') {
-            return response()->json(['error' => __('Permission denied.')], 401);
+            return response()->view('leave.grant_bereavement', [
+                'employees' => collect(),
+                'leaveTypes' => collect(),
+                'formError' => __('Permission denied.'),
+            ]);
         }
 
         $employees = Employee::where('created_by', \Auth::user()->creatorId())
@@ -2206,25 +2249,44 @@ class LeaveController extends Controller
 
         $leaveTypes = LeaveType::where('created_by', \Auth::user()->creatorId())->get()
             ->filter(function ($lt) {
-                return LeavePolicyService::resolvePolicyCode($lt) === 'bereavement';
+                $code = LeavePolicyService::resolvePolicyCode($lt);
+                if ($code === 'bereavement') {
+                    return true;
+                }
+                $title = strtolower((string) $lt->title);
+
+                return str_contains($title, 'bereavement') || str_contains($title, 'compassionate');
             })
             ->pluck('title', 'id');
 
+        $formError = null;
         if ($leaveTypes->isEmpty()) {
-            return response()->json(['error' => __('No Bereavement leave type found. Create one under Leave Type first.')], 422);
+            $formError = __('No Bereavement leave type found. Create a leave type named “Bereavement” (or set policy_code = bereavement) under Leave Type first.');
+        }
+        if ($employees->isEmpty()) {
+            $formError = __('No employees found to grant leave to.');
         }
 
-        return view('leave.grant_bereavement', compact('employees', 'leaveTypes'));
+        return view('leave.grant_bereavement', compact('employees', 'leaveTypes', 'formError'));
     }
 
     public function storeGrantBereavement(Request $request)
     {
+        $respond = function (bool $ok, string $message) use ($request) {
+            $key = $ok ? 'success' : 'error';
+            if ($request->ajax() || $request->wantsJson()) {
+                return response()->json([$key => $message], $ok ? 200 : 422);
+            }
+
+            return redirect()->back()->with($key, $message);
+        };
+
         if (!\Auth::user()->can('Manage Leave') || \Auth::user()->type == 'employee') {
-            return redirect()->back()->with('error', __('Permission denied.'));
+            return $respond(false, __('Permission denied.'));
         }
 
         if (!Schema::hasTable('leave_balance_entries')) {
-            return redirect()->back()->with('error', __('Leave balance ledger is not installed. Run migrations first.'));
+            return $respond(false, __('Leave balance ledger is not installed. Run migrations first.'));
         }
 
         $validator = \Validator::make($request->all(), [
@@ -2235,7 +2297,7 @@ class LeaveController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return redirect()->back()->with('error', $validator->getMessageBag()->first());
+            return $respond(false, $validator->getMessageBag()->first());
         }
 
         $employee = Employee::find($request->employee_id);
@@ -2243,11 +2305,16 @@ class LeaveController extends Controller
         if (!$employee || !$leaveType
             || $employee->created_by != \Auth::user()->creatorId()
             || $leaveType->created_by != \Auth::user()->creatorId()) {
-            return redirect()->back()->with('error', __('Permission denied.'));
+            return $respond(false, __('Permission denied.'));
         }
 
-        if (LeavePolicyService::resolvePolicyCode($leaveType) !== 'bereavement') {
-            return redirect()->back()->with('error', __('Please select a Bereavement leave type.'));
+        $code = LeavePolicyService::resolvePolicyCode($leaveType);
+        $title = strtolower((string) $leaveType->title);
+        $isBereavement = $code === 'bereavement'
+            || str_contains($title, 'bereavement')
+            || str_contains($title, 'compassionate');
+        if (!$isBereavement) {
+            return $respond(false, __('Please select a Bereavement leave type.'));
         }
 
         \App\Models\LeaveBalanceEntry::create([
@@ -2260,7 +2327,10 @@ class LeaveController extends Controller
             'created_by' => \Auth::user()->creatorId(),
         ]);
 
-        return redirect()->back()->with('success', __('Bereavement leave granted to :name.', ['name' => $employee->name]));
+        return $respond(true, __('Bereavement leave (:days days) granted to :name.', [
+            'days' => (float) $request->days,
+            'name' => $employee->name,
+        ]));
     }
 
     /**

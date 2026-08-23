@@ -375,7 +375,9 @@
 }
 
 .card-635 {
-    height: 741px !important;
+    height: auto !important;
+    min-height: 741px;
+    overflow: visible !important;
 }
 
 .comp-card {

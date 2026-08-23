@@ -115,6 +115,36 @@
                     </a>
                 </div>
             </div>
+            <div class="col-12 mb-3">
+                <div class="alert alert-info mb-0">
+                    <strong>{{ __('Casual Leave (CL)') }}:</strong>
+                    {{ __('Not shown as an annual bank. CL is only available during May–July. Balance cards for CL appear automatically in that window.') }}
+                </div>
+            </div>
+        @endif
+
+        @if(!empty($isSpectal) && \Auth::user()->type != 'employee' && isset($previewEmployees))
+            <div class="col-12 mb-3">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body py-3">
+                        <form method="get" action="{{ route('leave.index') }}" class="row g-2 align-items-end">
+                            <div class="col-12 col-md-8">
+                                <label class="form-label fw-semibold mb-1">{{ __('View leave balances for employee') }}</label>
+                                <select name="balance_employee_id" class="form-control form-select" style="min-height:44px;font-size:16px;" onchange="this.form.submit()">
+                                    <option value="">{{ __('Select employee to load balance dashboard…') }}</option>
+                                    @foreach($previewEmployees as $id => $name)
+                                        <option value="{{ $id }}" @selected((int)($previewEmployeeId ?? 0) === (int)$id)>{{ $name }}</option>
+                                    @endforeach
+                                </select>
+                                <small class="text-muted">{{ __('HR sees company leave requests below. Personal balance cards load after you pick an employee.') }}</small>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <button type="submit" class="btn btn-primary w-100">{{ __('Show Balances') }}</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
         @endif
 
         @if(!empty($leaveBalance) && count($leaveBalance) > 0)

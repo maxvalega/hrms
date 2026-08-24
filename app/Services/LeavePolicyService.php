@@ -525,7 +525,7 @@ class LeavePolicyService
         if ($code === 'bereavement') {
             $granted = $this->grantedDays((int) $employee->id, (int) $leaveType->id, LeaveBalanceEntry::TYPE_GRANT);
             if ($granted <= 0) {
-                return __('Bereavement leave is available only after your manager grants entitlement.');
+                return __('Bereavement leave cannot be applied from Create Leave. HR must use “Grant Bereavement Leave” on Manage Leave (grants entitlement and creates the leave).');
             }
         }
 

@@ -267,29 +267,64 @@ class LeaveController extends Controller
         if (\Auth::user()->can('Create Leave')) {
             $isProbationRestricted = false;
             $probationWarningMessage = null;
+            $isSpectal = $this->isSpectalPortal();
+            $applyAsSelf = false;
+            $selfEmployee = null;
 
             if (Auth::user()->type == 'employee') {
                 $employees = Employee::where('user_id', '=', \Auth::user()->id)->first();
+                $selfEmployee = $employees;
+                $applyAsSelf = true;
                 if (!empty($employees) && $this->isEmployeeInProbation($employees)) {
                     $isProbationRestricted = true;
                     $probationWarningMessage = $this->getProbationLeaveNotAllowedMessage($employees);
                 }
             } else {
-                $employees = Employee::where('created_by', '=', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+                // Spectal HR/admin who also have an employee profile: apply only for self
+                // (full company list was confusing — use Grant Bereavement for on-behalf).
+                $selfEmployee = Employee::where('user_id', \Auth::id())
+                    ->where('created_by', \Auth::user()->creatorId())
+                    ->first();
+
+                if ($isSpectal && $selfEmployee) {
+                    $employees = $selfEmployee;
+                    $applyAsSelf = true;
+                    if ($this->isEmployeeInProbation($selfEmployee)) {
+                        $isProbationRestricted = true;
+                        $probationWarningMessage = $this->getProbationLeaveNotAllowedMessage($selfEmployee);
+                    }
+                } else {
+                    $employees = Employee::where('created_by', '=', \Auth::user()->creatorId())->get()->pluck('name', 'id');
+                }
             }
-            $leavetypes      = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
-            if ($this->isSpectalPortal() && Auth::user()->type == 'employee' && !empty($employees)) {
-                $leavetypes = $leavetypes->filter(function ($lt) use ($employees) {
-                    return $this->leavePolicy()->shouldShowOnSpectalBalance($lt, $employees);
+
+            $leavetypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
+            $filterEmployee = $applyAsSelf ? $selfEmployee : null;
+            if ($isSpectal) {
+                $leavetypes = $leavetypes->filter(function ($lt) use ($filterEmployee) {
+                    $code = LeavePolicyService::resolvePolicyCode($lt);
+                    // Bereavement is granted via dedicated HR form, not Create Leave
+                    if ($code === 'bereavement') {
+                        return false;
+                    }
+
+                    return $this->leavePolicy()->shouldShowOnSpectalBalance($lt, $filterEmployee);
                 })->values();
             }
 
             $substitutes = [];
-            if (Auth::user()->type == 'employee' && !empty($employees)) {
-                $substitutes = $this->getSubstituteList($employees->id);
+            if ($applyAsSelf && !empty($selfEmployee)) {
+                $substitutes = $this->getSubstituteList($selfEmployee->id);
             }
 
-            return view('leave.create', compact('employees', 'leavetypes', 'substitutes', 'isProbationRestricted', 'probationWarningMessage'));
+            return view('leave.create', compact(
+                'employees',
+                'leavetypes',
+                'substitutes',
+                'isProbationRestricted',
+                'probationWarningMessage',
+                'applyAsSelf'
+            ));
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
         }
@@ -394,10 +429,31 @@ class LeaveController extends Controller
                     return redirect()->back()->with('error', __('Permission denied.'));
                 }
             } else {
-                $employee = Employee::where('id', $request->employee_id)->first();
+                // Spectal: HR/admin with employee profile can only apply Create Leave for themselves
+                if ($this->isSpectalPortal()) {
+                    $selfEmployee = Employee::where('user_id', \Auth::id())
+                        ->where('created_by', \Auth::user()->creatorId())
+                        ->first();
+                    if ($selfEmployee) {
+                        $employee = $selfEmployee;
+                        $request->merge(['employee_id' => $selfEmployee->id]);
+                    } else {
+                        $employee = Employee::where('id', $request->employee_id)->first();
+                    }
+                } else {
+                    $employee = Employee::where('id', $request->employee_id)->first();
+                }
                 if (empty($employee)) {
                     return redirect()->back()->with('error', __('Employee not found.'));
                 }
+            }
+
+            // Spectal: block bereavement via Create Leave (use Grant Bereavement)
+            if ($this->isSpectalPortal() && LeavePolicyService::resolvePolicyCode($leave_type) === 'bereavement') {
+                return redirect()->back()->with(
+                    'error',
+                    __('Bereavement leave cannot be applied from Create Leave. Use the yellow “Grant Bereavement Leave” button on Manage Leave.')
+                );
             }
 
             if ($this->isEmployeeInProbation($employee)) {
@@ -1278,8 +1334,15 @@ class LeaveController extends Controller
         $isSpectal = $this->isSpectalPortal();
 
         foreach ($leaveTypes as $leaveType) {
-            if ($isSpectal && !$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $employee)) {
-                continue;
+            if ($isSpectal) {
+                $code = LeavePolicyService::resolvePolicyCode($leaveType);
+                // Create Leave never offers bereavement — use Grant Bereavement
+                if ($code === 'bereavement') {
+                    continue;
+                }
+                if (!$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $employee)) {
+                    continue;
+                }
             }
 
             $summary = $this->calculateLeaveBalanceSummary((int) $request->employee_id, $leaveType, $date);

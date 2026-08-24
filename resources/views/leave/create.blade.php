@@ -22,7 +22,18 @@
         </div>
     @endif
 
-    @if (\Auth::user()->type != 'employee')
+    @if (!empty($applyAsSelf) || \Auth::user()->type == 'employee')
+        {!! Form::hidden('employee_id', !empty($employees) ? $employees->id : 0, ['id' => 'employee_id']) !!}
+        @if (!empty($applyAsSelf) && \Auth::user()->type != 'employee' && !empty($employees->name))
+            <div class="row">
+                <div class="col-md-12">
+                    <div class="alert alert-light border py-2 mb-3">
+                        <strong>{{ __('Applying for') }}:</strong> {{ $employees->name }} ({{ __('You') }})
+                    </div>
+                </div>
+            </div>
+        @endif
+    @else
         <div class="row">
             <div class="col-md-12">
                 <div class="form-group">
@@ -31,8 +42,6 @@
                 </div>
             </div>
         </div>
-    @else
-        {!! Form::hidden('employee_id', !empty($employees) ? $employees->id : 0, ['id' => 'employee_id']) !!}
     @endif
     <div class="row">
         <div class="col-md-12">

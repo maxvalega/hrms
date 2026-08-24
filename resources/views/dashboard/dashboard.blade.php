@@ -1086,7 +1086,8 @@
                     </div>
                     @endif
 
-                    {{-- Active Jobs --}}
+                    {{-- Active Jobs (hidden on Spectal) --}}
+                    @if(!$isSpectalDashboard)
                     <div class="col-xl-3 col-md-6">
                         <div class="card dash-stats-card tone-teal">
                             <div class="card-body">
@@ -1104,6 +1105,7 @@
                             </div>
                         </div>
                     </div>
+                    @endif
 
                     {{-- Attrition Analysis (Full-time only, last 12 months) --}}
                     <div class="col-xl-3 col-md-6">

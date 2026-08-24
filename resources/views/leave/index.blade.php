@@ -35,8 +35,9 @@
             </a>
             <a href="#" data-url="{{ route('leave.bereavement.grant') }}" data-ajax-popup="true"
                 data-title="{{ __('Grant Bereavement Leave') }}" data-size="lg" data-bs-toggle="tooltip"
-                class="btn btn-sm btn-warning" data-bs-original-title="{{ __('Grant Bereavement') }}">
-                <i class="ti ti-heart"></i>
+                class="btn btn-sm btn-warning" data-bs-original-title="{{ __('Grant Bereavement') }}"
+                title="{{ __('Grant Bereavement Leave') }}">
+                <i class="ti ti-heart"></i> <span class="d-none d-md-inline">{{ __('Bereavement') }}</span>
             </a>
         @endif
 

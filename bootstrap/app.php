@@ -100,11 +100,22 @@ $app = Application::configure(basePath: $basePath)
             'Pusher' => \App\Http\Middleware\getPusherSettings::class,
             'mobile.app.key' => \App\Http\Middleware\EnsureMobileAppKeyIsValid::class,
             'tenant.host' => \App\Http\Middleware\EnsureTenantHost::class,
-            // Spatie permission aliases (required for routes using permission:/role:)
-            'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
-            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
-            'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
         ]);
+
+        // Register Spatie aliases only when the package classes exist (avoids boot 500s).
+        if (class_exists(\Spatie\Permission\Middleware\PermissionMiddleware::class)) {
+            $middleware->alias([
+                'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
+                'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+                'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+            ]);
+        } elseif (class_exists(\Spatie\Permission\Middlewares\PermissionMiddleware::class)) {
+            $middleware->alias([
+                'role' => \Spatie\Permission\Middlewares\RoleMiddleware::class,
+                'permission' => \Spatie\Permission\Middlewares\PermissionMiddleware::class,
+                'role_or_permission' => \Spatie\Permission\Middlewares\RoleOrPermissionMiddleware::class,
+            ]);
+        }
 
         // middlewareGroups / Group Middleware
         // Append middleware to the 'web' group

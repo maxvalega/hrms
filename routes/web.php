@@ -1045,6 +1045,18 @@ Route::group(['middleware' => ['verified']], function () {
             'XSS',
         ]
     );
+
+    // Static leave paths MUST be registered before leave/{leave} resource show
+    Route::get('leave/claim-compensatory', [LeaveController::class, 'claimCompensatoryLeaveView'])->name('leave.claim.compensatory')->middleware(['auth', 'XSS']);
+    Route::post('leave/claim-compensatory', [LeaveController::class, 'storeCompensatoryLeaveClaim'])->name('leave.claim.compensatory.store')->middleware(['auth', 'XSS']);
+    Route::get('leave/award-compensatory', [LeaveController::class, 'awardCompensatoryLeaveView'])->name('leave.award.compensatory')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::post('leave/award-compensatory', [LeaveController::class, 'storeAwardCompensatoryLeave'])->name('leave.award.compensatory.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::get('leave/opening-balance', [LeaveController::class, 'setOpeningBalanceView'])->name('leave.opening.balance')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::post('leave/opening-balance', [LeaveController::class, 'storeOpeningBalance'])->name('leave.opening.balance.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::get('leave/grant-bereavement', [LeaveController::class, 'grantBereavementView'])->name('leave.bereavement.grant')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::post('leave/grant-bereavement', [LeaveController::class, 'storeGrantBereavement'])->name('leave.bereavement.grant.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::any('leave/get_leave_data', [LeaveController::class, 'get_leave_data'])->name('leave.get_leave_data')->middleware(['auth', 'XSS']);
+
     Route::resource('leave', LeaveController::class)->middleware(
         [
             'auth',
@@ -1058,18 +1070,6 @@ Route::group(['middleware' => ['verified']], function () {
             'XSS',
         ]
     );
-
-    Route::any('leave/get_leave_data', [LeaveController::class, 'get_leave_data'])->name('leave.get_leave_data')->middleware(['auth', 'XSS']);
-
-    // Compensatory Leave Routes
-    Route::get('leave/claim-compensatory', [LeaveController::class, 'claimCompensatoryLeaveView'])->name('leave.claim.compensatory')->middleware(['auth', 'XSS']);
-    Route::post('leave/claim-compensatory', [LeaveController::class, 'storeCompensatoryLeaveClaim'])->name('leave.claim.compensatory.store')->middleware(['auth', 'XSS']);
-    Route::get('leave/award-compensatory', [LeaveController::class, 'awardCompensatoryLeaveView'])->name('leave.award.compensatory')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
-    Route::post('leave/award-compensatory', [LeaveController::class, 'storeAwardCompensatoryLeave'])->name('leave.award.compensatory.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
-    Route::get('leave/opening-balance', [LeaveController::class, 'setOpeningBalanceView'])->name('leave.opening.balance')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
-    Route::post('leave/opening-balance', [LeaveController::class, 'storeOpeningBalance'])->name('leave.opening.balance.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
-    Route::get('leave/grant-bereavement', [LeaveController::class, 'grantBereavementView'])->name('leave.bereavement.grant')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
-    Route::post('leave/grant-bereavement', [LeaveController::class, 'storeGrantBereavement'])->name('leave.bereavement.grant.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
 
     Route::get('ticket/{id}/reply', [TicketController::class, 'reply'])->name('ticket.reply')->middleware(
         [

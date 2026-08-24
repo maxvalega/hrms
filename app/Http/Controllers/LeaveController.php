@@ -36,6 +36,23 @@ class LeaveController extends Controller
         return LeavePolicyService::isSpectalPortal();
     }
 
+    /**
+     * HR/company leave-admin actions (bereavement grant, opening balance, etc.).
+     */
+    protected function canManageSpectalLeaveAdmin(): bool
+    {
+        $user = \Auth::user();
+        if (!$user || $user->type === 'employee') {
+            return false;
+        }
+
+        if ($user->can('Manage Leave')) {
+            return true;
+        }
+
+        return in_array(strtolower((string) $user->type), ['company', 'hr'], true);
+    }
+
     protected function leaveCycleDates(): array
     {
         if ($this->isSpectalPortal()) {
@@ -2329,7 +2346,7 @@ class LeaveController extends Controller
      */
     public function grantBereavementView()
     {
-        if (!\Auth::user()->can('Manage Leave') || \Auth::user()->type == 'employee') {
+        if (!$this->canManageSpectalLeaveAdmin()) {
             return response()->view('leave.grant_bereavement', [
                 'employees' => collect(),
                 'leaveTypes' => collect(),
@@ -2376,7 +2393,7 @@ class LeaveController extends Controller
             return redirect()->back()->with($key, $message);
         };
 
-        if (!\Auth::user()->can('Manage Leave') || \Auth::user()->type == 'employee') {
+        if (!$this->canManageSpectalLeaveAdmin()) {
             return $respond(false, __('Permission denied.'));
         }
 

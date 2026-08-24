@@ -226,7 +226,10 @@ $(document).on('click', 'a[data-ajax-popup="true"], button[data-ajax-popup="true
         },
         error: function (data) {
             var payload = (data && data.responseJSON) ? data.responseJSON : {};
-            var msg = payload.error || payload.message || 'Something went wrong. Please try again.';
+            var msg = payload.error || payload.message || '';
+            if (!msg) {
+                msg = 'Unable to open form (HTTP ' + (data && data.status ? data.status : '?') + '). Please refresh and try again.';
+            }
             if (typeof show_toastr === 'function') {
                 show_toastr('Error', msg, 'error');
             } else if (typeof toastrs === 'function') {

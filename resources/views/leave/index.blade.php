@@ -33,7 +33,7 @@
                 class="btn btn-sm btn-secondary" data-bs-original-title="{{ __('PL Opening Balance') }}">
                 <i class="ti ti-adjustments"></i>
             </a>
-            <a href="#" data-url="{{ route('leave.bereavement.grant') }}" data-ajax-popup="true"
+            <a href="#" data-url="{{ url('/leave-admin/grant-bereavement') }}" data-ajax-popup="true"
                 data-title="{{ __('Grant Bereavement Leave') }}" data-size="lg" data-bs-toggle="tooltip"
                 class="btn btn-sm btn-warning" data-bs-original-title="{{ __('Grant Bereavement') }}"
                 title="{{ __('Grant Bereavement Leave') }}">

@@ -1426,7 +1426,8 @@ class LeaveController extends Controller
             if ($policyCode === 'sick') {
                 $leaveType->annual_credit = 7;
                 $leaveType->days = 7;
-                $leaveType->credit_frequency = 'annual';
+                $leaveType->monthly_credit = round(7 / 12, 2); // ~0.58 / month
+                $leaveType->credit_frequency = 'monthly';
                 $leaveType->is_prorata = true;
             }
             if ($policyCode === 'wfh') {
@@ -1583,14 +1584,9 @@ class LeaveController extends Controller
         }
 
         if ($creditMode === 'lump_sum') {
-            // Spectal Sick Leave transition: load Aug–Dec pro-rata upfront (5/12 of 7 = 2.92)
-            if ($isSpectal && $policyCode === 'sick') {
-                $proratedTotal = round($annualCredit * ($eligibleMonths / 12), 2);
-            } else {
-                $proratedTotal = round($monthlyAccrual > 0
-                    ? $monthlyAccrual * $eligibleMonths
-                    : $annualCredit * ($eligibleMonths / 12), 2);
-            }
+            $proratedTotal = round($monthlyAccrual > 0
+                ? $monthlyAccrual * $eligibleMonths
+                : $annualCredit * ($eligibleMonths / 12), 2);
             $allowed = $proratedTotal;
             $accruedToDate = $allowed;
             $openingBalance = 0.0;
@@ -1612,6 +1608,15 @@ class LeaveController extends Controller
                 $proratedTotal = round($openingBalance + ($monthlyAccrual * $eligibleMonths), 2);
                 $note = __('Opening :open + Accrued :accrued (:months × :rate).', [
                     'open' => $openingBalance,
+                    'accrued' => $accruedToDate,
+                    'months' => $creditedMonths,
+                    'rate' => $monthlyAccrual,
+                ]);
+            }
+
+            // Spectal Sick Leave: monthly grant (7/year ≈ 0.58/month), not period lump sum
+            if ($isSpectal && $policyCode === 'sick') {
+                $note = __('Monthly grant :accrued (:months × :rate). Yearly entitlement 7 days.', [
                     'accrued' => $accruedToDate,
                     'months' => $creditedMonths,
                     'rate' => $monthlyAccrual,

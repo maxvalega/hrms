@@ -121,15 +121,15 @@ class LeavePolicyService
             'sick' => [
                 'title' => 'Sick Leave',
                 'days' => 7,
-                'monthly_credit' => round(7 / 12, 2),
+                'monthly_credit' => round(7 / 12, 2), // ~0.58 / month
                 'annual_credit' => 7,
-                'credit_frequency' => 'annual',
+                'credit_frequency' => 'monthly',
                 'is_prorata' => true,
                 'is_carry_forward' => 0,
                 'max_carry_forward' => 0,
                 'is_encashable' => 0,
                 'eligible_employee_types' => ['intern', 'full_time'],
-                'policy_notes' => 'Yearly 7 days. Prorata / transition load. No CF. Intern + Full time.',
+                'policy_notes' => 'Yearly 7 days. Credited monthly (~0.58), not loaded as a period total. No CF. Intern + Full time.',
             ],
             'pl' => [
                 'title' => 'Privilege Leave (PL)',

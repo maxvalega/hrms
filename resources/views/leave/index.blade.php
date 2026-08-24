@@ -171,6 +171,7 @@
                                     $policyCode = $balance['policy_code'] ?? '';
                                     $isProbationView = !empty($employmentStatus['on_probation']);
                                     $isSpectalPl = !empty($isSpectal) && $policyCode === 'pl';
+                                    $isSpectalSick = !empty($isSpectal) && $policyCode === 'sick';
                                 @endphp
                                 <div class="col-12 col-sm-6 col-xl-4">
                                     <div class="border rounded p-3 leave-balance-card h-100 {{ $isProbationView ? 'border-info' : '' }}" style="{{ $isProbationView ? 'background:#f0f9ff;' : '' }}">
@@ -181,6 +182,12 @@
                                                     <small class="text-muted d-block">
                                                         {{ __('Opening') }} {{ $balance['opening_balance'] ?? 0 }}
                                                         + {{ __('Accrued') }} {{ $balance['accrued_to_date'] ?? 0 }}
+                                                    </small>
+                                                @elseif ($isSpectalSick)
+                                                    <small class="text-muted d-block">
+                                                        {{ __('Monthly grant') }} —
+                                                        {{ __('Accrued') }} {{ $balance['accrued_to_date'] ?? 0 }}
+                                                        ({{ $balance['monthly_accrual'] ?? round(7 / 12, 2) }}/{{ __('mo') }})
                                                     </small>
                                                 @elseif(!empty($balance['note']))
                                                     <small class="text-muted d-block">{{ $balance['note'] }}</small>

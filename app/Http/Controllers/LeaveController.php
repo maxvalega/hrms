@@ -321,6 +321,9 @@ class LeaveController extends Controller
             if (empty($leave_type)) {
                 return redirect()->back()->with('error', __('Invalid leave type selected.'));
             }
+            if ($this->isSpectalPortal()) {
+                $this->leavePolicy()->applySpectalLeaveTypeDefaults($leave_type);
+            }
             $approvalRequirement = $leave_type->approval_requirement ?? 'na';
             // Check if it's a Vacation leave type (substitute required) - handle both "vacation" and "vaction" typo
             $titleLower = strtolower($leave_type->title ?? '');
@@ -419,10 +422,16 @@ class LeaveController extends Controller
                 return redirect()->back()->with('error', $policyError);
             }
 
-            // For monthly_cap (WFH), compare against this month's usage
+            // For monthly_cap (WFH), compare against the leave month's usage (not always "today")
             $policyCode = LeavePolicyService::resolvePolicyCode($leave_type);
             if (($leave_type->credit_frequency === 'monthly_cap') || $policyCode === 'wfh') {
-                $usage = $this->getLeaveUsageForCurrentMonth((int) $employee->id, (int) $leave_type->id, $date);
+                $usage = $this->getLeaveUsageForCurrentMonth(
+                    (int) $employee->id,
+                    (int) $leave_type->id,
+                    $date,
+                    null,
+                    $request->start_date
+                );
             } else {
                 $usage = $this->getLeaveUsageByCycle((int) $employee->id, (int) $leave_type->id, $date);
             }
@@ -622,6 +631,9 @@ class LeaveController extends Controller
                 if (empty($leave_type)) {
                     return redirect()->back()->with('error', __('Invalid leave type selected.'));
                 }
+                if ($this->isSpectalPortal()) {
+                    $this->leavePolicy()->applySpectalLeaveTypeDefaults($leave_type);
+                }
                 $approvalRequirement = $leave_type->approval_requirement ?? 'na';
                 // Check if it's a Vacation leave type (substitute required) - handle both "vacation" and "vaction" typo
                 $titleLower = strtolower($leave_type->title ?? '');
@@ -698,9 +710,28 @@ class LeaveController extends Controller
                     return redirect()->back()->with('error', $spectalError);
                 }
 
+                $policyError = $this->leavePolicy()->validateApplication(
+                    $leave_type,
+                    $employee,
+                    $request->start_date,
+                    $request->end_date,
+                    (float) $total_leave_days,
+                    $request->input('family_relation'),
+                    date('Y-m-d')
+                );
+                if ($policyError) {
+                    return redirect()->back()->with('error', $policyError);
+                }
+
                 $policyCode = LeavePolicyService::resolvePolicyCode($leave_type);
                 if (($leave_type->credit_frequency === 'monthly_cap') || $policyCode === 'wfh') {
-                    $usage = $this->getLeaveUsageForCurrentMonth((int) $employee->id, (int) $leave_type->id, $date, (int) $leave->id);
+                    $usage = $this->getLeaveUsageForCurrentMonth(
+                        (int) $employee->id,
+                        (int) $leave_type->id,
+                        $date,
+                        (int) $leave->id,
+                        $request->start_date
+                    );
                 } else {
                     $usage = $this->getLeaveUsageByCycle((int) $employee->id, (int) $leave_type->id, $date, (int) $leave->id);
                 }
@@ -1408,45 +1439,15 @@ class LeaveController extends Controller
         $settings = Utility::settings();
         $isSpectal = $this->isSpectalPortal();
         $policyCode = LeavePolicyService::resolvePolicyCode($leaveType);
-        $defs = LeavePolicyService::policyDefinitions();
         $note = null;
 
         // Spectal: apply canonical policy defaults when DB leave types are misconfigured
-        if ($isSpectal && $policyCode && isset($defs[$policyCode])) {
-            $def = $defs[$policyCode];
-            if (empty($leaveType->credit_frequency) || $policyCode === 'sick' || $policyCode === 'pl'
-                || $policyCode === 'wfh' || $policyCode === 'bereavement' || $policyCode === 'cl') {
-                $leaveType->credit_frequency = $def['credit_frequency'] ?? $leaveType->credit_frequency;
-            }
-            if ($policyCode === 'pl') {
-                $leaveType->monthly_credit = 1.5;
-                $leaveType->annual_credit = 18;
-                $leaveType->days = 18;
-            }
-            if ($policyCode === 'sick') {
-                $leaveType->annual_credit = 7;
-                $leaveType->days = 7;
-                $leaveType->monthly_credit = round(7 / 12, 2); // ~0.58 / month
-                $leaveType->credit_frequency = 'monthly';
-                $leaveType->is_prorata = true;
-            }
-            if ($policyCode === 'wfh') {
-                $leaveType->monthly_limit = 2;
-                $leaveType->monthly_credit = 2;
-                $leaveType->credit_frequency = 'monthly_cap';
-            }
+        if ($isSpectal && $policyCode) {
+            $this->leavePolicy()->applySpectalLeaveTypeDefaults($leaveType);
             if ($policyCode === 'bereavement') {
-                $leaveType->credit_frequency = 'event';
-                $leaveType->annual_credit = 7;
-                $leaveType->days = 7;
-                $leaveType->monthly_credit = 0;
                 $note = __('Event-based: appears after manager grants 7 paid days for a qualifying bereavement.');
             }
             if ($policyCode === 'cl') {
-                $leaveType->credit_frequency = 'seasonal';
-                $leaveType->days = 0;
-                $leaveType->annual_credit = 0;
-                $leaveType->monthly_credit = 0;
                 $note = __('Casual Leave is only available during the May–July window and is not an annual leave bank.');
             }
         }
@@ -1724,10 +1725,16 @@ class LeaveController extends Controller
         ];
     }
 
-    protected function getLeaveUsageForCurrentMonth(?int $employeeId, int $leaveTypeId, array $cycleDates, ?int $excludeLeaveId = null): array
-    {
-        $monthStart = Carbon::now()->startOfMonth()->toDateString();
-        $monthEnd = Carbon::now()->endOfMonth()->toDateString();
+    protected function getLeaveUsageForCurrentMonth(
+        ?int $employeeId,
+        int $leaveTypeId,
+        array $cycleDates,
+        ?int $excludeLeaveId = null,
+        ?string $asOfDate = null
+    ): array {
+        $asOf = $asOfDate ? Carbon::parse($asOfDate) : Carbon::now();
+        $monthStart = $asOf->copy()->startOfMonth()->toDateString();
+        $monthEnd = $asOf->copy()->endOfMonth()->toDateString();
 
         // Clamp to cycle bounds
         $normalized = $this->normalizeCycleDates($cycleDates);

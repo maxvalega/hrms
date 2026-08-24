@@ -391,6 +391,7 @@
             <!--performance-->
 
             <!-- Growth Review -->
+            @if(!$hideModulesForSpectal)
             <li class="dash-item dash-hasmenu {{ request()->is('growth-review*') ? 'active' : '' }}">
                 <a href="#!" class="dash-link"><span class="dash-micon"><i class="ti ti-trending-up"></i></span><span class="dash-mtext">{{ __('Growth Review') }}</span><span class="dash-arrow"><i data-feather="chevron-right"></i></span></a>
                 <ul class="dash-submenu">
@@ -427,6 +428,7 @@
                     @endif
                 </ul>
             </li>
+            @endif
             <!-- /Growth Review -->
 
             <!-- Surveys -->
@@ -698,10 +700,12 @@
                             </li>
                         @endcan
                         @can('Manage Announcement')
+                            @if(!$hideModulesForSpectal)
                             <li class="dash-item">
                                 <a class="dash-link"
                                     href="{{ route('announcement.index') }}">{{ __('Announcement') }}</a>
                             </li>
+                            @endif
                         @endcan
                     </ul>
                 </li>

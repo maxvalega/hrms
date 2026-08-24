@@ -615,6 +615,7 @@
             try { $heroAvatar = \App\Models\Utility::get_file('uploads/avatar/') . $authUser->avatar; } catch (\Throwable $e) {}
         }
         $heroEmpRow = \App\Models\Employee::where('user_id', $authUser->id)->first();
+        $isSpectalDashboard = \App\Support\TenantHost::subdomainFromHost() === 'spectal';
         $heroCompanyName = '';
         try {
             if (in_array($authUser->type, ['company', 'super admin'])) {
@@ -717,8 +718,8 @@
             </div>
         @endif
 
-        {{-- Mark Attendance card --}}
-        @if(isset($officeTime) && (!empty($showAttendanceCard) || \Auth::user()->type == 'employee'))
+        {{-- Mark Attendance card (hidden on Spectal dashboard) --}}
+        @if(!$isSpectalDashboard && isset($officeTime) && (!empty($showAttendanceCard) || \Auth::user()->type == 'employee'))
             <div class="col-12 mb-3">
                 <div class="card attendance-dashboard-card dash-section-card">
                     <div class="card-header">
@@ -999,6 +1000,7 @@
                     </div>
                 </div>
             </div>
+            @if(!$isSpectalDashboard)
             <div class="col-xl-12 col-lg-12 col-md-12 order-3 order-xxl-3">
                 <div class="card">
                     <div class="card-header card-body table-border-style">
@@ -1030,6 +1032,7 @@
                     </div>
                 </div>
             </div>
+            @endif
         @else
             {{-- ── KPI Stats Row (4 cards, equal height, gradient accent) ── --}}
             <div class="col-12">
@@ -1062,7 +1065,8 @@
                         </div>
                     </div>
 
-                    {{-- Today's Not Clocked-in --}}
+                    {{-- Today's Not Clocked-in (hidden on Spectal) --}}
+                    @if(!$isSpectalDashboard)
                     <div class="col-xl-3 col-md-6">
                         <div class="card dash-stats-card tone-amber">
                             <div class="card-body">
@@ -1080,6 +1084,7 @@
                             </div>
                         </div>
                     </div>
+                    @endif
 
                     {{-- Active Jobs --}}
                     <div class="col-xl-3 col-md-6">
@@ -1147,7 +1152,8 @@
                         </div>
                         <div class="card-body">
                             <div class="row g-3">
-                                {{-- Today's Department-wise Attendance --}}
+                                {{-- Today's Department-wise Attendance (Present/Absent — hidden on Spectal) --}}
+                                @if(!$isSpectalDashboard)
                                 <div class="col-lg-7 col-md-12">
                                     <div class="dashboard-chart-card">
                                         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -1166,6 +1172,7 @@
                                         @endif
                                     </div>
                                 </div>
+                                @endif
 
                                 {{-- Team Distribution (donut by Employee Type) --}}
                                 <div class="col-lg-5 col-md-12">
@@ -1366,6 +1373,7 @@
                             </div>
                         </div>
 
+                        @if(!$isSpectalDashboard)
                         <div class="card dash-section-card">
                             <div class="card-header">
                                 <h5 class="dash-section-title"><i class="ti ti-user-off" style="background:linear-gradient(135deg,#ef4444,#f43f5e);"></i>{{ __("Not Clocked In Today") }}</h5>
@@ -1411,6 +1419,7 @@
                                 @endif
                             </div>
                         </div>
+                        @endif
                     </div>
                     <div class="col-xl-7">
                         <div class="card dash-section-card">
@@ -1433,7 +1442,7 @@
                 </div>
             </div>
 
-            @if (\Auth::user()->type == 'company')
+            @if (!$isSpectalDashboard && \Auth::user()->type == 'company')
                 <div class="col-xl-12 col-lg-12 col-md-12">
                     <div class="card dash-section-card">
                         <div class="card-header">
@@ -1472,7 +1481,7 @@
                 </div>
             @endif
 
-            @if (\Auth::user()->type != 'company')
+            @if (!$isSpectalDashboard && \Auth::user()->type != 'company')
                 <div class="col-xl-12 col-lg-12 col-md-12">
                     <div class="card">
                         <div class="card-header card-body table-border-style">
@@ -1509,7 +1518,7 @@
     </div>
 
     <!-- Camera Modal for Clock In -->
-    @if (\Auth::user()->type == 'employee' || !empty($showAttendanceCard))
+    @if (!$isSpectalDashboard && (\Auth::user()->type == 'employee' || !empty($showAttendanceCard)))
     <div class="modal fade" id="cameraModal" tabindex="-1" role="dialog" aria-labelledby="cameraModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg" role="document">
             <div class="modal-content">
@@ -1557,7 +1566,7 @@
     @endif
 
     <!-- Camera Modal for Clock Out -->
-    @if (\Auth::user()->type == 'employee' || !empty($showAttendanceCard))
+    @if (!$isSpectalDashboard && (\Auth::user()->type == 'employee' || !empty($showAttendanceCard)))
     <div class="modal fade" id="cameraModalClockOut" tabindex="-1" role="dialog" aria-labelledby="cameraModalClockOutLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg" role="document">
             <div class="modal-content">
@@ -2004,7 +2013,7 @@
         </script>
     @endif
 
-    @if (\Auth::user()->type == 'employee' || !empty($showAttendanceCard))
+    @if (!$isSpectalDashboard && (\Auth::user()->type == 'employee' || !empty($showAttendanceCard)))
         <script>
             // Detect device type
             function detectDeviceType() {

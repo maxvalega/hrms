@@ -554,13 +554,84 @@ class LeavePolicyService
         return 0.0;
     }
 
+    /**
+     * Mutate leave type with Spectal canonical defaults (in-memory only).
+     * Ensures WFH monthly caps / consecutive limits apply even when DB is misconfigured.
+     */
+    public function applySpectalLeaveTypeDefaults(LeaveType $leaveType): LeaveType
+    {
+        if (!self::isSpectalPortal()) {
+            return $leaveType;
+        }
+
+        $code = self::resolvePolicyCode($leaveType);
+        $defs = self::policyDefinitions();
+        if (!$code || !isset($defs[$code])) {
+            return $leaveType;
+        }
+
+        $def = $defs[$code];
+        if (empty($leaveType->credit_frequency) || in_array($code, ['sick', 'pl', 'wfh', 'bereavement', 'cl'], true)) {
+            $leaveType->credit_frequency = $def['credit_frequency'] ?? $leaveType->credit_frequency;
+        }
+
+        if ($code === 'pl') {
+            $leaveType->monthly_credit = 1.5;
+            $leaveType->annual_credit = 18;
+            $leaveType->days = 18;
+        }
+
+        if ($code === 'sick') {
+            $leaveType->annual_credit = 7;
+            $leaveType->days = 7;
+            $leaveType->monthly_credit = round(7 / 12, 2);
+            $leaveType->credit_frequency = 'monthly';
+            $leaveType->is_prorata = true;
+        }
+
+        if ($code === 'wfh') {
+            $leaveType->monthly_limit = 2;
+            $leaveType->monthly_credit = 2;
+            $leaveType->max_consecutive_days = 2;
+            $leaveType->credit_frequency = 'monthly_cap';
+            $leaveType->days = 24; // yearly ceiling for withinMax; monthly_cap governs available
+            $leaveType->annual_credit = 24;
+            // WFH is same-/short-notice — strip accidental PL/CL notice rules from DB
+            $leaveType->min_notice_days = 0;
+            $leaveType->notice_rules = null;
+        }
+
+        if ($code === 'bereavement') {
+            $leaveType->credit_frequency = 'event';
+            $leaveType->annual_credit = 7;
+            $leaveType->days = 7;
+            $leaveType->monthly_credit = 0;
+            $leaveType->min_notice_days = 0;
+            $leaveType->notice_rules = null;
+        }
+
+        if ($code === 'cl') {
+            $leaveType->credit_frequency = 'seasonal';
+            $leaveType->days = 0;
+            $leaveType->annual_credit = 0;
+            $leaveType->monthly_credit = 0;
+        }
+
+        return $leaveType;
+    }
+
     public function validateApplication(LeaveType $leaveType, Employee $employee, string $startDate, string $endDate, float $totalDays, ?string $familyRelation = null, ?string $appliedOn = null): ?string
     {
+        $this->applySpectalLeaveTypeDefaults($leaveType);
+
         if ($error = $this->validateEligibility($leaveType, $employee)) {
             return $error;
         }
 
-        if ($error = $this->validateNotice($leaveType, $startDate, $totalDays, $appliedOn)) {
+        $policyCode = self::resolvePolicyCode($leaveType);
+        // Spectal WFH: no advance-notice requirement (monthly 2-day cap only)
+        $skipNotice = self::isSpectalPortal() && $policyCode === 'wfh';
+        if (!$skipNotice && ($error = $this->validateNotice($leaveType, $startDate, $totalDays, $appliedOn))) {
             return $error;
         }
 
@@ -586,6 +657,15 @@ class LeavePolicyService
 
     public function validateEligibility(LeaveType $leaveType, Employee $employee): ?string
     {
+        // Spectal uses its own employment-type matrix (consultants = full_time, etc.)
+        if (self::isSpectalPortal()) {
+            if (!$this->employeeEligibleForSpectalType($leaveType, $employee)) {
+                return __('This leave type is not applicable for your employment type.');
+            }
+
+            return null;
+        }
+
         $codes = $leaveType->eligible_employee_types;
         if (empty($codes) || !is_array($codes)) {
             return null; // all employees
@@ -593,7 +673,8 @@ class LeavePolicyService
 
         $empTypeCode = null;
         if (!empty($employee->employee_type_id)) {
-            $empTypeCode = EmployeeType::where('id', $employee->employee_type_id)->value('code');
+            $raw = EmployeeType::where('id', $employee->employee_type_id)->value('code');
+            $empTypeCode = self::normalizeEmployeeTypeCode($raw !== null ? (string) $raw : null);
         }
 
         if (empty($empTypeCode)) {
@@ -602,7 +683,16 @@ class LeavePolicyService
             ]);
         }
 
-        if (!in_array($empTypeCode, $codes, true)) {
+        $allowedNorm = array_values(array_filter(array_map(
+            fn ($a) => self::normalizeEmployeeTypeCode((string) $a) ?? strtolower((string) $a),
+            $codes
+        )));
+        $matchCodes = [$empTypeCode];
+        if (in_array($empTypeCode, self::spectalFullTimeEquivalentCodes(), true)) {
+            $matchCodes = array_values(array_unique(array_merge($matchCodes, self::spectalFullTimeEquivalentCodes())));
+        }
+
+        if (count(array_intersect($matchCodes, $allowedNorm)) === 0) {
             return __('This leave type is not applicable for your employment type (:type). Allowed: :types', [
                 'type' => $empTypeCode,
                 'types' => implode(', ', $codes),

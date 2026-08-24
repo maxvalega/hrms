@@ -1053,8 +1053,9 @@ Route::group(['middleware' => ['verified']], function () {
     Route::post('leave/award-compensatory', [LeaveController::class, 'storeAwardCompensatoryLeave'])->name('leave.award.compensatory.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
     Route::get('leave/opening-balance', [LeaveController::class, 'setOpeningBalanceView'])->name('leave.opening.balance')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
     Route::post('leave/opening-balance', [LeaveController::class, 'storeOpeningBalance'])->name('leave.opening.balance.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
-    Route::get('leave/grant-bereavement', [LeaveController::class, 'grantBereavementView'])->name('leave.bereavement.grant')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
-    Route::post('leave/grant-bereavement', [LeaveController::class, 'storeGrantBereavement'])->name('leave.bereavement.grant.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    // Use leave-admin/* so it never collides with leave/{id} resource binding
+    Route::get('leave-admin/grant-bereavement', [LeaveController::class, 'grantBereavementView'])->name('leave.bereavement.grant')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
+    Route::post('leave-admin/grant-bereavement', [LeaveController::class, 'storeGrantBereavement'])->name('leave.bereavement.grant.store')->middleware(['auth', 'XSS', 'permission:Manage Leave']);
     Route::any('leave/get_leave_data', [LeaveController::class, 'get_leave_data'])->name('leave.get_leave_data')->middleware(['auth', 'XSS']);
 
     Route::resource('leave', LeaveController::class)->middleware(

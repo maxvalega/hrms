@@ -83,8 +83,9 @@ $app = Application::configure(basePath: $basePath)
             \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
         ]);
 
-        // RouteMiddleware / Alias — must be a SINGLE alias() call (Laravel replaces, does not merge).
-        $middlewareAliases = [
+        // RouteMiddleware / Alias
+        // IMPORTANT: call alias() only ONCE — Laravel replaces the map (does not merge).
+        $middleware->alias([
             'auth' => \App\Http\Middleware\Authenticate::class,
             'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
             'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,
@@ -100,19 +101,10 @@ $app = Application::configure(basePath: $basePath)
             'Pusher' => \App\Http\Middleware\getPusherSettings::class,
             'mobile.app.key' => \App\Http\Middleware\EnsureMobileAppKeyIsValid::class,
             'tenant.host' => \App\Http\Middleware\EnsureTenantHost::class,
-        ];
-
-        if (class_exists(\Spatie\Permission\Middleware\PermissionMiddleware::class)) {
-            $middlewareAliases['role'] = \Spatie\Permission\Middleware\RoleMiddleware::class;
-            $middlewareAliases['permission'] = \Spatie\Permission\Middleware\PermissionMiddleware::class;
-            $middlewareAliases['role_or_permission'] = \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class;
-        } elseif (class_exists(\Spatie\Permission\Middlewares\PermissionMiddleware::class)) {
-            $middlewareAliases['role'] = \Spatie\Permission\Middlewares\RoleMiddleware::class;
-            $middlewareAliases['permission'] = \Spatie\Permission\Middlewares\PermissionMiddleware::class;
-            $middlewareAliases['role_or_permission'] = \Spatie\Permission\Middlewares\RoleOrPermissionMiddleware::class;
-        }
-
-        $middleware->alias($middlewareAliases);
+            'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
+            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+            'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
+        ]);
 
         // middlewareGroups / Group Middleware
         // Append middleware to the 'web' group

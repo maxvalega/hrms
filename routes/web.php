@@ -1052,6 +1052,7 @@ Route::group(['middleware' => ['verified']], function () {
     // if Spatie middleware alias is missing on any deploy).
     Route::get('leave-admin/grant-bereavement', [LeaveController::class, 'grantBereavementView'])->name('leave.bereavement.grant')->middleware(['auth', 'XSS']);
     Route::post('leave-admin/grant-bereavement', [LeaveController::class, 'storeGrantBereavement'])->name('leave.bereavement.grant.store')->middleware(['auth', 'XSS']);
+    Route::post('leave-admin/balance-preview', [LeaveController::class, 'setBalancePreviewEmployee'])->name('leave.balance.preview')->middleware(['auth', 'XSS']);
     Route::get('leave/opening-balance', [LeaveController::class, 'setOpeningBalanceView'])->name('leave.opening.balance')->middleware(['auth', 'XSS']);
     Route::post('leave/opening-balance', [LeaveController::class, 'storeOpeningBalance'])->name('leave.opening.balance.store')->middleware(['auth', 'XSS']);
     Route::get('leave/award-compensatory', [LeaveController::class, 'awardCompensatoryLeaveView'])->name('leave.award.compensatory')->middleware(['auth', 'XSS']);

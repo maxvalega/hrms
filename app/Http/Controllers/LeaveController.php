@@ -182,7 +182,8 @@ class LeaveController extends Controller
                         ->where('created_by', \Auth::user()->creatorId())
                         ->first();
 
-                    $previewEmployeeId = (int) request()->get('balance_employee_id', 0);
+                    $previewEmployeeId = (int) session('leave_balance_preview_employee_id', 0);
+                    // Never read employee ids from the URL query string
                     if ($previewEmployeeId <= 0 && $selfEmployee) {
                         $previewEmployeeId = (int) $selfEmployee->id;
                     }
@@ -2372,6 +2373,31 @@ class LeaveController extends Controller
         ]);
 
         return redirect()->back()->with('success', __('Opening balance set for :name.', ['name' => $employee->name]));
+    }
+
+    /**
+     * Store leave-balance preview employee in session (no IDs in the URL).
+     */
+    public function setBalancePreviewEmployee(Request $request)
+    {
+        if (!\Auth::user()->can('Manage Leave') || \Auth::user()->type == 'employee') {
+            return redirect()->route('leave.index')->with('error', __('Permission denied.'));
+        }
+
+        $employeeId = (int) $request->input('balance_employee_id', 0);
+        if ($employeeId > 0) {
+            $exists = Employee::where('created_by', \Auth::user()->creatorId())
+                ->where('id', $employeeId)
+                ->exists();
+            if (!$exists) {
+                return redirect()->route('leave.index')->with('error', __('Employee not found.'));
+            }
+            session(['leave_balance_preview_employee_id' => $employeeId]);
+        } else {
+            session()->forget('leave_balance_preview_employee_id');
+        }
+
+        return redirect()->route('leave.index');
     }
 
     /**

@@ -499,6 +499,18 @@
         .dash-cal-body .fc .fc-scrollgrid { border-bottom: 0; }
         .dash-cal-body + * { margin-top: 0 !important; }
 
+        /* Main dashboard calendar — larger, full width above pending approvals */
+        .dash-main-cal-card .dash-cal-body-lg {
+            padding: 12px 14px 10px;
+            min-height: 640px;
+            height: auto !important;
+            overflow: visible !important;
+        }
+        .dash-main-cal-card .dash-cal-body-lg .fc { font-size: .9rem; }
+        .dash-main-cal-card .dash-cal-body-lg .fc .fc-view-harness { min-height: 560px; }
+        .dash-main-cal-card .dash-cal-body-lg .fc .fc-daygrid-day-frame { min-height: 78px; }
+        .dash-main-cal-card .dash-cal-body-lg .fc .fc-toolbar-title { font-size: 1.25rem; }
+
         /* Dashboard calendar: attendance (merged in /event/get_event_data) */
         .fc .fc-event.attn-cal-present,
         .fc-event.attn-cal-present {
@@ -717,6 +729,32 @@
                 </div>
             </div>
         @endif
+
+        {{-- Main Calendar (above pending leave approvals) --}}
+        <div class="col-12 mb-3">
+            <div class="card dash-section-card dash-main-cal-card">
+                <div class="card-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <h5 class="dash-section-title mb-0">
+                        <i class="ti ti-calendar" style="background:linear-gradient(135deg,#10b981,#14b8a6);"></i>{{ __('Calendar') }}
+                    </h5>
+                    <input type="hidden" id="path_admin" value="{{ url('/') }}">
+                    @if (isset($setting['is_enabled']) && $setting['is_enabled'] == 'on')
+                        <select class="form-control form-control-sm" name="calender_type" id="calender_type"
+                            style="width: 160px;" onchange="get_data()">
+                            <option value="google_calender">{{ __('Google Calendar') }}</option>
+                            <option value="local_calender" selected="true">{{ __('Local Calendar') }}</option>
+                        </select>
+                    @endif
+                </div>
+                <div class="card-body dash-cal-body dash-cal-body-lg">
+                    @if (\Auth::user()->type == 'employee')
+                        <div id="event_calendar" class="calendar"></div>
+                    @else
+                        <div id="calendar" class="calendar"></div>
+                    @endif
+                </div>
+            </div>
+        </div>
 
         {{-- Pending leave approvals: company/HR + reporting managers on main dashboard --}}
         @if (!empty($pendingLeaveApprovals) && $pendingLeaveApprovals->count() > 0)
@@ -1022,71 +1060,6 @@
                     </div>
                 </div>
             @endif
-            <div class="col-xxl-6 order-2 order-xxl-2">
-                <div class="card">
-                    <div class="card-header">
-                        <div class="row">
-                            <div class="col-lg-6">
-                                <h5>{{ __('Calendar') }}</h5>
-                                <input type="hidden" id="path_admin" value="{{ url('/') }}">
-                            </div>
-                            <div class="col-lg-6">
-                                <label for=""></label>
-                                @if (isset($setting['is_enabled']) && $setting['is_enabled'] == 'on')
-                                    <select class="form-control" name="calender_type" id="calender_type"
-                                        style="float: right;width: 155px;" onchange="get_data()">
-                                        <option value="google_calender">{{ __('Google Calendar') }}</option>
-                                        <option value="local_calender" selected="true">
-                                            {{ __('Local Calendar') }}</option>
-                                    </select>
-                                @endif
-                            </div>
-                        </div>
-                    </div>
-                    <div class="card-body p-2 dash-cal-body">
-                        <div id='event_calendar' class='calendar'></div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-xxl-6 order-1 order-xxl-1">
-                <div class="card h-100">
-                    <div class="card-header card-body table-border-style">
-                        <h5>{{ __('Meeting schedule') }}</h5>
-                    </div>
-                    <div class="card-body" style="max-height: 460px; overflow-y: auto;">
-                        <div class="table-responsive">
-                            <table class="table">
-                                <thead>
-                                    <tr>
-                                        <th>{{ __('Meeting title') }}</th>
-                                        <th>{{ __('Meeting Date') }}</th>
-                                        <th>{{ __('Meeting Time') }}</th>
-                                        <th>{{ __('Link') }}</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="list">
-                                    @foreach ($meetings as $meeting)
-                                        <tr>
-                                            <td>{{ $meeting->title }}</td>
-                                            <td>{{ \Auth::user()->dateFormat($meeting->date) }}</td>
-                                            <td>{{ \Auth::user()->timeFormat($meeting->time) }}</td>
-                                            <td>
-                                                @if($meeting->meet_link)
-                                                    <a href="{{ $meeting->meet_link }}" target="_blank" class="btn btn-sm btn-success py-0 px-2">
-                                                        <i class="ti ti-video me-1"></i>{{ __('Join') }}
-                                                    </a>
-                                                @else
-                                                    <span class="text-muted">—</span>
-                                                @endif
-                                            </td>
-                                        </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
             @if(!$isSpectalDashboard)
             <div class="col-xl-12 col-lg-12 col-md-12 order-3 order-xxl-3">
                 <div class="card">
@@ -1313,7 +1286,7 @@
 
             <div class="col-xxl-12">
                 <div class="row g-3">
-                    <div class="col-xl-5">
+                    <div class="col-12">
                         @if (\Auth::user()->type == 'company' && !empty($users) && !empty($plan))
                             <div class="card dash-section-card mb-3">
                                 <div class="card-header">
@@ -1334,51 +1307,6 @@
                                     <div id="device-chart" class="mt-3"></div>
                                 </div>
                             </div>
-                        @endif
-
-                        @if(!$isSpectalDashboard)
-                        <div class="card dash-section-card mb-3">
-                            <div class="card-header">
-                                <h5 class="dash-section-title"><i class="ti ti-calendar-event" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4);"></i>{{ __('Meeting Schedule') }}</h5>
-                                <small class="dash-section-meta">{{ count($meetings ?? []) }} {{ __('upcoming') }}</small>
-                            </div>
-                            <div class="card-body p-0" style="height: 290px; overflow:auto">
-                                @if(!empty($meetings) && count($meetings) > 0)
-                                    <div class="table-responsive">
-                                        <table class="table table-hover align-middle mb-0">
-                                            <thead style="background:#fafafa;">
-                                                <tr style="font-size:.7rem;text-transform:uppercase;letter-spacing:.4px;color:#64748b;">
-                                                    <th class="ps-3 py-2">{{ __('Title') }}</th>
-                                                    <th>{{ __('Date') }}</th>
-                                                    <th>{{ __('Time') }}</th>
-                                                    <th class="pe-3">{{ __('Link') }}</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                @foreach ($meetings as $meeting)
-                                                    <tr>
-                                                        <td class="ps-3"><strong>{{ $meeting->title }}</strong></td>
-                                                        <td><small class="text-muted"><i class="ti ti-calendar me-1"></i>{{ \Auth::user()->dateFormat($meeting->date) }}</small></td>
-                                                        <td><small class="text-muted"><i class="ti ti-clock me-1"></i>{{ \Auth::user()->timeFormat($meeting->time) }}</small></td>
-                                                        <td class="pe-3">
-                                                            @if($meeting->meet_link)
-                                                                <a href="{{ $meeting->meet_link }}" target="_blank" class="btn btn-sm btn-success py-0 px-2">
-                                                                    <i class="ti ti-video me-1"></i>{{ __('Join') }}
-                                                                </a>
-                                                            @else
-                                                                <span class="text-muted">—</span>
-                                                            @endif
-                                                        </td>
-                                                    </tr>
-                                                @endforeach
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                @else
-                                    <div class="dash-empty"><i class="ti ti-calendar-off"></i>{{ __('No meetings scheduled.') }}</div>
-                                @endif
-                            </div>
-                        </div>
                         @endif
 
                         @if(!$isSpectalDashboard)
@@ -1428,24 +1356,6 @@
                             </div>
                         </div>
                         @endif
-                    </div>
-                    <div class="col-xl-7">
-                        <div class="card dash-section-card">
-                            <div class="card-header">
-                                <h5 class="dash-section-title"><i class="ti ti-calendar" style="background:linear-gradient(135deg,#10b981,#14b8a6);"></i>{{ __('Calendar') }}</h5>
-                                <input type="hidden" id="path_admin" value="{{ url('/') }}">
-                                @if (isset($setting['is_enabled']) && $setting['is_enabled'] == 'on')
-                                    <select class="form-control form-control-sm" name="calender_type" id="calender_type"
-                                        style="width: 160px;" onchange="get_data()">
-                                        <option value="google_calender">{{ __('Google Calendar') }}</option>
-                                        <option value="local_calender" selected="true">{{ __('Local Calendar') }}</option>
-                                    </select>
-                                @endif
-                            </div>
-                            <div class="card-body card-635 dash-cal-body">
-                                <div id='calendar' class='calendar'></div>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -1693,13 +1603,13 @@
                             selectable: true,
                             selectMirror: true,
                             editable: true,
-                            dayMaxEvents: 3,
+                            dayMaxEvents: 5,
                             moreLinkClick: 'popover',
                             handleWindowResize: true,
                             events: data,
                             eventDisplay: 'block',
                             height: 'auto',
-                            contentHeight: 'auto',
+                            contentHeight: 560,
                             // timeFormat: 'H(:mm)',
                         });
                         calendar.render();
@@ -1957,12 +1867,13 @@
                             selectable: true,
                             selectMirror: true,
                             editable: true,
-                            dayMaxEvents: 4,
+                            dayMaxEvents: 5,
                             moreLinkClick: 'popover',
                             handleWindowResize: true,
                             events: data,
                             eventDisplay: 'block',
-                            // height: 'auto',
+                            height: 'auto',
+                            contentHeight: 560,
                             // timeFormat: 'H(:mm)',
 
                         });

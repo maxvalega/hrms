@@ -393,8 +393,15 @@
                             .attr('data-carry-forward', carryForward)
                             .attr('data-encashable', encashable);
 
-                        if (available <= 0) {
+                        if (available <= 0 && !value.allows_deficit) {
                             option.prop('disabled', true);
+                        }
+                        // Spectal sick: may show negative available; disable only when cycle cap exhausted
+                        if (value.allows_deficit) {
+                            var cycleCap = parseFloat(value.cycle_cap || annual || 0);
+                            if ((used + pending) >= cycleCap) {
+                                option.prop('disabled', true);
+                            }
                         }
 
                         $('#leave_type_id').append(option);

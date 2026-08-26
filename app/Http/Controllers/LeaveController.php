@@ -516,12 +516,24 @@ class LeaveController extends Controller
             }
 
             $allowance = $this->getLeaveAllowanceDetails($leave_type, $employee, $date);
-            $available = max(0, round(((float) ($allowance['display_total'] ?? $allowance['allowed'] ?? 0)) - $leaves_used - $leaves_pending, 2));
+            $entitlement = (float) ($allowance['display_total'] ?? $allowance['allowed'] ?? 0);
+            $rawAvailable = round($entitlement - $leaves_used - $leaves_pending, 2);
+            $available = max(0, $rawAvailable);
 
             // Comp-off / as-earned: use compensatory claim flow rather than normal balance quota
             $isAsEarned = !empty($leave_type->is_as_earned) || ($leave_type->credit_frequency === 'earned');
             $isMonthlyCap = ($leave_type->credit_frequency === 'monthly_cap');
-            if (!$isAsEarned && $total_leave_days > $available) {
+            $isSpectalSick = $this->isSpectalPortal() && $policyCode === 'sick';
+
+            if ($isSpectalSick) {
+                // May draw ahead of monthly accrual (show negative available), but not beyond cycle cap
+                $cycleCap = (float) ($allowance['total_annual'] ?? $entitlement);
+                if (($leaves_used + $leaves_pending + $total_leave_days) > ($cycleCap + 0.001)) {
+                    return redirect()->back()->with('error', __('Sick leave cannot exceed the cycle entitlement (:cap days).', [
+                        'cap' => $cycleCap,
+                    ]));
+                }
+            } elseif (!$isAsEarned && $total_leave_days > $available) {
                 return redirect()->back()->with('error', __('You cannot apply leave more than your available balance.'));
             }
             // WFH monthly_cap uses current-month available above.
@@ -817,8 +829,19 @@ class LeaveController extends Controller
 
                 $allowance = $this->getLeaveAllowanceDetails($leave_type, $employee, $date);
 
-                $available = max(0, round(((float) ($allowance['display_total'] ?? $allowance['allowed'] ?? 0)) - $leaves_used - $leaves_pending, 2));
-                if ($total_leave_days > $available) {
+                $entitlement = (float) ($allowance['display_total'] ?? $allowance['allowed'] ?? 0);
+                $rawAvailable = round($entitlement - $leaves_used - $leaves_pending, 2);
+                $available = max(0, $rawAvailable);
+                $isSpectalSick = $this->isSpectalPortal() && $policyCode === 'sick';
+
+                if ($isSpectalSick) {
+                    $cycleCap = (float) ($allowance['total_annual'] ?? $entitlement);
+                    if (($leaves_used + $leaves_pending + $total_leave_days) > ($cycleCap + 0.001)) {
+                        return redirect()->back()->with('error', __('Sick leave cannot exceed the cycle entitlement (:cap days).', [
+                            'cap' => $cycleCap,
+                        ]));
+                    }
+                } elseif ($total_leave_days > $available) {
                     return redirect()->back()->with('error', __('You cannot apply leave more than your available balance.'));
                 }
 
@@ -1377,6 +1400,8 @@ class LeaveController extends Controller
                 'encashable_leave' => $summary['encashable_leave'],
                 'note' => $summary['note'] ?? null,
                 'approval_requirement' => $leaveType->approval_requirement ?? 'na',
+                'allows_deficit' => !empty($summary['allows_deficit']),
+                'cycle_cap' => $summary['cycle_cap'] ?? $summary['total'],
             ];
         }
 
@@ -1695,9 +1720,10 @@ class LeaveController extends Controller
                 ]);
             }
 
-            // Spectal Sick Leave: monthly grant (7/year ≈ 0.58/month), not period lump sum
+            // Spectal Sick Leave: monthly grant (7/year ≈ 0.58/month), not period lump sum.
+            // Deficit is allowed — next month's credit nets against negative available.
             if ($isSpectal && $policyCode === 'sick') {
-                $note = __('Monthly grant :accrued (:months × :rate). Yearly entitlement 7 days.', [
+                $note = __('Monthly grant :accrued (:months × :rate). Deficit carries into next month’s credit.', [
                     'accrued' => $accruedToDate,
                     'months' => $creditedMonths,
                     'rate' => $monthlyAccrual,
@@ -1788,7 +1814,12 @@ class LeaveController extends Controller
         $total = (float) ($allowance['display_total'] ?? $allowance['allowed'] ?? 0);
         $used = (float) ($usage['used'] ?? 0);
         $pending = (float) ($usage['pending'] ?? 0);
-        $available = max(0, round($total - $used - $pending, 2));
+        $rawAvailable = round($total - $used - $pending, 2);
+
+        // Spectal Sick: allow negative available (deficit). Next month's monthly
+        // credit nets against it (e.g. 0.58 − 1 = −0.42 → next month 1.16 − 1 = 0.16).
+        $allowNegative = $this->isSpectalPortal() && $policyCode === 'sick';
+        $available = $allowNegative ? $rawAvailable : max(0, $rawAvailable);
 
         return [
             'total' => max(0, round($total, 2)),
@@ -1798,10 +1829,12 @@ class LeaveController extends Controller
             'available' => $available,
             'credit_mode' => $allowance['credit_mode'] ?? 'lump_sum',
             'carry_forward' => $allowance['carry_forward'] ?? 0,
-            'encashable_leave' => $this->calculateEncashableLeave($available, $leaveType),
+            'encashable_leave' => $this->calculateEncashableLeave(max(0, $available), $leaveType),
             'opening_balance' => $allowance['opening_balance'] ?? 0,
             'accrued_to_date' => $allowance['accrued_to_date'] ?? 0,
             'note' => $allowance['note'] ?? null,
+            'allows_deficit' => $allowNegative,
+            'cycle_cap' => (float) ($allowance['total_annual'] ?? $total),
         ];
     }
 

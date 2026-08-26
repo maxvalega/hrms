@@ -223,7 +223,8 @@
                                             </div>
                                             <div class="col-4">
                                                 <small class="text-muted d-block stat-label">{{ __('Available') }}</small>
-                                                <h6 class="text-success mb-0">{{ $balance['available'] }}</h6>
+                                                @php $avail = (float) ($balance['available'] ?? 0); @endphp
+                                                <h6 class="mb-0 {{ $avail < 0 ? 'text-danger' : 'text-success' }}">{{ $balance['available'] }}</h6>
                                             </div>
                                         </div>
                                         @if (empty($isSpectal) && ($isVacationLeave || $policyCode === 'pl'))

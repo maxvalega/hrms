@@ -718,6 +718,93 @@
             </div>
         @endif
 
+        {{-- Pending leave approvals: company/HR + reporting managers on main dashboard --}}
+        @if (!empty($pendingLeaveApprovals) && $pendingLeaveApprovals->count() > 0)
+            <div class="col-12 mb-3">
+                <div class="card pending-leave-card">
+                    <div class="card-header">
+                        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 w-100">
+                            <div>
+                                <h5 class="dash-section-title mb-1">
+                                    <i class="ti ti-alarm" style="background:linear-gradient(135deg,#ef4444,#f59e0b);"></i>
+                                    {{ __('Pending Leave Approvals') }}
+                                </h5>
+                                <small class="text-muted">
+                                    <span class="leave-pulse"></span>
+                                    <strong class="text-danger">{{ $pendingLeaveApprovals->count() }}</strong> {{ __('awaiting your action') }}
+                                </small>
+                            </div>
+                            <a href="{{ route('leave.index') }}" class="btn btn-sm btn-danger">
+                                {{ __('View All') }} <i class="ti ti-arrow-right ms-1"></i>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="card-body p-0" style="max-height: 400px; overflow-y: auto;">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead style="background:#fafafa;">
+                                    <tr style="font-size:.72rem; text-transform:uppercase; letter-spacing:.4px; color:#64748b;">
+                                        <th class="ps-3 py-3">{{ __('Employee') }}</th>
+                                        <th>{{ __('Leave Type') }}</th>
+                                        <th>{{ __('Dates') }}</th>
+                                        <th class="text-center">{{ __('Days') }}</th>
+                                        <th class="pe-3 text-end">{{ __('Action') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($pendingLeaveApprovals as $leave)
+                                        @php
+                                            $empName = !empty($leave->employees) ? $leave->employees->name : 'N/A';
+                                            $initials = collect(preg_split('/\s+/', trim($empName)))
+                                                ->filter()->take(2)->map(fn($p) => mb_substr($p, 0, 1))->implode('');
+                                            $isOwnLeave = $heroEmpRow && (int) $heroEmpRow->id === (int) $leave->employee_id;
+                                        @endphp
+                                        <tr>
+                                            <td class="ps-3 py-3">
+                                                <div class="d-flex align-items-center gap-2">
+                                                    <span style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;">
+                                                        {{ strtoupper($initials ?: 'NA') }}
+                                                    </span>
+                                                    <strong>{{ $empName }}</strong>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="badge" style="background:#ede9fe;color:#5b21b6;font-weight:600;">
+                                                    {{ !empty($leave->leaveType) ? $leave->leaveType->title : 'N/A' }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <small class="text-muted">
+                                                    <i class="ti ti-calendar me-1"></i>{{ \Auth::user()->dateFormat($leave->start_date) }}
+                                                    <span class="mx-1">→</span>
+                                                    {{ \Auth::user()->dateFormat($leave->end_date) }}
+                                                </small>
+                                            </td>
+                                            <td class="text-center">
+                                                <span class="badge" style="background:#fff7ed;color:#c2410c;font-weight:700;font-size:.78rem;">
+                                                    {{ $leave->total_leave_days }}
+                                                </span>
+                                            </td>
+                                            <td class="pe-3 text-end">
+                                                <a href="{{ route('leave.action', $leave->id) }}" class="btn btn-sm btn-light border me-1" data-bs-toggle="tooltip" title="{{ __('View') }}">
+                                                    <i class="ti ti-eye"></i>
+                                                </a>
+                                                @if(!$isOwnLeave)
+                                                    <a href="{{ route('leave.action', $leave->id) }}" class="btn btn-sm btn-success" data-bs-toggle="tooltip" title="{{ __('Approve') }}">
+                                                        <i class="ti ti-check"></i>
+                                                    </a>
+                                                @endif
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         {{-- Mark Attendance card (hidden on Spectal dashboard) --}}
         @if(!$isSpectalDashboard && isset($officeTime) && (!empty($showAttendanceCard) || \Auth::user()->type == 'employee'))
             <div class="col-12 mb-3">
@@ -1107,7 +1194,8 @@
                     </div>
                     @endif
 
-                    {{-- Attrition Analysis (Full-time only, last 12 months) --}}
+                    {{-- Attrition Analysis (Full-time only, last 12 months) — hidden on Spectal --}}
+                    @if(!$isSpectalDashboard)
                     <div class="col-xl-3 col-md-6">
                         @php
                             $rate = (float) ($attritionRate ?? 0);
@@ -1142,10 +1230,11 @@
                             </div>
                         </div>
                     </div>
+                    @endif
                 </div>
             </div>
 
-            @if (Auth::user()->type == 'company' || Auth::user()->type == 'hr')
+            @if (!$isSpectalDashboard && (Auth::user()->type == 'company' || Auth::user()->type == 'hr'))
                 <div class="col-12">
                     <div class="card dash-section-card">
                         <div class="card-header">
@@ -1222,91 +1311,6 @@
                 </div>
             @endif
 
-            @if (Auth::user()->type == 'company' || Auth::user()->type == 'hr')
-                @if (!empty($pendingLeaveApprovals) && $pendingLeaveApprovals->count() > 0)
-                    <div class="col-12">
-                        <div class="card pending-leave-card">
-                            <div class="card-header">
-                                <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 w-100">
-                                    <div>
-                                        <h5 class="dash-section-title mb-1">
-                                            <i class="ti ti-alarm" style="background:linear-gradient(135deg,#ef4444,#f59e0b);"></i>
-                                            {{ __('Pending Leave Approvals') }}
-                                        </h5>
-                                        <small class="text-muted">
-                                            <span class="leave-pulse"></span>
-                                            <strong class="text-danger">{{ $pendingLeaveApprovals->count() }}</strong> {{ __('awaiting your action') }}
-                                        </small>
-                                    </div>
-                                    <a href="{{ route('leave.index') }}" class="btn btn-sm btn-danger">
-                                        {{ __('View All') }} <i class="ti ti-arrow-right ms-1"></i>
-                                    </a>
-                                </div>
-                            </div>
-                            <div class="card-body p-0" style="max-height: 400px; overflow-y: auto;">
-                                <div class="table-responsive">
-                                    <table class="table table-hover align-middle mb-0">
-                                        <thead style="background:#fafafa;">
-                                            <tr style="font-size:.72rem; text-transform:uppercase; letter-spacing:.4px; color:#64748b;">
-                                                <th class="ps-3 py-3">{{ __('Employee') }}</th>
-                                                <th>{{ __('Leave Type') }}</th>
-                                                <th>{{ __('Dates') }}</th>
-                                                <th class="text-center">{{ __('Days') }}</th>
-                                                <th class="pe-3 text-end">{{ __('Action') }}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            @foreach ($pendingLeaveApprovals as $leave)
-                                                @php
-                                                    $empName = !empty($leave->employees) ? $leave->employees->name : 'N/A';
-                                                    $initials = collect(preg_split('/\s+/', trim($empName)))
-                                                        ->filter()->take(2)->map(fn($p) => mb_substr($p, 0, 1))->implode('');
-                                                @endphp
-                                                <tr>
-                                                    <td class="ps-3 py-3">
-                                                        <div class="d-flex align-items-center gap-2">
-                                                            <span style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;">
-                                                                {{ strtoupper($initials ?: 'NA') }}
-                                                            </span>
-                                                            <strong>{{ $empName }}</strong>
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <span class="badge" style="background:#ede9fe;color:#5b21b6;font-weight:600;">
-                                                            {{ !empty($leave->leaveType) ? $leave->leaveType->title : 'N/A' }}
-                                                        </span>
-                                                    </td>
-                                                    <td>
-                                                        <small class="text-muted">
-                                                            <i class="ti ti-calendar me-1"></i>{{ \Auth::user()->dateFormat($leave->start_date) }}
-                                                            <span class="mx-1">→</span>
-                                                            {{ \Auth::user()->dateFormat($leave->end_date) }}
-                                                        </small>
-                                                    </td>
-                                                    <td class="text-center">
-                                                        <span class="badge" style="background:#fff7ed;color:#c2410c;font-weight:700;font-size:.78rem;">
-                                                            {{ $leave->total_leave_days }}
-                                                        </span>
-                                                    </td>
-                                                    <td class="pe-3 text-end">
-                                                        <a href="{{ route('leave.action', $leave->id) }}" class="btn btn-sm btn-light border me-1" data-bs-toggle="tooltip" title="{{ __('View') }}">
-                                                            <i class="ti ti-eye"></i>
-                                                        </a>
-                                                        <a href="{{ route('leave.action', $leave->id) }}" class="btn btn-sm btn-success" data-bs-toggle="tooltip" title="{{ __('Approve') }}">
-                                                            <i class="ti ti-check"></i>
-                                                        </a>
-                                                    </td>
-                                                </tr>
-                                            @endforeach
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                @endif
-            @endif
-
             <div class="col-xxl-12">
                 <div class="row g-3">
                     <div class="col-xl-5">
@@ -1332,6 +1336,7 @@
                             </div>
                         @endif
 
+                        @if(!$isSpectalDashboard)
                         <div class="card dash-section-card mb-3">
                             <div class="card-header">
                                 <h5 class="dash-section-title"><i class="ti ti-calendar-event" style="background:linear-gradient(135deg,#0ea5e9,#06b6d4);"></i>{{ __('Meeting Schedule') }}</h5>
@@ -1374,6 +1379,7 @@
                                 @endif
                             </div>
                         </div>
+                        @endif
 
                         @if(!$isSpectalDashboard)
                         <div class="card dash-section-card">

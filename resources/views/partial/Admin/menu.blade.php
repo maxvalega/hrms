@@ -7,6 +7,7 @@
     $currantLang = $users->currentLanguage();
     $emailTemplate = App\Models\EmailTemplate::getemailTemplate();
     $lang = Auth::user()->lang;
+    $hideModulesForSpectal = \App\Support\TenantHost::subdomainFromHost() === 'spectal';
 @endphp
 
 @if (isset($setting['cust_theme_bg']) && $setting['cust_theme_bg'] == 'on')
@@ -56,12 +57,14 @@
                         <li class="dash-item {{ request()->routeIs('report.leave') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('report.leave') }}">{{ __('Leave Report') }}</a>
                         </li>
+                        @if(!$hideModulesForSpectal)
                         <li class="dash-item {{ request()->routeIs('report.payroll') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('report.payroll') }}">{{ __('Payroll Report') }}</a>
                         </li>
                         <li class="dash-item {{ request()->routeIs('report.reimbursement') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('report.reimbursement') }}">{{ __('Reimbursement Report') }}</a>
                         </li>
+                        @endif
                         {{-- Hidden from menu (code/routes kept): Income vs Expense
                         <li class="dash-item {{ request()->routeIs('report.income-expense') ? 'active' : '' }}">
                             <a class="dash-link" href="{{ route('report.income-expense') }}">{{ __('Income vs Expense') }}</a>
@@ -161,7 +164,7 @@
             <!-- employee-->
 
             <!-- payroll-->
-            @if (Gate::check('Manage Set Salary') || (Gate::check('Manage Pay Slip') && \Auth::user()->type != 'employee'))
+            @if (!$hideModulesForSpectal && (Gate::check('Manage Set Salary') || (Gate::check('Manage Pay Slip') && \Auth::user()->type != 'employee')))
                 <li
                     class="dash-item dash-hasmenu  {{ Request::segment(1) == 'setsalary' ? 'dash-trigger active' : '' }}">
                     <a href="#!" class="dash-link">
@@ -219,7 +222,7 @@
             @endif
             <!-- payroll-->
 
-            @if (\Auth::user()->type == 'employee')
+            @if (!$hideModulesForSpectal && \Auth::user()->type == 'employee')
                 <li
                     class="dash-item dash-hasmenu {{ Request::segment(1) == 'setsalary' ? 'dash-trigger active' : '' }}">
                     <a href="#!" class="dash-link"><span class="dash-micon"><i
@@ -337,7 +340,6 @@
             </li>
 
             {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
-            @php $hideModulesForSpectal = \App\Support\TenantHost::subdomainFromHost() === 'spectal'; @endphp
 
             <!-- Screen Monitor (top-level) -->
             @if(!$hideModulesForSpectal && \Auth::user()->type != 'super admin' && \Auth::user()->type != 'employee')
@@ -432,6 +434,7 @@
             <!-- /Growth Review -->
 
             <!-- Surveys -->
+            @if(!$hideModulesForSpectal)
             @php
                 $canManageSurveys = Auth::user() && Auth::user()->can('manage-surveys');
                 $canSubmitSurveys = Auth::user() && Auth::user()->can('submit-surveys');
@@ -490,6 +493,7 @@
                     @endif
                 </ul>
             </li>
+            @endif
             @endif
             <!-- /Surveys -->
 
@@ -725,12 +729,13 @@
             @endif
 
             <!-- recruitment-->
-            @if (Gate::check('Manage Job') ||
+            @if (!$hideModulesForSpectal && (
+                    Gate::check('Manage Job') ||
                     Gate::check('Manage Job Application') ||
                     Gate::check('Manage Job OnBoard') ||
                     Gate::check('Manage Custom Question') ||
                     Gate::check('Manage Interview Schedule') ||
-                    Gate::check('Manage Career'))
+                    Gate::check('Manage Career')))
                 <li
                     class="dash-item dash-hasmenu  {{ Request::segment(1) == 'job' || Request::segment(1) == 'job-application' ? 'dash-trigger active' : '' }} ">
                     <a href="#!" class="dash-link"><span class="dash-micon"><i
@@ -826,6 +831,7 @@
             @endif
 
             <!-- Event-->
+            @if(!$hideModulesForSpectal)
             @can('Manage Event')
                 <li class="dash-item">
                     <a href="{{ route('event.index') }}" class="dash-link"><span class="dash-micon"><i
@@ -834,9 +840,11 @@
                     </a>
                 </li>
             @endcan
+            @endif
 
 
             <!--meeting-->
+            @if(!$hideModulesForSpectal)
             @can('Manage Meeting')
                 <li
                     class="dash-item {{ Request::segment(1) == 'meeting' || Request::segment(2) == 'meeting' ? 'active' : '' }}">
@@ -857,15 +865,16 @@
                     </li>
                 @endif
             @endcan
+            @endif
 
             <!-- assets-->
-            @if (Gate::check('Manage Assets'))
+            @if (!$hideModulesForSpectal && Gate::check('Manage Assets'))
                 <li class="dash-item">
                     <a href="{{ route('account-assets.index') }}" class="dash-link"><span class="dash-micon"><i
                                 class="ti ti-medical-cross"></i></span><span
                             class="dash-mtext">{{ __('Assets') }}</span></a>
                 </li>
-            @endcan
+            @endif
 
 
             <!-- document-->
@@ -887,7 +896,7 @@
                 </li>
             @endif
             <!--chats-->
-            @if (\Auth::user()->type != 'super admin')
+            @if (!$hideModulesForSpectal && \Auth::user()->type != 'super admin')
                 <li class="dash-item {{ Request::segment(1) == 'chats' ? 'active' : '' }}">
                     <a href="{{ url('chats') }}" class="dash-link"><span class="dash-micon"><i
                                 class="ti ti-messages"></i></span><span

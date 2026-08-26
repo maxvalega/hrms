@@ -209,8 +209,25 @@ class HomeController extends Controller
                         ->get();
                 }
 
+                // Reporting managers: pending leave from direct reports on main dashboard
+                $pendingLeaveApprovals = collect();
+                if (!empty($emp) && Schema::hasColumn('employees', 'reporting_manager_id')) {
+                    $subordinateIds = Employee::where('reporting_manager_id', $emp->id)
+                        ->where('created_by', Auth::user()->creatorId())
+                        ->pluck('id')
+                        ->all();
+                    if (!empty($subordinateIds)) {
+                        $pendingLeaveApprovals = LocalLeave::with(['employees', 'leaveType'])
+                            ->whereIn('employee_id', $subordinateIds)
+                            ->where('status', 'Pending')
+                            ->orderBy('created_at', 'desc')
+                            ->take(10)
+                            ->get();
+                    }
+                }
+
                 $showAttendanceCard = true; // employee type always sees clock in/out
-                return view('dashboard.dashboard', compact('arrEvents', 'announcements', 'employees', 'meetings', 'employeeAttendance', 'officeTime', 'todaySessions', 'pendingSubstituteLeaves', 'currentLoginDetail', 'lastLogoutDetail', 'showAttendanceCard'));
+                return view('dashboard.dashboard', compact('arrEvents', 'announcements', 'employees', 'meetings', 'employeeAttendance', 'officeTime', 'todaySessions', 'pendingSubstituteLeaves', 'pendingLeaveApprovals', 'currentLoginDetail', 'lastLogoutDetail', 'showAttendanceCard'));
             } else if ($user->type == 'super admin') {
                 $user                       = \Auth::user();
                 $user['total_user']         = $user->countCompany();
@@ -321,13 +338,19 @@ class HomeController extends Controller
 
                 $meetings = Meeting::where('created_by', '=', \Auth::user()->creatorId())->limit(8)->get();
 
-                // Get pending leave approvals
+                // Get pending leave approvals (company/HR see all; exclude own leave if they also have an employee profile)
                 $pendingLeaveApprovals = LocalLeave::with(['employees', 'leaveType'])
                     ->where('created_by', '=', \Auth::user()->creatorId())
                     ->where('status', 'Pending')
                     ->orderBy('created_at', 'desc')
                     ->take(10)
                     ->get();
+
+                if (!empty($empForAttendance)) {
+                    $pendingLeaveApprovals = $pendingLeaveApprovals->filter(function ($leave) use ($empForAttendance) {
+                        return (int) $leave->employee_id !== (int) $empForAttendance->id;
+                    })->values();
+                }
 
                 $users = User::find(\Auth::user()->creatorId());
                 if (! $users) {

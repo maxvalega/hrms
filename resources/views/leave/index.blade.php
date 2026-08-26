@@ -128,7 +128,8 @@
             <div class="col-12 mb-3">
                 <div class="card border-0 shadow-sm">
                     <div class="card-body py-3">
-                        <form method="get" action="{{ route('leave.index') }}" class="row g-2 align-items-end">
+                        <form method="post" action="{{ route('leave.balance.preview') }}" class="row g-2 align-items-end">
+                            @csrf
                             <div class="col-12 col-md-8">
                                 <label class="form-label fw-semibold mb-1">{{ __('Leave balance dashboard') }}</label>
                                 <select name="balance_employee_id" class="form-control form-select" style="min-height:44px;font-size:16px;" onchange="this.form.submit()">

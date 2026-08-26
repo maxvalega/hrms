@@ -15,13 +15,19 @@ class CompanyPolicyController extends Controller
 
     public function index()
     {
-        if (\Auth::user()->can('Manage Company Policy')) {
-            $companyPolicy = CompanyPolicy::where('created_by', '=', \Auth::user()->creatorId())->with('branches')->get();
+        $user = \Auth::user();
+        $canManage = $user->can('Manage Company Policy');
+        $canView = $canManage
+            || $user->can('view-policies')
+            || in_array(strtolower((string) $user->type), ['employee', 'company', 'hr'], true);
 
-            return view('companyPolicy.index', compact('companyPolicy'));
-        } else {
-            return redirect()->back()->with('error', __('Permission denied.'));
+        if ($canView) {
+            $companyPolicy = CompanyPolicy::where('created_by', '=', $user->creatorId())->with('branches')->get();
+
+            return view('companyPolicy.index', compact('companyPolicy', 'canManage'));
         }
+
+        return redirect()->back()->with('error', __('Permission denied.'));
     }
 
 

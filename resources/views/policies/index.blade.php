@@ -78,7 +78,7 @@
                 <h5 class="mb-1"><i class="ti ti-files me-2"></i>{{ __('Company Policies') }}</h5>
                 <small class="text-muted">{{ __('View and acknowledge policies') }}</small>
             </div>
-            @if(Auth::user() && Auth::user()->can('manage-policies'))
+            @if(!empty($canManage))
                 <a href="{{ route('policies.create') }}" class="btn btn-primary btn-sm">
                     <i class="ti ti-upload me-1"></i>{{ __('Upload Policy') }}
                 </a>
@@ -118,23 +118,30 @@
         </div>
 
         <div class="card-body p-0">
-            @if($policies->isEmpty())
+            @php
+                $hasNew = !$policies->isEmpty();
+                $hasLegacy = !empty($legacyPolicies) && $legacyPolicies->isNotEmpty();
+                $showArchivedOnly = ($filters['status'] ?? 'active') === 'archived';
+            @endphp
+
+            @if(!$hasNew && (!$hasLegacy || $showArchivedOnly))
                 <div class="pol-empty">
                     <i class="ti ti-file-off"></i>
                     @if(($totals['all'] ?? 0) == 0)
                         <p class="mb-2">{{ __('No company policies have been uploaded yet.') }}</p>
-                        <p class="mb-3 small text-muted">{{ __('Leave and HR policy documents appear here only after HR uploads them under Policies (category Leave). Updated leave rules in the Leave module are separate from this document library.') }}</p>
+                        <p class="mb-3 small text-muted">{{ __('HR must upload documents here (Upload Policy) or under Company Policy. Leave rules in the Leave module are separate from this document library.') }}</p>
                     @else
                         <p class="mb-2">{{ __('No policies found.') }}</p>
                         <p class="mb-3 small text-muted">{{ __('Try clearing filters or switching Status to All.') }}</p>
                     @endif
-                    @if(Auth::user() && Auth::user()->can('manage-policies'))
+                    @if(!empty($canManage))
                         <a href="{{ route('policies.create') }}" class="btn btn-primary btn-sm">
                             <i class="ti ti-upload me-1"></i>{{ __('Upload your first policy') }}
                         </a>
                     @endif
                 </div>
             @else
+                @if($hasNew)
                 <div class="table-responsive">
                     <table class="table pol-table align-middle mb-0">
                         <thead>
@@ -184,7 +191,7 @@
                                         <a href="{{ route('policies.file', $p->id) }}" target="_blank" class="btn btn-light border" title="{{ __('Open file') }}">
                                             <i class="ti ti-download"></i>
                                         </a>
-                                        @if(Auth::user() && Auth::user()->can('manage-policies'))
+                                        @if(!empty($canManage))
                                             <a href="{{ route('policies.edit', $p->id) }}" class="btn btn-light border" title="{{ __('Edit') }}">
                                                 <i class="ti ti-pencil"></i>
                                             </a>
@@ -202,9 +209,51 @@
                 </div>
 
                 <div class="d-flex justify-content-between align-items-center px-3 py-2">
-                    <small class="text-muted">{{ __('Showing :from to :to of :total', ['from' => $policies->firstItem(), 'to' => $policies->lastItem(), 'total' => $policies->total()]) }}</small>
+                    <small class="text-muted">{{ __('Showing :from to :to of :total', ['from' => $policies->firstItem() ?? 0, 'to' => $policies->lastItem() ?? 0, 'total' => $policies->total()]) }}</small>
                     {{ $policies->links() }}
                 </div>
+                @endif
+
+                @if($hasLegacy && !$showArchivedOnly && empty($filters['category']))
+                    <div class="px-3 pt-3 pb-2 border-top">
+                        <h6 class="mb-1">{{ __('Company Policy documents') }}</h6>
+                        <small class="text-muted">{{ __('Uploaded under the older Company Policy menu — visible to all employees.') }}</small>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table pol-table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th class="ps-3">{{ __('Title') }}</th>
+                                    <th>{{ __('Branch') }}</th>
+                                    <th>{{ __('Description') }}</th>
+                                    <th class="pe-3 text-end">{{ __('File') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($legacyPolicies as $lp)
+                                    @php $policyPath = \App\Models\Utility::get_file('uploads/companyPolicy'); @endphp
+                                    <tr>
+                                        <td class="ps-3"><strong>{{ $lp->title }}</strong></td>
+                                        <td>{{ !empty($lp->branches) ? $lp->branches->name : '—' }}</td>
+                                        <td><small class="text-muted">{{ \Illuminate\Support\Str::limit($lp->description ?? '', 100) }}</small></td>
+                                        <td class="pe-3 text-end">
+                                            @if(!empty($lp->attachment))
+                                                <a href="{{ $policyPath . '/' . $lp->attachment }}" target="_blank" class="btn btn-sm btn-light border" title="{{ __('Open') }}">
+                                                    <i class="ti ti-eye"></i>
+                                                </a>
+                                                <a href="{{ $policyPath . '/' . $lp->attachment }}" download class="btn btn-sm btn-light border" title="{{ __('Download') }}">
+                                                    <i class="ti ti-download"></i>
+                                                </a>
+                                            @else
+                                                —
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
             @endif
         </div>
     </div>

@@ -494,7 +494,7 @@
             <!-- /Surveys -->
 
             <!-- Policies -->
-            @if(Auth::user() && Auth::user()->can('view-policies'))
+            @if(Auth::user() && (Auth::user()->can('view-policies') || Auth::user()->can('manage-policies') || in_array(strtolower((string) Auth::user()->type), ['employee', 'company', 'hr'], true)))
             <li class="dash-item {{ request()->is('policies*') ? 'active' : '' }}">
                 <a class="dash-link" href="{{ route('policies.index') }}">
                     <span class="dash-micon"><i class="ti ti-files"></i></span>
@@ -879,13 +879,13 @@
 
 
 
-            @if (Gate::check('Manage Company Policy'))
-                <li class="dash-item">
+            @if (Gate::check('Manage Company Policy') || in_array(strtolower((string) Auth::user()->type), ['employee', 'company', 'hr'], true) || Auth::user()->can('view-policies'))
+                <li class="dash-item {{ request()->is('company-policy*') ? 'active' : '' }}">
                     <a href="{{ route('company-policy.index') }}" class="dash-link"><span
                             class="dash-micon"><i class="ti ti-pray"></i></span><span
                             class="dash-mtext">{{ __('Company Policy') }}</span></a>
                 </li>
-            @endcan
+            @endif
             <!--chats-->
             @if (\Auth::user()->type != 'super admin')
                 <li class="dash-item {{ Request::segment(1) == 'chats' ? 'active' : '' }}">

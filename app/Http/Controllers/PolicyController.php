@@ -49,18 +49,48 @@ class PolicyController extends Controller
             ->pluck('policy_id')
             ->all();
 
+        // Legacy "Company Policy" module (separate table) — still used by many admins.
+        // Surface those docs here so employees see everything in one place.
+        $legacyPolicies = collect();
+        if (\Schema::hasTable('company_policies')) {
+            $legacyQuery = \App\Models\CompanyPolicy::where('created_by', $creatorId)
+                ->with('branches')
+                ->orderByDesc('id');
+            if ($q !== '') {
+                $legacyQuery->where(function ($w) use ($q) {
+                    $w->where('title', 'like', '%' . $q . '%')
+                        ->orWhere('description', 'like', '%' . $q . '%');
+                });
+            }
+            $legacyPolicies = $legacyQuery->get();
+        }
+
+        $newCount = Policy::where('created_by', $creatorId)->count();
+        $legacyCount = $legacyPolicies->count();
+        // When filters hide new policies, still count legacy for empty-state messaging
+        if ($q === '' && empty($category) && ($status === 'active' || $status === 'all')) {
+            // already loaded full legacy set above for active/all+no category
+        } elseif (\Schema::hasTable('company_policies')) {
+            $legacyCount = \App\Models\CompanyPolicy::where('created_by', $creatorId)->count();
+        }
+
         $totals = [
-            'all'      => Policy::where('created_by', $creatorId)->count(),
-            'active'   => Policy::where('created_by', $creatorId)->where('status', 'active')->count(),
+            'all'      => $newCount + $legacyCount,
+            'active'   => Policy::where('created_by', $creatorId)->where('status', 'active')->count() + $legacyCount,
             'archived' => Policy::where('created_by', $creatorId)->where('status', 'archived')->count(),
+            'legacy'   => $legacyCount,
         ];
 
+        $canManage = $this->userCanManagePolicies();
+
         return view('policies.index', [
-            'policies'   => $policies,
-            'filters'    => compact('q', 'category', 'status'),
-            'categories' => Policy::CATEGORIES,
-            'myAckIds'   => $myAckIds,
-            'totals'     => $totals,
+            'policies'        => $policies,
+            'legacyPolicies'  => $legacyPolicies,
+            'filters'         => compact('q', 'category', 'status'),
+            'categories'      => Policy::CATEGORIES,
+            'myAckIds'        => $myAckIds,
+            'totals'          => $totals,
+            'canManage'       => $canManage,
         ]);
     }
 
@@ -289,18 +319,43 @@ class PolicyController extends Controller
         ];
     }
 
+    protected function userCanManagePolicies(): bool
+    {
+        $u = Auth::user();
+        if (!$u || $u->type === 'employee') {
+            return false;
+        }
+
+        if ($u->can('manage-policies')) {
+            return true;
+        }
+
+        return in_array(strtolower((string) $u->type), ['company', 'hr', 'super admin'], true);
+    }
+
     protected function ensureView(): void
     {
         $u = Auth::user();
-        if (!$u || !$u->can('view-policies')) {
+        if (!$u) {
             abort(403, __('You do not have permission to view policies.'));
         }
+
+        if ($u->can('view-policies') || $u->can('manage-policies') || $this->userCanManagePolicies()) {
+            return;
+        }
+
+        // Employees/company users should always see company policy docs even if
+        // the Spatie seeder was never run on this tenant.
+        if (in_array(strtolower((string) $u->type), ['employee', 'company', 'hr'], true)) {
+            return;
+        }
+
+        abort(403, __('You do not have permission to view policies.'));
     }
 
     protected function ensureManage(): void
     {
-        $u = Auth::user();
-        if (!$u || !$u->can('manage-policies')) {
+        if (!$this->userCanManagePolicies()) {
             abort(403, __('You do not have permission to manage policies.'));
         }
     }

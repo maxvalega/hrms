@@ -38,6 +38,13 @@
 @endpush
 
 @section('content')
+    @php
+        $isAdminUser = \Auth::user()->type != 'employee' && (
+            in_array(strtolower((string) \Auth::user()->type), ['company', 'hr'], true)
+            || \Auth::user()->can('Manage Attendance')
+            || \Auth::user()->can('Manage Leave')
+        );
+    @endphp
     <div class="row">
         <div class="col-12 mb-3">
             <div class="alert alert-info mb-0">
@@ -49,6 +56,10 @@
                 <div class="card-body">
                     <div class="ar-mobile-list">
                         @forelse ($rows as $row)
+                            @php
+                                $canReview = $isAdminUser && $row->status == 'Pending';
+                                $canDelete = $isAdminUser || ($row->status == 'Pending' && \Auth::user()->type == 'employee');
+                            @endphp
                             <div class="border rounded p-3 mb-3">
                                 <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
                                     <div class="min-w-0">
@@ -67,7 +78,7 @@
                                 </div>
                                 <div class="small ar-reason mb-3">{{ $row->reason }}</div>
                                 <div class="d-flex flex-wrap gap-2">
-                                    @if (\Auth::user()->type != 'employee' && $row->status == 'Pending')
+                                    @if ($canReview)
                                         <a href="#" class="btn btn-sm btn-success"
                                             data-url="{{ route('attendance.regularisation.action', $row->id) }}"
                                             data-ajax-popup="true"
@@ -75,8 +86,8 @@
                                             <i class="ti ti-check"></i> {{ __('Review') }}
                                         </a>
                                     @endif
-                                    @if ($row->status == 'Pending' && (\Auth::user()->type == 'employee' || \Auth::user()->can('Manage Attendance') || \Auth::user()->can('Manage Leave')))
-                                        {!! Form::open(['method' => 'DELETE', 'route' => ['attendance.regularisation.destroy', $row->id], 'class' => 'd-inline', 'onsubmit' => "return confirm('".__('Delete this pending request?')."');"]) !!}
+                                    @if ($canDelete)
+                                        {!! Form::open(['method' => 'DELETE', 'route' => ['attendance.regularisation.destroy', $row->id], 'class' => 'd-inline', 'onsubmit' => "return confirm('".__('Delete this On Ground request?')."');"]) !!}
                                             <button type="submit" class="btn btn-sm btn-outline-danger">
                                                 <i class="ti ti-trash"></i> {{ __('Delete') }}
                                             </button>
@@ -105,6 +116,10 @@
                             </thead>
                             <tbody>
                                 @forelse ($rows as $row)
+                                    @php
+                                        $canReview = $isAdminUser && $row->status == 'Pending';
+                                        $canDelete = $isAdminUser || ($row->status == 'Pending' && \Auth::user()->type == 'employee');
+                                    @endphp
                                     <tr>
                                         @if (\Auth::user()->type != 'employee')
                                             <td>{{ $row->employee->name ?? '-' }}</td>
@@ -122,14 +137,6 @@
                                             @endif
                                         </td>
                                         <td class="text-nowrap">
-                                            @php
-                                                $canReview = \Auth::user()->type != 'employee' && $row->status == 'Pending';
-                                                $canDelete = $row->status == 'Pending' && (
-                                                    \Auth::user()->type == 'employee'
-                                                    || \Auth::user()->can('Manage Attendance')
-                                                    || \Auth::user()->can('Manage Leave')
-                                                );
-                                            @endphp
                                             @if ($canReview)
                                                 <a href="#" class="btn btn-sm btn-success"
                                                     data-url="{{ route('attendance.regularisation.action', $row->id) }}"
@@ -140,7 +147,7 @@
                                                 </a>
                                             @endif
                                             @if ($canDelete)
-                                                {!! Form::open(['method' => 'DELETE', 'route' => ['attendance.regularisation.destroy', $row->id], 'class' => 'd-inline', 'onsubmit' => "return confirm('".__('Delete this pending request?')."');"]) !!}
+                                                {!! Form::open(['method' => 'DELETE', 'route' => ['attendance.regularisation.destroy', $row->id], 'class' => 'd-inline', 'onsubmit' => "return confirm('".__('Delete this On Ground request?')."');"]) !!}
                                                     <button type="submit" class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" title="{{ __('Delete') }}">
                                                         <i class="ti ti-trash"></i>
                                                     </button>

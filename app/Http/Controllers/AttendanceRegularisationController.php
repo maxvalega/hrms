@@ -156,7 +156,9 @@ class AttendanceRegularisationController extends Controller
     }
 
     /**
-     * Delete a Pending On Ground request (own request for employees; HR can delete any Pending in company).
+     * Delete On Ground request.
+     * Employees: own Pending only.
+     * Admin/HR/company: any status in their company.
      */
     public function destroy($id)
     {
@@ -174,16 +176,22 @@ class AttendanceRegularisationController extends Controller
             return redirect()->back()->with('error', __('Permission denied.'));
         }
 
-        if ($row->status !== 'Pending') {
-            return redirect()->back()->with('error', __('Only pending requests can be deleted.'));
-        }
+        $isAdmin = Auth::user()->type != 'employee'
+            && (
+                in_array(strtolower((string) Auth::user()->type), ['company', 'hr'], true)
+                || Auth::user()->can('Manage Attendance')
+                || Auth::user()->can('Manage Leave')
+            );
 
         if (Auth::user()->type == 'employee') {
             $self = Employee::where('user_id', Auth::user()->id)->first();
             if (!$self || (int) $self->id !== (int) $row->employee_id) {
                 return redirect()->back()->with('error', __('Permission denied.'));
             }
-        } elseif (!Auth::user()->can('Manage Attendance') && !Auth::user()->can('Manage Leave')) {
+            if ($row->status !== 'Pending') {
+                return redirect()->back()->with('error', __('Only pending requests can be deleted.'));
+            }
+        } elseif (!$isAdmin) {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
 

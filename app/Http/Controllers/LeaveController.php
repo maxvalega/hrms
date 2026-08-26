@@ -37,6 +37,45 @@ class LeaveController extends Controller
     }
 
     /**
+     * Who may Approve/Reject a leave (WFH and every other type).
+     * The applicant can never approve or reject their own request.
+     */
+    protected function canDecideLeaveStatus(LocalLeave $leave): bool
+    {
+        $user = \Auth::user();
+        if (!$user || empty($leave)) {
+            return false;
+        }
+
+        if ((int) $leave->created_by !== (int) $user->creatorId()) {
+            return false;
+        }
+
+        $actorEmployee = Employee::where('user_id', $user->id)->first();
+        if ($actorEmployee && (int) $actorEmployee->id === (int) $leave->employee_id) {
+            return false;
+        }
+
+        if (in_array($user->type, ['company', 'hr'], true)) {
+            return true;
+        }
+
+        if ($actorEmployee) {
+            $applicant = Employee::find($leave->employee_id);
+            if ($applicant && (int) ($applicant->reporting_manager_id ?? 0) === (int) $actorEmployee->id) {
+                return true;
+            }
+        }
+
+        // Non-employee staff roles with Manage Leave (not regular employees)
+        if ($user->type !== 'employee' && $user->can('Manage Leave')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * HR/company leave-admin actions (bereavement grant, opening balance, etc.).
      */
     protected function canManageSpectalLeaveAdmin(): bool
@@ -954,7 +993,7 @@ class LeaveController extends Controller
 
         $employee  = Employee::find($leave->employee_id);
         $leavetype = LeaveType::find($leave->leave_type_id);
-        $canTakeAction = \Auth::user()->can('Manage Leave');
+        $canTakeAction = $this->canDecideLeaveStatus($leave);
         $employmentStatus = $this->isSpectalPortal() ? $this->employmentStatusMeta($employee) : null;
 
         return view('leave.action', compact('employee', 'leavetype', 'leave', 'canTakeAction', 'employmentStatus'));
@@ -976,8 +1015,8 @@ class LeaveController extends Controller
             return redirect()->route('leave.index')->with('error', __('Leave request not found.'));
         }
 
-        if (!\Auth::user()->can('Manage Leave') || (int) $leave->created_by !== (int) \Auth::user()->creatorId()) {
-            return redirect()->route('leave.action', $leave->id)->with('error', __('Permission denied.'));
+        if (!$this->canDecideLeaveStatus($leave)) {
+            return redirect()->route('leave.action', $leave->id)->with('error', __('Permission denied. You cannot approve or reject this leave.'));
         }
 
         if ($leave->status !== 'Pending') {
@@ -2775,6 +2814,20 @@ class LeaveController extends Controller
                     $endDate = $leave->end_date;
                     $totalDays = $leave->total_leave_days ?? '-';
                     $reason = Str::limit($leave->leave_reason ?? '', 50);
+                    $canDecide = $this->canDecideLeaveStatus($leave);
+
+                    $actionsHtml = '';
+                    if ($canDecide) {
+                        $actionsHtml .= '<button type="button" class="btn btn-sm btn-success leave-action-btn leave-accept-btn" data-leave-id="' . $leave->id . '" data-action="Approved">
+                            <i class="ti ti-check"></i> ' . __('Accept') . '
+                        </button>
+                        <button type="button" class="btn btn-sm btn-danger leave-action-btn leave-reject-btn" data-leave-id="' . $leave->id . '" data-action="Reject">
+                            <i class="ti ti-x"></i> ' . __('Reject') . '
+                        </button>';
+                    }
+                    $actionsHtml .= '<a href="' . route('leave.action', $leave->id) . '" class="btn btn-sm btn-outline-primary leave-open-btn">
+                        <i class="ti ti-eye"></i> ' . __('Open') . '
+                    </a>';
 
                     $html .= '<div class="px-3 py-3 border-bottom leave-request-item" data-leave-id="' . $leave->id . '">
                         <div class="d-flex justify-content-between align-items-start gap-2">
@@ -2786,15 +2839,7 @@ class LeaveController extends Controller
                             </div>
                         </div>
                         <div class="mt-2 d-flex flex-wrap gap-1 leave-request-actions">
-                            <button type="button" class="btn btn-sm btn-success leave-action-btn leave-accept-btn" data-leave-id="' . $leave->id . '" data-action="Approved">
-                                <i class="ti ti-check"></i> ' . __('Accept') . '
-                            </button>
-                            <button type="button" class="btn btn-sm btn-danger leave-action-btn leave-reject-btn" data-leave-id="' . $leave->id . '" data-action="Reject">
-                                <i class="ti ti-x"></i> ' . __('Reject') . '
-                            </button>
-                            <a href="' . route('leave.action', $leave->id) . '" class="btn btn-sm btn-outline-primary leave-open-btn">
-                                <i class="ti ti-eye"></i> ' . __('Open') . '
-                            </a>
+                            ' . $actionsHtml . '
                         </div>
                     </div>';
                 }
@@ -2846,6 +2891,13 @@ class LeaveController extends Controller
                 ], 404);
             }
 
+            if (!$this->canDecideLeaveStatus($leave)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => __('Permission denied. You cannot approve or reject this leave.'),
+                ], 403);
+            }
+
             if ($leave->status !== 'Pending') {
                 return response()->json([
                     'success' => false,
@@ -2861,18 +2913,44 @@ class LeaveController extends Controller
             $leave->status = $request->status;
 
             if ($leave->status == 'Approved') {
-                $total_leave_days = $this->calculateLeaveDays(
-                    $leave->start_date,
-                    $leave->end_date,
-                    $leave->day_type ?? 'full_day',
-                    (int) ($leave->created_by ?? \Auth::user()->creatorId())
-                );
-                $leave->total_leave_days = $total_leave_days;
+                if (empty($leave->is_compensatory)) {
+                    $total_leave_days = $this->calculateLeaveDays(
+                        $leave->start_date,
+                        $leave->end_date,
+                        $leave->day_type ?? 'full_day',
+                        (int) ($leave->created_by ?? \Auth::user()->creatorId())
+                    );
+                    $leave->total_leave_days = $total_leave_days;
+                }
             } elseif ($leave->status == 'Reject') {
                 $this->removeSubstituteLeaveBlock($leave);
+
+                if (!empty($leave->is_compensatory) && !empty($leave->compensatory_leave_id)) {
+                    $compLeave = \App\Models\CompensatoryLeave::find($leave->compensatory_leave_id);
+                    if ($compLeave) {
+                        if (($compLeave->notes ?? '') === 'spectal_self_claim') {
+                            $compLeave->delete();
+                        } elseif ($compLeave->status === 'claimed') {
+                            $compLeave->status = 'earned';
+                            $compLeave->save();
+                        }
+                    }
+                }
             }
 
             $leave->save();
+
+            // In-app: notify employee of approve/reject
+            $empNotified = Employee::find($leave->employee_id);
+            if ($empNotified && $empNotified->user_id) {
+                \App\Services\InAppNotifier::notifyUser($empNotified->user_id, [
+                    'module' => 'leave',
+                    'action' => strtolower($leave->status),
+                    'title' => __('Leave') . ' ' . __($leave->status),
+                    'message' => ($leave->start_date ?? '') . ' to ' . ($leave->end_date ?? ''),
+                    'link' => route('leave.index'),
+                ]);
+            }
 
             // Send email notification
             $settings = Utility::settings();

@@ -312,6 +312,10 @@
                         </div>
                         <div class="noti-body" id="leave-notification-list">
                             @forelse ($managerPendingLeaves as $leave)
+                                @php
+                                    // Never show Accept/Reject on your own leave (e.g. HR/company user with an employee profile)
+                                    $canDecideThisLeave = !($currentEmployee && (int) $currentEmployee->id === (int) $leave->employee_id);
+                                @endphp
                                 <div class="px-3 py-3 border-bottom leave-request-item" data-leave-id="{{ $leave->id }}">
                                     <div class="d-flex justify-content-between align-items-start gap-2">
                                         <div class="w-100">
@@ -322,12 +326,14 @@
                                         </div>
                                     </div>
                                     <div class="mt-2 d-flex flex-wrap gap-1 leave-request-actions">
-                                        <button type="button" class="btn btn-sm btn-success leave-action-btn leave-accept-btn" data-leave-id="{{ $leave->id }}" data-action="Approved">
-                                            <i class="ti ti-check"></i> {{ __('Accept') }}
-                                        </button>
-                                        <button type="button" class="btn btn-sm btn-danger leave-action-btn leave-reject-btn" data-leave-id="{{ $leave->id }}" data-action="Reject">
-                                            <i class="ti ti-x"></i> {{ __('Reject') }}
-                                        </button>
+                                        @if ($canDecideThisLeave)
+                                            <button type="button" class="btn btn-sm btn-success leave-action-btn leave-accept-btn" data-leave-id="{{ $leave->id }}" data-action="Approved">
+                                                <i class="ti ti-check"></i> {{ __('Accept') }}
+                                            </button>
+                                            <button type="button" class="btn btn-sm btn-danger leave-action-btn leave-reject-btn" data-leave-id="{{ $leave->id }}" data-action="Reject">
+                                                <i class="ti ti-x"></i> {{ __('Reject') }}
+                                            </button>
+                                        @endif
                                         <a href="{{ route('leave.action', $leave->id) }}" class="btn btn-sm btn-outline-primary leave-open-btn">
                                             <i class="ti ti-eye"></i> {{ __('Open') }}
                                         </a>

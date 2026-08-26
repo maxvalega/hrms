@@ -993,17 +993,32 @@ class LeaveController extends Controller
         $oldStatus = $leave->status;
         $leave->status = $request->status;
         if ($leave->status == 'Approved') {
-            $total_leave_days = $this->calculateLeaveDays(
-                $leave->start_date,
-                $leave->end_date,
-                $leave->day_type ?? 'full_day',
-                (int) ($leave->created_by ?? \Auth::user()->creatorId())
-            );
-            $leave->total_leave_days = $total_leave_days;
-            $leave->status           = 'Approved';
+            // Comp-off claims already store exact half/full days — do not recalculate from calendar.
+            if (empty($leave->is_compensatory)) {
+                $total_leave_days = $this->calculateLeaveDays(
+                    $leave->start_date,
+                    $leave->end_date,
+                    $leave->day_type ?? 'full_day',
+                    (int) ($leave->created_by ?? \Auth::user()->creatorId())
+                );
+                $leave->total_leave_days = $total_leave_days;
+            }
+            $leave->status = 'Approved';
         } elseif ($leave->status == 'Reject') {
             // Clean up system-generated substitute blocks when leave is rejected
             $this->removeSubstituteLeaveBlock($leave);
+
+            if (!empty($leave->is_compensatory) && !empty($leave->compensatory_leave_id)) {
+                $compLeave = \App\Models\CompensatoryLeave::find($leave->compensatory_leave_id);
+                if ($compLeave) {
+                    if (($compLeave->notes ?? '') === 'spectal_self_claim') {
+                        $compLeave->delete();
+                    } elseif ($compLeave->status === 'claimed') {
+                        $compLeave->status = 'earned';
+                        $compLeave->save();
+                    }
+                }
+            }
         }
 
         $leave->save();
@@ -2066,7 +2081,13 @@ class LeaveController extends Controller
                     return response()->json(['error' => __('Employee not found.')], 401);
                 }
 
-                // Get available compensatory leaves
+                $isSpectal = $this->isSpectalPortal();
+                $quarter = LeavePolicyService::calendarQuarterBounds();
+                $workedDateOptions = $isSpectal
+                    ? LeavePolicyService::spectalCompOffWorkedDateOptions(\Auth::user()->creatorId())
+                    : [];
+
+                // Get available compensatory leaves (non-Spectal bank claim)
                 $compensatoryLeaves = \App\Models\CompensatoryLeave::where('employee_id', $employee->id)
                     ->where('status', 'earned')
                     ->where(function ($q) {
@@ -2075,7 +2096,13 @@ class LeaveController extends Controller
                     })
                     ->get();
 
-                return view('leave.claim_compensatory', compact('compensatoryLeaves', 'employee'));
+                return view('leave.claim_compensatory', compact(
+                    'compensatoryLeaves',
+                    'employee',
+                    'isSpectal',
+                    'quarter',
+                    'workedDateOptions'
+                ));
             } else {
                 return response()->json(['error' => __('Only employees can claim compensatory leaves.')], 401);
             }
@@ -2094,6 +2121,15 @@ class LeaveController extends Controller
                 return redirect()->back()->with('error', __('Only employees can claim compensatory leaves.'));
             }
 
+            $employee = Employee::where('user_id', '=', \Auth::user()->id)->first();
+            if (!$employee) {
+                return redirect()->back()->with('error', __('Employee not found.'));
+            }
+
+            if ($this->isSpectalPortal()) {
+                return $this->storeSpectalCompOffClaim($request, $employee);
+            }
+
             $validator = \Validator::make(
                 $request->all(),
                 [
@@ -2106,11 +2142,6 @@ class LeaveController extends Controller
 
             if ($validator->fails()) {
                 return redirect()->back()->with('error', $validator->getMessageBag()->first());
-            }
-
-            $employee = Employee::where('user_id', '=', \Auth::user()->id)->first();
-            if (!$employee) {
-                return redirect()->back()->with('error', __('Employee not found.'));
             }
 
             // Verify compensatory leaves belong to employee
@@ -2179,6 +2210,134 @@ class LeaveController extends Controller
             }
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+    /**
+     * Spectal: claim comp-off for Sunday/holiday worked; take-off must be same calendar quarter.
+     */
+    protected function storeSpectalCompOffClaim(Request $request, Employee $employee)
+    {
+        $validator = \Validator::make($request->all(), [
+            'worked_date' => 'required|date',
+            'take_off_date' => 'required|date',
+            'worked_duration' => 'required|in:half_day,full_day',
+            'leave_reason' => 'nullable|string|max:500',
+        ]);
+
+        if ($validator->fails()) {
+            return redirect()->back()->with('error', $validator->getMessageBag()->first());
+        }
+
+        $eligType = LeaveType::where('created_by', \Auth::user()->creatorId())
+            ->where(function ($q) {
+                $q->where('policy_code', 'comp_off')
+                    ->orWhere('title', 'like', '%Compensatory%')
+                    ->orWhere('title', 'like', '%Comp Off%')
+                    ->orWhere('title', 'like', '%Comp-Off%');
+            })
+            ->first();
+
+        if ($eligType) {
+            $eligError = $this->leavePolicy()->validateEligibility($eligType, $employee);
+            if ($eligError) {
+                return redirect()->back()->with('error', $eligError);
+            }
+        }
+
+        $workedDate = Carbon::parse($request->worked_date, 'Asia/Kolkata')->startOfDay();
+        $takeOffDate = Carbon::parse($request->take_off_date, 'Asia/Kolkata')->startOfDay();
+        $today = Carbon::now('Asia/Kolkata')->startOfDay();
+
+        if ($workedDate->gt($today)) {
+            return redirect()->back()->with('error', __('Worked date cannot be in the future.'));
+        }
+
+        $options = LeavePolicyService::spectalCompOffWorkedDateOptions(\Auth::user()->creatorId());
+        $allowedWorked = collect($options)->pluck('date')->all();
+        if (!in_array($workedDate->toDateString(), $allowedWorked, true)) {
+            return redirect()->back()->with('error', __('Worked date must be a Sunday or a company holiday in the current quarter.'));
+        }
+
+        if (!LeavePolicyService::sameCalendarQuarter($workedDate->toDateString(), $takeOffDate->toDateString())) {
+            $q = LeavePolicyService::calendarQuarterBounds($workedDate);
+            return redirect()->back()->with('error', __('Take-off date must be in the same quarter as the worked date (:label, until :end).', [
+                'label' => $q['label'],
+                'end' => $q['end'],
+            ]));
+        }
+
+        $quarter = LeavePolicyService::calendarQuarterBounds($workedDate);
+        if ($takeOffDate->lt($workedDate) || $takeOffDate->gt($quarter['end_carbon']->copy()->startOfDay())) {
+            return redirect()->back()->with('error', __('Take-off date must be on/after the worked date and on/before quarter end (:end).', [
+                'end' => $quarter['end'],
+            ]));
+        }
+
+        $days = $request->worked_duration === 'half_day' ? 0.5 : 1.0;
+        $dayType = $request->worked_duration === 'half_day' ? 'first_half' : 'full_day';
+
+        $already = \App\Models\CompensatoryLeave::where('employee_id', $employee->id)
+            ->whereDate('earned_date', $workedDate->toDateString())
+            ->whereIn('status', ['earned', 'claimed'])
+            ->exists();
+        if ($already) {
+            return redirect()->back()->with('error', __('A compensatory claim already exists for this worked date.'));
+        }
+
+        $leaveType = $eligType;
+        if (!$leaveType) {
+            $leaveType = LeaveType::where('created_by', \Auth::user()->creatorId())->first();
+        }
+        if (!$leaveType) {
+            return redirect()->back()->with('error', __('No leave type configured.'));
+        }
+
+        $workedLabel = collect($options)->firstWhere('date', $workedDate->toDateString());
+        $kind = $workedLabel['kind'] ?? __('Sunday / Holiday');
+        $reason = trim((string) ($request->leave_reason ?? ''));
+        if ($reason === '') {
+            $reason = __('Comp-off: worked :date (:kind)', [
+                'date' => $workedDate->toDateString(),
+                'kind' => $kind,
+            ]);
+        }
+
+        try {
+            $compLeave = new \App\Models\CompensatoryLeave();
+            $compLeave->employee_id = $employee->id;
+            $compLeave->days = $days;
+            $compLeave->earned_date = $workedDate->toDateString();
+            $compLeave->expiry_date = $quarter['end'];
+            $compLeave->reason = $reason;
+            $compLeave->status = 'claimed';
+            $compLeave->notes = 'spectal_self_claim';
+            $compLeave->created_by = \Auth::user()->creatorId();
+            $compLeave->save();
+
+            $leave = new LocalLeave();
+            $leave->employee_id = $employee->id;
+            $leave->leave_type_id = $leaveType->id;
+            $leave->applied_on = date('Y-m-d');
+            $leave->start_date = $takeOffDate->toDateString();
+            $leave->end_date = $takeOffDate->toDateString();
+            $leave->day_type = $dayType;
+            $leave->total_leave_days = $days;
+            $leave->leave_reason = $reason;
+            $leave->status = 'Pending';
+            $leave->is_compensatory = true;
+            $leave->compensatory_leave_id = $compLeave->id;
+            $leave->substitute_employee_id = null;
+            $leave->substitute_status = 'Accepted';
+            $leave->created_by = \Auth::user()->creatorId();
+            $leave->save();
+
+            $this->notifyManagerOfLeaveRequest($leave);
+
+            return redirect()->route('leave.index')->with('success', __('Compensatory leave claim submitted. Waiting for manager approval.'));
+        } catch (\Exception $e) {
+            \Log::error('Error claiming Spectal compensatory leave: ' . $e->getMessage());
+            return redirect()->back()->with('error', __('Failed to claim compensatory leave. Please try again.'));
         }
     }
 
@@ -2254,8 +2413,14 @@ class LeaveController extends Controller
 
         try {
             $settings = Utility::settings();
-            $compOffValidity = $settings['compensatory_leave_validity'] ?? 30;
-            $expiryDate = \Carbon\Carbon::parse($request->earned_date)->addDays($compOffValidity);
+            $earnedDate = \Carbon\Carbon::parse($request->earned_date, 'Asia/Kolkata');
+            if ($this->isSpectalPortal()) {
+                $quarter = LeavePolicyService::calendarQuarterBounds($earnedDate);
+                $expiryDate = $quarter['end_carbon']->copy();
+            } else {
+                $compOffValidity = $settings['compensatory_leave_validity'] ?? 30;
+                $expiryDate = $earnedDate->copy()->addDays($compOffValidity);
+            }
 
             $compLeave = new \App\Models\CompensatoryLeave();
             $compLeave->employee_id = $request->employee_id;

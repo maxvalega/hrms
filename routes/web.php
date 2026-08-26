@@ -1235,6 +1235,7 @@ Route::group(['middleware' => ['verified']], function () {
     Route::post('attendance/regularisation', [AttendanceRegularisationController::class, 'store'])->name('attendance.regularisation.store')->middleware(['auth', 'XSS']);
     Route::get('attendance/regularisation/{id}/action', [AttendanceRegularisationController::class, 'action'])->name('attendance.regularisation.action')->middleware(['auth', 'XSS']);
     Route::post('attendance/regularisation/{id}/action', [AttendanceRegularisationController::class, 'changeAction'])->name('attendance.regularisation.change.action')->middleware(['auth', 'XSS']);
+    Route::delete('attendance/regularisation/{id}', [AttendanceRegularisationController::class, 'destroy'])->name('attendance.regularisation.destroy')->middleware(['auth', 'XSS']);
 
     Route::post('attendance/sync-for-payroll', [AttendanceEmployeeController::class, 'syncForPayroll'])->name('attendance.sync-for-payroll')->middleware(['auth', 'XSS']);
     Route::get('attendance/export-monthly-excel', [AttendanceEmployeeController::class, 'exportMonthlyExcel'])->name('attendance.export-monthly-excel')->middleware(['auth', 'XSS']);

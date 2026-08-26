@@ -154,4 +154,42 @@ class AttendanceRegularisationController extends Controller
         return redirect()->route('attendance.regularisation.index')
             ->with('success', __('Regularisation request updated.'));
     }
+
+    /**
+     * Delete a Pending On Ground request (own request for employees; HR can delete any Pending in company).
+     */
+    public function destroy($id)
+    {
+        if (!Auth::check()) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        if (!$this->ensureTable()) {
+            return redirect()->back()->with('error', __('Attendance regularisation is not installed. Run migrations first.'));
+        }
+
+        $row = AttendanceRegularisation::with('employee')->findOrFail($id);
+
+        if (!$row->employee || (int) $row->employee->created_by !== (int) Auth::user()->creatorId()) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        if ($row->status !== 'Pending') {
+            return redirect()->back()->with('error', __('Only pending requests can be deleted.'));
+        }
+
+        if (Auth::user()->type == 'employee') {
+            $self = Employee::where('user_id', Auth::user()->id)->first();
+            if (!$self || (int) $self->id !== (int) $row->employee_id) {
+                return redirect()->back()->with('error', __('Permission denied.'));
+            }
+        } elseif (!Auth::user()->can('Manage Attendance') && !Auth::user()->can('Manage Leave')) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        $row->delete();
+
+        return redirect()->route('attendance.regularisation.index')
+            ->with('success', __('On Ground regularisation request deleted.'));
+    }
 }

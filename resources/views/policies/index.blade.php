@@ -121,7 +121,13 @@
             @if($policies->isEmpty())
                 <div class="pol-empty">
                     <i class="ti ti-file-off"></i>
-                    <p class="mb-2">{{ __('No policies found.') }}</p>
+                    @if(($totals['all'] ?? 0) == 0)
+                        <p class="mb-2">{{ __('No company policies have been uploaded yet.') }}</p>
+                        <p class="mb-3 small text-muted">{{ __('Leave and HR policy documents appear here only after HR uploads them under Policies (category Leave). Updated leave rules in the Leave module are separate from this document library.') }}</p>
+                    @else
+                        <p class="mb-2">{{ __('No policies found.') }}</p>
+                        <p class="mb-3 small text-muted">{{ __('Try clearing filters or switching Status to All.') }}</p>
+                    @endif
                     @if(Auth::user() && Auth::user()->can('manage-policies'))
                         <a href="{{ route('policies.create') }}" class="btn btn-primary btn-sm">
                             <i class="ti ti-upload me-1"></i>{{ __('Upload your first policy') }}

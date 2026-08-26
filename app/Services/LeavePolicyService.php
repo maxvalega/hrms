@@ -555,6 +555,109 @@ class LeavePolicyService
     }
 
     /**
+     * Calendar quarter bounds (Asia/Kolkata) for a given date.
+     * Q1 Jan–Mar, Q2 Apr–Jun, Q3 Jul–Sep, Q4 Oct–Dec.
+     */
+    public static function calendarQuarterBounds(?Carbon $asOf = null): array
+    {
+        $asOf = $asOf ? $asOf->copy()->timezone('Asia/Kolkata') : Carbon::now('Asia/Kolkata');
+        $year = (int) $asOf->year;
+        $month = (int) $asOf->month;
+        $q = (int) ceil($month / 3);
+        $startMonth = (($q - 1) * 3) + 1;
+
+        $start = Carbon::create($year, $startMonth, 1, 0, 0, 0, 'Asia/Kolkata')->startOfDay();
+        $end = $start->copy()->addMonths(3)->subDay()->endOfDay();
+
+        return [
+            'quarter' => $q,
+            'year' => $year,
+            'label' => 'Q' . $q . ' ' . $year,
+            'start' => $start->toDateString(),
+            'end' => $end->toDateString(),
+            'start_carbon' => $start,
+            'end_carbon' => $end,
+        ];
+    }
+
+    public static function sameCalendarQuarter(string $dateA, string $dateB): bool
+    {
+        $a = self::calendarQuarterBounds(Carbon::parse($dateA, 'Asia/Kolkata'));
+        $b = self::calendarQuarterBounds(Carbon::parse($dateB, 'Asia/Kolkata'));
+
+        return $a['year'] === $b['year'] && $a['quarter'] === $b['quarter'];
+    }
+
+    /**
+     * Eligible "worked" dates for Spectal comp-off: Sundays + company holidays
+     * within the current quarter (and past / today only).
+     *
+     * @return array<int, array{date:string,label:string,kind:string}>
+     */
+    public static function spectalCompOffWorkedDateOptions(int $createdBy, ?Carbon $asOf = null): array
+    {
+        $asOf = $asOf ? $asOf->copy()->timezone('Asia/Kolkata')->startOfDay() : Carbon::now('Asia/Kolkata')->startOfDay();
+        $q = self::calendarQuarterBounds($asOf);
+        $start = $q['start_carbon']->copy();
+        $end = $asOf->lt($q['end_carbon']) ? $asOf->copy() : $q['end_carbon']->copy()->startOfDay();
+
+        $holidayLabels = [];
+        if (\Schema::hasTable('holidays')) {
+            $query = \App\Models\Holiday::query();
+            if (\Schema::hasColumn('holidays', 'created_by')) {
+                $query->where('created_by', $createdBy);
+            }
+
+            $holidays = $query->get();
+            foreach ($holidays as $holiday) {
+                $title = (string) ($holiday->title ?? __('Holiday'));
+                if (!empty($holiday->start_date) && !empty($holiday->end_date)) {
+                    $hStart = Carbon::parse($holiday->start_date)->startOfDay();
+                    $hEnd = Carbon::parse($holiday->end_date)->startOfDay();
+                } elseif (!empty($holiday->holiday_date)) {
+                    $hStart = Carbon::parse($holiday->holiday_date)->startOfDay();
+                    $hEnd = $hStart->copy();
+                } else {
+                    continue;
+                }
+
+                for ($d = $hStart->copy(); $d->lte($hEnd); $d->addDay()) {
+                    if ($d->lt($start) || $d->gt($end)) {
+                        continue;
+                    }
+                    $holidayLabels[$d->toDateString()] = $title;
+                }
+            }
+        }
+
+        $options = [];
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            $key = $d->toDateString();
+            $isSunday = $d->dayOfWeek === Carbon::SUNDAY;
+            $isHoliday = isset($holidayLabels[$key]);
+            if (!$isSunday && !$isHoliday) {
+                continue;
+            }
+
+            $kindParts = [];
+            if ($isSunday) {
+                $kindParts[] = __('Sunday');
+            }
+            if ($isHoliday) {
+                $kindParts[] = $holidayLabels[$key];
+            }
+            $kind = implode(' · ', $kindParts);
+            $options[] = [
+                'date' => $key,
+                'label' => $d->format('d M Y') . ' — ' . $kind,
+                'kind' => $kind,
+            ];
+        }
+
+        return array_reverse($options); // newest first
+    }
+
+    /**
      * Mutate leave type with Spectal canonical defaults (in-memory only).
      * Ensures WFH monthly caps / consecutive limits apply even when DB is misconfigured.
      */

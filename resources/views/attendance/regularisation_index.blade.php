@@ -66,14 +66,23 @@
                                     @endif
                                 </div>
                                 <div class="small ar-reason mb-3">{{ $row->reason }}</div>
-                                @if (\Auth::user()->type != 'employee' && $row->status == 'Pending')
-                                    <a href="#" class="btn btn-sm btn-success"
-                                        data-url="{{ route('attendance.regularisation.action', $row->id) }}"
-                                        data-ajax-popup="true"
-                                        data-title="{{ __('Review Regularisation') }}">
-                                        <i class="ti ti-check"></i> {{ __('Review') }}
-                                    </a>
-                                @endif
+                                <div class="d-flex flex-wrap gap-2">
+                                    @if (\Auth::user()->type != 'employee' && $row->status == 'Pending')
+                                        <a href="#" class="btn btn-sm btn-success"
+                                            data-url="{{ route('attendance.regularisation.action', $row->id) }}"
+                                            data-ajax-popup="true"
+                                            data-title="{{ __('Review Regularisation') }}">
+                                            <i class="ti ti-check"></i> {{ __('Review') }}
+                                        </a>
+                                    @endif
+                                    @if ($row->status == 'Pending' && (\Auth::user()->type == 'employee' || \Auth::user()->can('Manage Attendance') || \Auth::user()->can('Manage Leave')))
+                                        {!! Form::open(['method' => 'DELETE', 'route' => ['attendance.regularisation.destroy', $row->id], 'class' => 'd-inline', 'onsubmit' => "return confirm('".__('Delete this pending request?')."');"]) !!}
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                <i class="ti ti-trash"></i> {{ __('Delete') }}
+                                            </button>
+                                        {!! Form::close() !!}
+                                    @endif
+                                </div>
                             </div>
                         @empty
                             <p class="text-muted text-center mb-0">{{ __('No requests yet.') }}</p>
@@ -112,8 +121,16 @@
                                                 <span class="badge bg-warning">{{ __('Pending') }}</span>
                                             @endif
                                         </td>
-                                        <td>
-                                            @if (\Auth::user()->type != 'employee' && $row->status == 'Pending')
+                                        <td class="text-nowrap">
+                                            @php
+                                                $canReview = \Auth::user()->type != 'employee' && $row->status == 'Pending';
+                                                $canDelete = $row->status == 'Pending' && (
+                                                    \Auth::user()->type == 'employee'
+                                                    || \Auth::user()->can('Manage Attendance')
+                                                    || \Auth::user()->can('Manage Leave')
+                                                );
+                                            @endphp
+                                            @if ($canReview)
                                                 <a href="#" class="btn btn-sm btn-success"
                                                     data-url="{{ route('attendance.regularisation.action', $row->id) }}"
                                                     data-ajax-popup="true"
@@ -121,7 +138,15 @@
                                                     data-bs-toggle="tooltip" title="{{ __('Action') }}">
                                                     <i class="ti ti-check"></i>
                                                 </a>
-                                            @else
+                                            @endif
+                                            @if ($canDelete)
+                                                {!! Form::open(['method' => 'DELETE', 'route' => ['attendance.regularisation.destroy', $row->id], 'class' => 'd-inline', 'onsubmit' => "return confirm('".__('Delete this pending request?')."');"]) !!}
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" title="{{ __('Delete') }}">
+                                                        <i class="ti ti-trash"></i>
+                                                    </button>
+                                                {!! Form::close() !!}
+                                            @endif
+                                            @if (!$canReview && !$canDelete)
                                                 —
                                             @endif
                                         </td>

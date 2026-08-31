@@ -203,8 +203,8 @@ class LeavePolicyService
                 'is_encashable' => 0,
                 'monthly_limit' => 2,
                 'max_consecutive_days' => 2,
-                'eligible_employee_types' => ['full_time'],
-                'policy_notes' => '2 days per month only (not an accumulating annual bank). Full time only.',
+                'eligible_employee_types' => ['intern', 'full_time'],
+                'policy_notes' => '2 days per month only (not an accumulating annual bank). Available to all employees.',
             ],
             'bereavement' => [
                 'title' => 'Bereavement Leave',
@@ -351,11 +351,10 @@ class LeavePolicyService
 
     /**
      * Leave categories visible on Spectal balance while on probation.
-     * (Applications remain blocked separately.)
      */
     public static function spectalProbationVisibleCodes(): array
     {
-        return ['sick', 'comp_off'];
+        return ['sick', 'comp_off', 'wfh'];
     }
 
     /**
@@ -481,9 +480,9 @@ class LeavePolicyService
             return in_array($code, ['sick', 'comp_off'], true);
         }
 
-        // Interns: Sick + Comp only
+        // Interns: Sick, Comp-off, and WFH
         if ($empCode === 'intern') {
-            return in_array($code, ['sick', 'comp_off'], true);
+            return in_array($code, ['sick', 'comp_off', 'wfh'], true);
         }
 
         // Normalize allowed list; consultants count as full_time for Spectal leave matrix
@@ -499,7 +498,37 @@ class LeavePolicyService
         return count(array_intersect($matchCodes, $allowedNorm)) > 0;
     }
 
-    public function validateSpectalApplication(LeaveType $leaveType, Employee $employee, string $startDate): ?string
+    public static function getHolidayOnDate(string $date, int $createdBy): ?string
+    {
+        if (!Schema::hasTable('holidays')) {
+            return null;
+        }
+
+        $d = Carbon::parse($date)->toDateString();
+        $holiday = \App\Models\Holiday::where(function ($q) use ($createdBy) {
+                if (Schema::hasColumn('holidays', 'created_by')) {
+                    $q->where('created_by', $createdBy)->orWhereNull('created_by');
+                }
+            })
+            ->where(function ($q) use ($d) {
+                $q->where(function ($sq) use ($d) {
+                    $sq->where('start_date', '<=', $d)->where('end_date', '>=', $d);
+                })->orWhere(function ($sq) use ($d) {
+                    if (Schema::hasColumn('holidays', 'holiday_date')) {
+                        $sq->where('holiday_date', $d);
+                    }
+                });
+            })
+            ->first();
+
+        if ($holiday) {
+            return (string) ($holiday->occasion ?? $holiday->title ?? __('Public Holiday'));
+        }
+
+        return null;
+    }
+
+    public function validateSpectalApplication(LeaveType $leaveType, Employee $employee, string $startDate, ?string $endDate = null, float $totalDays = 1.0): ?string
     {
         if (!self::isSpectalPortal()) {
             return null;
@@ -516,9 +545,46 @@ class LeavePolicyService
         }
 
         if ($this->isEmployeeInProbation($employee)) {
+            if ($code === 'pl') {
+                return __('Privilege Leave (PL) is not available during probation.');
+            }
             $visible = self::spectalProbationVisibleCodes();
-            if ($code && !in_array($code, $visible, true) && $code !== 'bereavement') {
+            if ($code && !in_array($code, $visible, true) && $code !== 'bereavement' && $code !== 'optional_holiday') {
                 return __('This leave type is not available during probation.');
+            }
+        }
+
+        $endDate = $endDate ?? $startDate;
+        $start = Carbon::parse($startDate, 'Asia/Kolkata')->startOfDay();
+        $end = Carbon::parse($endDate, 'Asia/Kolkata')->startOfDay();
+        $createdBy = (int) ($employee->created_by ?? \Auth::user()->creatorId());
+
+        // Single day Sunday check for all leave types
+        if ($start->eq($end) && $start->dayOfWeek === Carbon::SUNDAY) {
+            return __('Leave cannot be applied on Sunday.');
+        }
+
+        // Single day Public Holiday check for all leave types
+        if ($start->eq($end)) {
+            $holidayName = self::getHolidayOnDate($startDate, $createdBy);
+            if ($holidayName !== null) {
+                return __('Cannot apply leave on a public holiday (:holiday).', ['holiday' => $holidayName]);
+            }
+        }
+
+        // WFH specific restrictions:
+        // 1. Allowed ONLY on Tuesday (2), Wednesday (3), Thursday (4)
+        // 2. Blocked on Monday (1), Friday (5), Saturday (6), Sunday (0), and Public Holidays
+        if ($code === 'wfh') {
+            for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+                $dow = $d->dayOfWeek;
+                if (!in_array($dow, [Carbon::TUESDAY, Carbon::WEDNESDAY, Carbon::THURSDAY], true)) {
+                    return __('Work From Home (WFH) can only be applied for Tuesday, Wednesday, or Thursday.');
+                }
+                $holidayName = self::getHolidayOnDate($d->toDateString(), $createdBy);
+                if ($holidayName !== null) {
+                    return __('Work From Home cannot be applied on public holidays (:holiday).', ['holiday' => $holidayName]);
+                }
             }
         }
 
@@ -530,7 +596,7 @@ class LeavePolicyService
         }
 
         if ($code === 'cl') {
-            $month = (int) Carbon::parse($startDate)->month;
+            $month = (int) $start->month;
             if (!in_array($month, [5, 6, 7], true)) {
                 return __('Casual Leave can only be applied between May and July.');
             }
@@ -610,7 +676,7 @@ class LeavePolicyService
 
             $holidays = $query->get();
             foreach ($holidays as $holiday) {
-                $title = (string) ($holiday->title ?? __('Holiday'));
+                $title = (string) ($holiday->occasion ?? $holiday->title ?? __('Holiday'));
                 if (!empty($holiday->start_date) && !empty($holiday->end_date)) {
                     $hStart = Carbon::parse($holiday->start_date)->startOfDay();
                     $hEnd = Carbon::parse($holiday->end_date)->startOfDay();

@@ -105,19 +105,30 @@ class LeaveController extends Controller
     {
         $typeCode = LeavePolicyService::employeeTypeCode($employee);
         $onProbation = $this->isEmployeeInProbation($employee);
+        $isSpectal = $this->isSpectalPortal();
 
         if ($typeCode === 'intern') {
             $label = __('Intern');
             $badge = 'warning';
+            $note = $isSpectal
+                ? __('As an Intern, you are eligible for Sick Leave, Work From Home, and Comp-Off. Privilege Leave and Bereavement Leave are not applicable.')
+                : null;
         } elseif ($typeCode === 'consultant') {
             $label = $onProbation ? __('Consultant · Probation') : __('Consultant');
             $badge = $onProbation ? 'info' : 'success';
+            $note = $onProbation && $isSpectal
+                ? __('During probation you are eligible for Sick Leave, Work From Home, Comp-Off, and Bereavement Leave. Privilege Leave is restricted until probation ends.')
+                : null;
         } elseif ($onProbation) {
             $label = __('Probation');
             $badge = 'info';
+            $note = $isSpectal
+                ? __('During probation you are eligible for Sick Leave, Work From Home, Comp-Off, and Bereavement Leave. Privilege Leave is restricted until probation ends.')
+                : __('During probation leave applications are restricted until probation ends.');
         } else {
             $label = __('Permanent');
             $badge = 'success';
+            $note = null;
         }
 
         return [
@@ -125,10 +136,8 @@ class LeaveController extends Controller
             'on_probation' => $onProbation,
             'label' => $label,
             'badge' => $badge,
-            'can_apply' => !$onProbation || \Auth::user()->type !== 'employee',
-            'note' => $onProbation
-                ? __('During probation you can view Sick Leave and Comp-off. Leave applications are restricted until probation ends.')
-                : null,
+            'can_apply' => $isSpectal ? true : (!$onProbation || \Auth::user()->type !== 'employee'),
+            'note' => $note,
         ];
     }
 
@@ -332,7 +341,7 @@ class LeaveController extends Controller
                 $employees = Employee::where('user_id', '=', \Auth::user()->id)->first();
                 $selfEmployee = $employees;
                 $applyAsSelf = true;
-                if (!empty($employees) && $this->isEmployeeInProbation($employees)) {
+                if (!$isSpectal && !empty($employees) && $this->isEmployeeInProbation($employees)) {
                     $isProbationRestricted = true;
                     $probationWarningMessage = $this->getProbationLeaveNotAllowedMessage($employees);
                 }
@@ -346,10 +355,6 @@ class LeaveController extends Controller
                 if ($isSpectal && $selfEmployee) {
                     $employees = $selfEmployee;
                     $applyAsSelf = true;
-                    if ($this->isEmployeeInProbation($selfEmployee)) {
-                        $isProbationRestricted = true;
-                        $probationWarningMessage = $this->getProbationLeaveNotAllowedMessage($selfEmployee);
-                    }
                 } else {
                     $employees = Employee::where('created_by', '=', \Auth::user()->creatorId())->get()->pluck('name', 'id');
                 }
@@ -513,12 +518,70 @@ class LeaveController extends Controller
                 );
             }
 
-            if ($this->isEmployeeInProbation($employee)) {
+            if (!$this->isSpectalPortal() && $this->isEmployeeInProbation($employee)) {
                 return redirect()->back()->with('error', $this->getProbationLeaveNotAllowedMessage($employee));
             }
 
-            if ($spectalError = $this->leavePolicy()->validateSpectalApplication($leave_type, $employee, $request->start_date)) {
+            if ($spectalError = $this->leavePolicy()->validateSpectalApplication($leave_type, $employee, $request->start_date, $request->end_date, (float) $total_leave_days)) {
                 return redirect()->back()->with('error', $spectalError);
+            }
+
+            // Check for leave overlap (avoid applying multiple leaves or leave + WFH on same date)
+            $hasOverlap = LocalLeave::where('employee_id', $employee->id)
+                ->whereIn('status', ['Approved', 'Pending'])
+                ->where(function ($q) {
+                    $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
+                })
+                ->where(function ($q) use ($request) {
+                    $q->where('start_date', '<=', $request->end_date)
+                      ->where('end_date', '>=', $request->start_date);
+                })
+                ->exists();
+            if ($hasOverlap) {
+                return redirect()->back()->with('error', __('You already have a leave or WFH application (Pending or Approved) on the selected date(s).'));
+            }
+
+            if (Schema::hasTable('attendance_regularisations')) {
+                $hasRegularisation = \App\Models\AttendanceRegularisation::where('employee_id', $employee->id)
+                    ->whereIn('status', ['Approved', 'Pending'])
+                    ->whereBetween('regularisation_date', [$request->start_date, $request->end_date])
+                    ->exists();
+                if ($hasRegularisation) {
+                    return redirect()->back()->with('error', __('You already have an Attendance Regularisation request on the selected date(s).'));
+                }
+            }
+
+            if ($total_leave_days <= 0) {
+                return redirect()->back()->with('error', __('The selected date range does not contain any working days.'));
+            }
+
+            $policyCode = LeavePolicyService::resolvePolicyCode($leave_type);
+
+            // WFH consecutive days check across separate requests (max 2 consecutive days)
+            if ($policyCode === 'wfh') {
+                $prevWorking = Carbon::parse($request->start_date)->subDay();
+                while ($prevWorking->dayOfWeek === Carbon::SUNDAY || $prevWorking->dayOfWeek === Carbon::MONDAY || $prevWorking->dayOfWeek === Carbon::FRIDAY || $prevWorking->dayOfWeek === Carbon::SATURDAY) {
+                    $prevWorking->subDay();
+                }
+                $nextWorking = Carbon::parse($request->end_date)->addDay();
+                while ($nextWorking->dayOfWeek === Carbon::SUNDAY || $nextWorking->dayOfWeek === Carbon::MONDAY || $nextWorking->dayOfWeek === Carbon::FRIDAY || $nextWorking->dayOfWeek === Carbon::SATURDAY) {
+                    $nextWorking->addDay();
+                }
+
+                $adjacentBefore = (float) LocalLeave::where('employee_id', $employee->id)
+                    ->where('leave_type_id', $leave_type->id)
+                    ->whereIn('status', ['Approved', 'Pending'])
+                    ->where('end_date', $prevWorking->toDateString())
+                    ->sum('total_leave_days');
+                $adjacentAfter = (float) LocalLeave::where('employee_id', $employee->id)
+                    ->where('leave_type_id', $leave_type->id)
+                    ->whereIn('status', ['Approved', 'Pending'])
+                    ->where('start_date', $nextWorking->toDateString())
+                    ->sum('total_leave_days');
+
+                if (($adjacentBefore + $adjacentAfter + $total_leave_days) > 2.01) {
+                    return redirect()->back()->with('error', __('Work From Home (WFH) cannot be taken for more than 2 consecutive days.'));
+                }
             }
 
             // NEW: per-type policy matrix (eligibility, notice, WFH caps, bereavement family)
@@ -536,7 +599,6 @@ class LeaveController extends Controller
             }
 
             // For monthly_cap (WFH), compare against the leave month's usage (not always "today")
-            $policyCode = LeavePolicyService::resolvePolicyCode($leave_type);
             if (($leave_type->credit_frequency === 'monthly_cap') || $policyCode === 'wfh') {
                 $usage = $this->getLeaveUsageForCurrentMonth(
                     (int) $employee->id,
@@ -574,7 +636,9 @@ class LeaveController extends Controller
                     ]));
                 }
             } elseif (!$isAsEarned && $total_leave_days > $available) {
-                return redirect()->back()->with('error', __('You cannot apply leave more than your available balance.'));
+                return redirect()->back()->with('error', __('You cannot apply leave more than your available balance (:avail day(s) available).', [
+                    'avail' => $available,
+                ]));
             }
             // WFH monthly_cap uses current-month available above.
 
@@ -827,11 +891,11 @@ class LeaveController extends Controller
                     }
                 }
 
-                if ($this->isEmployeeInProbation($employee)) {
+                if (!$this->isSpectalPortal() && $this->isEmployeeInProbation($employee)) {
                     return redirect()->back()->with('error', $this->getProbationLeaveNotAllowedMessage($employee));
                 }
 
-                if ($spectalError = $this->leavePolicy()->validateSpectalApplication($leave_type, $employee, $request->start_date)) {
+                if ($spectalError = $this->leavePolicy()->validateSpectalApplication($leave_type, $employee, $request->start_date, $request->end_date, (float) $total_leave_days)) {
                     return redirect()->back()->with('error', $spectalError);
                 }
 
@@ -846,6 +910,10 @@ class LeaveController extends Controller
                 );
                 if ($policyError) {
                     return redirect()->back()->with('error', $policyError);
+                }
+
+                if ($total_leave_days <= 0) {
+                    return redirect()->back()->with('error', __('The selected date range does not contain any working days.'));
                 }
 
                 $policyCode = LeavePolicyService::resolvePolicyCode($leave_type);
@@ -1020,7 +1088,13 @@ class LeaveController extends Controller
         }
 
         if ($leave->status !== 'Pending') {
-            return redirect()->route('leave.action', $leave->id)->with('error', __('Leave has already been processed.'));
+            $canRevokeApprovedFuture = $leave->status === 'Approved'
+                && $request->status === 'Reject'
+                && Carbon::parse($leave->start_date)->startOfDay()->gte(Carbon::today());
+
+            if (!$canRevokeApprovedFuture) {
+                return redirect()->route('leave.action', $leave->id)->with('error', __('Leave has already been processed.'));
+            }
         }
 
         $leaveType = LeaveType::find($leave->leave_type_id);
@@ -1514,6 +1588,29 @@ class LeaveController extends Controller
                     "url" => route('leave.action', $val['id']),
                 ];
             }
+
+            if (Schema::hasTable('holidays')) {
+                $holidays = Holiday::where(function ($q) {
+                    if (Schema::hasColumn('holidays', 'created_by')) {
+                        $q->where('created_by', Auth::user()->creatorId())->orWhereNull('created_by');
+                    }
+                })->get();
+
+                foreach ($holidays as $holiday) {
+                    $hTitle = $holiday->occasion ?? $holiday->title ?? __('Public Holiday');
+                    $hEnd = !empty($holiday->end_date) ? Carbon::parse($holiday->end_date)->addDay()->toDateString() : (!empty($holiday->start_date) ? Carbon::parse($holiday->start_date)->addDay()->toDateString() : date('Y-m-d'));
+                    $arrayJson[] = [
+                        'id' => 'holiday_' . $holiday->id,
+                        'title' => '🎉 ' . $hTitle,
+                        'start' => $holiday->start_date ?? $holiday->holiday_date ?? date('Y-m-d'),
+                        'end' => $hEnd,
+                        'className' => 'bg-danger text-white',
+                        'textColor' => '#FFF',
+                        'allDay' => true,
+                        'url' => '#',
+                    ];
+                }
+            }
         }
 
         return $arrayJson;
@@ -1540,32 +1637,48 @@ class LeaveController extends Controller
             return $start->diffInDays($end) + 1;
         }
 
-        $weeklyOffDays = array_filter(
-            array_map('trim', explode(',', (string) ($settings['weekly_off_days'] ?? '0'))),
-            static fn($value) => $value !== ''
-        );
-        $weeklyOffDays = array_map('intval', $weeklyOffDays);
+        $weeklyOffDays = [Carbon::SUNDAY];
+        if (!empty($settings['weekly_off_days'])) {
+            $parsedOff = array_filter(
+                array_map('trim', explode(',', (string) $settings['weekly_off_days'])),
+                static fn($value) => $value !== ''
+            );
+            if (!empty($parsedOff)) {
+                $weeklyOffDays = array_unique(array_merge($weeklyOffDays, array_map('intval', $parsedOff)));
+            }
+        }
 
         $holidayDates = [];
-        $holidays = Holiday::where('created_by', $createdBy)
+        $holidays = Holiday::where(function ($q) use ($createdBy) {
+                if (Schema::hasColumn('holidays', 'created_by')) {
+                    $q->where('created_by', $createdBy)->orWhereNull('created_by');
+                }
+            })
             ->where(function ($query) use ($startDate, $endDate) {
                 $query->whereBetween('start_date', [$startDate, $endDate])
                     ->orWhereBetween('end_date', [$startDate, $endDate])
                     ->orWhere(function ($query) use ($startDate, $endDate) {
                         $query->where('start_date', '<=', $startDate)->where('end_date', '>=', $endDate);
                     });
+                if (Schema::hasColumn('holidays', 'holiday_date')) {
+                    $query->orWhereBetween('holiday_date', [$startDate, $endDate]);
+                }
             })
             ->get();
 
         foreach ($holidays as $holiday) {
-            $hStart = Carbon::parse($holiday->start_date)->startOfDay();
-            $hEnd = Carbon::parse($holiday->end_date)->startOfDay();
-            for ($date = $hStart->copy(); $date->lte($hEnd); $date->addDay()) {
-                $holidayDates[$date->toDateString()] = true;
+            if (!empty($holiday->start_date) && !empty($holiday->end_date)) {
+                $hStart = Carbon::parse($holiday->start_date)->startOfDay();
+                $hEnd = Carbon::parse($holiday->end_date)->startOfDay();
+                for ($date = $hStart->copy(); $date->lte($hEnd); $date->addDay()) {
+                    $holidayDates[$date->toDateString()] = true;
+                }
+            } elseif (!empty($holiday->holiday_date)) {
+                $holidayDates[Carbon::parse($holiday->holiday_date)->toDateString()] = true;
             }
         }
 
-        if ($sandwichPolicy) {
+        if ($sandwichPolicy && !$this->isSpectalPortal()) {
             return $start->diffInDays($end) + 1;
         }
 
@@ -1577,7 +1690,7 @@ class LeaveController extends Controller
                 continue;
             }
 
-            if (!$holidayClubbing && isset($holidayDates[$dateKey])) {
+            if ((!$holidayClubbing || $this->isSpectalPortal()) && isset($holidayDates[$dateKey])) {
                 continue;
             }
 
@@ -2899,10 +3012,16 @@ class LeaveController extends Controller
             }
 
             if ($leave->status !== 'Pending') {
-                return response()->json([
-                    'success' => false,
-                    'error' => __('Leave has already been processed.'),
-                ], 400);
+                $canRevokeApprovedFuture = $leave->status === 'Approved'
+                    && $request->status === 'Reject'
+                    && Carbon::parse($leave->start_date)->startOfDay()->gte(Carbon::today());
+
+                if (!$canRevokeApprovedFuture) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => __('Leave has already been processed.'),
+                    ], 400);
+                }
             }
 
             $leaveType = LeaveType::find($leave->leave_type_id);

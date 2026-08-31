@@ -194,6 +194,28 @@ class HomeController extends Controller
                         $arrEvents[]      = $arr;
                     }
 
+                    if (Schema::hasTable('holidays')) {
+                        $holidays = \App\Models\Holiday::where(function ($q) {
+                            if (Schema::hasColumn('holidays', 'created_by')) {
+                                $q->where('created_by', Auth::user()->creatorId())->orWhereNull('created_by');
+                            }
+                        })->get();
+
+                        foreach ($holidays as $holiday) {
+                            $hTitle = $holiday->occasion ?? $holiday->title ?? __('Public Holiday');
+                            $hEnd = !empty($holiday->end_date) ? \Carbon\Carbon::parse($holiday->end_date)->addDay()->toDateString() : (!empty($holiday->start_date) ? \Carbon\Carbon::parse($holiday->start_date)->addDay()->toDateString() : date('Y-m-d'));
+                            $arrEvents[] = [
+                                'id' => 'holiday_' . $holiday->id,
+                                'title' => '🎉 ' . $hTitle,
+                                'start' => $holiday->start_date ?? $holiday->holiday_date ?? date('Y-m-d'),
+                                'end' => $hEnd,
+                                'className' => 'bg-danger text-white',
+                                'url' => '#',
+                                'allDay' => true,
+                            ];
+                        }
+                    }
+
                     // All today's attendance records (multiple clock in/out per day)
                     $todaySessions = AttendanceEmployee::where('employee_id', '=', $emp->id)
                         ->where('date', '=', $date)
@@ -273,6 +295,28 @@ class HomeController extends Controller
                     $arr['url']             = route('event.edit', $event['id']);
 
                     $arrEvents[] = $arr;
+                }
+
+                if (Schema::hasTable('holidays')) {
+                    $holidays = \App\Models\Holiday::where(function ($q) {
+                        if (Schema::hasColumn('holidays', 'created_by')) {
+                            $q->where('created_by', Auth::user()->creatorId())->orWhereNull('created_by');
+                        }
+                    })->get();
+
+                    foreach ($holidays as $holiday) {
+                        $hTitle = $holiday->occasion ?? $holiday->title ?? __('Public Holiday');
+                        $hEnd = !empty($holiday->end_date) ? \Carbon\Carbon::parse($holiday->end_date)->addDay()->toDateString() : (!empty($holiday->start_date) ? \Carbon\Carbon::parse($holiday->start_date)->addDay()->toDateString() : date('Y-m-d'));
+                        $arrEvents[] = [
+                            'id' => 'holiday_' . $holiday->id,
+                            'title' => '🎉 ' . $hTitle,
+                            'start' => $holiday->start_date ?? $holiday->holiday_date ?? date('Y-m-d'),
+                            'end' => $hEnd,
+                            'className' => 'bg-danger text-white',
+                            'url' => '#',
+                            'allDay' => true,
+                        ];
+                    }
                 }
 
                 $announcements = Announcement::orderBy('announcements.id', 'desc')->take(5)->where('created_by', '=', \Auth::user()->creatorId())->get();

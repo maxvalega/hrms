@@ -7,12 +7,16 @@ use Illuminate\Database\Eloquent\Model;
 class Holiday extends Model
 {
     protected $fillable = [
+        'occasion',
         'title',
         'description',
+        'start_date',
+        'end_date',
         'holiday_date',
         'recurring',
         'status',
         'location_id',
+        'created_by',
     ];
     
     public function location()

@@ -191,6 +191,11 @@
                     <input type="hidden" value="{{ $leave->id }}" name="leave_id">
                 </div>
 
+                @php
+                    $canRevokeApprovedFuture = ($canTakeAction ?? false)
+                        && $leave->status === 'Approved'
+                        && \Carbon\Carbon::parse($leave->start_date)->startOfDay()->gte(\Carbon\Carbon::today());
+                @endphp
                 @if (($canTakeAction ?? false) && $leave->status === 'Pending')
                     <div class="card-footer leave-action-footer d-flex flex-column flex-sm-row justify-content-sm-end gap-2">
                         <button type="submit" class="btn btn-success" name="status" value="Approved">
@@ -198,6 +203,15 @@
                         </button>
                         <button type="submit" class="btn btn-danger" name="status" value="Reject">
                             <i class="ti ti-x me-1"></i>{{ __('Reject Leave') }}
+                        </button>
+                    </div>
+                @elseif ($canRevokeApprovedFuture)
+                    <div class="card-footer leave-action-footer d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2">
+                        <span class="text-muted small">
+                            <i class="ti ti-info-circle me-1"></i>{{ __('This leave is already approved. You can reject/revoke it since the leave start date has not passed yet.') }}
+                        </span>
+                        <button type="submit" class="btn btn-danger" name="status" value="Reject" onclick="return confirm('{{ __('Are you sure you want to revoke/reject this approved leave?') }}')">
+                            <i class="ti ti-x me-1"></i>{{ __('Revoke / Reject Leave') }}
                         </button>
                     </div>
                 @else

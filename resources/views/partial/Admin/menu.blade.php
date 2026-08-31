@@ -317,6 +317,7 @@
             <!--timesheet-->
 
             <!-- People Hub -->
+            @if(!$hideModulesForSpectal)
             <li class="dash-item dash-hasmenu {{ Request::segment(1) == 'people-hub' ? 'dash-trigger active' : '' }}">
                 <a href="#!" class="dash-link">
                     <span class="dash-micon"><i class="ti ti-users"></i></span>
@@ -338,6 +339,7 @@
                     </li>
                 </ul>
             </li>
+            @endif
 
             {{-- Hidden for spectal.jemini.co.in only (routes/views kept) --}}
 
@@ -640,7 +642,8 @@
 
 
             <!-- HR-->
-            @if (Gate::check('Manage Award') ||
+            @if (!$hideModulesForSpectal && (
+                    Gate::check('Manage Award') ||
                     Gate::check('Manage Transfer') ||
                     Gate::check('Manage Resignation') ||
                     Gate::check('Manage Travel') ||
@@ -648,7 +651,7 @@
                     Gate::check('Manage Complaint') ||
                     Gate::check('Manage Warning') ||
                     Gate::check('Manage Termination') ||
-                    Gate::check('Manage Announcement'))
+                    Gate::check('Manage Announcement')))
                 <li
                     class="dash-item dash-hasmenu {{ Request::segment(1) == 'award' || Request::segment(1) == 'transfer' || Request::segment(1) == 'resignation' || Request::segment(1) == 'travel' || Request::segment(1) == 'promotion' || Request::segment(1) == 'complaint' || Request::segment(1) == 'warning' || Request::segment(1) == 'termination' || Request::segment(1) == 'announcement' ? 'dash-trigger active' : '' }}">
                     <a href="#!" class="dash-link">
@@ -717,7 +720,7 @@
             <!-- HR-->
 
             <!-- Grievances Module -->
-            @if (in_array(Auth::user()->type, ['super admin', 'company', 'hr']) || Auth::user()->type == 'employee')
+            @if (!$hideModulesForSpectal && (in_array(Auth::user()->type, ['super admin', 'company', 'hr']) || Auth::user()->type == 'employee'))
                 <li class="dash-item {{ request()->routeIs('grievances.*') ? 'active' : '' }}">
                     <a class="dash-link" href="{{ route('grievances.index') }}">
                         <span class="dash-micon">
@@ -878,17 +881,19 @@
 
 
             <!-- document-->
+            @if(!$hideModulesForSpectal)
             <li class="dash-item {{ Request::segment(1) == 'document-upload' ? 'active' : '' }}">
                 <a href="{{ route('document-upload.index') }}" class="dash-link"><span
                         class="dash-micon"><i class="ti ti-file"></i></span><span
                         class="dash-mtext">{{ __('Document') }}</span></a>
             </li>
+            @endif
 
             <!--company policy-->
 
 
 
-            @if (Gate::check('Manage Company Policy') || in_array(strtolower((string) Auth::user()->type), ['employee', 'company', 'hr'], true) || Auth::user()->can('view-policies'))
+            @if (!$hideModulesForSpectal && (Gate::check('Manage Company Policy') || in_array(strtolower((string) Auth::user()->type), ['employee', 'company', 'hr'], true) || Auth::user()->can('view-policies')))
                 <li class="dash-item {{ request()->is('company-policy*') ? 'active' : '' }}">
                     <a href="{{ route('company-policy.index') }}" class="dash-link"><span
                             class="dash-micon"><i class="ti ti-pray"></i></span><span

@@ -120,8 +120,11 @@
                                         @endif
                                     </td>
                                     <td>
-                                        @if (!empty($holiday->is_optional))
-                                            <span class="badge bg-warning text-dark">{{ __('Optional') }}</span>
+                                        @php
+                                            $isOptional = \App\Services\SpectalHolidayCalendar::isOptionalHoliday($holiday);
+                                        @endphp
+                                        @if ($isOptional)
+                                            <span class="badge" style="background:#ffc107;color:#111;font-weight:700;">{{ __('Optional') }}</span>
                                         @else
                                             <span class="badge bg-danger">{{ __('Public') }}</span>
                                         @endif

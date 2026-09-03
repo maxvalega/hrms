@@ -1603,7 +1603,8 @@ class LeaveController extends Controller
 
                 foreach ($holidays as $holiday) {
                     $hTitle = $holiday->occasion ?? $holiday->title ?? __('Public Holiday');
-                    if (!empty($holiday->is_optional)) {
+                    $isOptional = \App\Services\SpectalHolidayCalendar::isOptionalHoliday($holiday);
+                    if ($isOptional) {
                         $hTitle = __('Optional') . ': ' . $hTitle;
                     } elseif (($holiday->day_type ?? 'full_day') === 'second_half') {
                         $hTitle .= ' (' . __('Second Half') . ')';
@@ -1611,11 +1612,11 @@ class LeaveController extends Controller
                     $hEnd = !empty($holiday->end_date) ? Carbon::parse($holiday->end_date)->addDay()->toDateString() : (!empty($holiday->start_date) ? Carbon::parse($holiday->start_date)->addDay()->toDateString() : date('Y-m-d'));
                     $arrayJson[] = [
                         'id' => 'holiday_' . $holiday->id,
-                        'title' => (!empty($holiday->is_optional) ? '○ ' : '🎉 ') . $hTitle,
+                        'title' => ($isOptional ? '○ ' : '🎉 ') . $hTitle,
                         'start' => $holiday->start_date ?? $holiday->holiday_date ?? date('Y-m-d'),
                         'end' => $hEnd,
-                        'className' => !empty($holiday->is_optional) ? 'bg-warning text-dark' : 'bg-danger text-white',
-                        'textColor' => !empty($holiday->is_optional) ? '#000' : '#FFF',
+                        'className' => $isOptional ? 'bg-warning text-dark' : 'bg-danger text-white',
+                        'textColor' => $isOptional ? '#000' : '#FFF',
                         'allDay' => true,
                         'url' => '#',
                     ];
@@ -1677,7 +1678,7 @@ class LeaveController extends Controller
             ->get();
 
         foreach ($holidays as $holiday) {
-            if (!empty($holiday->is_optional)) {
+            if (\App\Services\SpectalHolidayCalendar::isOptionalHoliday($holiday)) {
                 continue;
             }
             $weight = (($holiday->day_type ?? 'full_day') === 'full_day') ? 1.0 : 0.5;

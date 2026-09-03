@@ -20,6 +20,10 @@ class Holiday extends Model
         'is_optional',
         'day_type',
     ];
+
+    protected $casts = [
+        'is_optional' => 'boolean',
+    ];
     
     public function location()
     {

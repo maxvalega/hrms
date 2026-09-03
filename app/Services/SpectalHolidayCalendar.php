@@ -61,11 +61,61 @@ class SpectalHolidayCalendar
         return array_merge(self::publicHolidays2026(), self::optionalHolidays2026());
     }
 
+    /**
+     * @return array<int, string>
+     */
+    public static function optionalOccasionKeys(): array
+    {
+        return array_map(
+            fn ($row) => self::normalizeOccasion($row['occasion']),
+            self::optionalHolidays2026()
+        );
+    }
+
+    public static function normalizeOccasion(?string $name): string
+    {
+        $name = strtolower(trim((string) $name));
+        $name = str_replace(['–', '—'], '-', $name);
+
+        return preg_replace('/\s+/', ' ', $name) ?? $name;
+    }
+
+    public static function isOptionalHoliday($holiday): bool
+    {
+        if (is_object($holiday) && isset($holiday->is_optional) && (int) $holiday->is_optional === 1) {
+            return true;
+        }
+
+        $occasion = is_object($holiday) ? ($holiday->occasion ?? $holiday->title ?? '') : (string) $holiday;
+
+        return in_array(self::normalizeOccasion($occasion), self::optionalOccasionKeys(), true);
+    }
+
+    public static function ensureOptionalColumns(): void
+    {
+        if (!Schema::hasTable('holidays')) {
+            return;
+        }
+
+        if (!Schema::hasColumn('holidays', 'is_optional')) {
+            Schema::table('holidays', function ($table) {
+                $table->boolean('is_optional')->default(false);
+            });
+        }
+        if (!Schema::hasColumn('holidays', 'day_type')) {
+            Schema::table('holidays', function ($table) {
+                $table->string('day_type', 20)->default('full_day');
+            });
+        }
+    }
+
     public static function syncForCreator(int $createdBy, int $year = 2026): int
     {
         if (!Schema::hasTable('holidays') || !Schema::hasColumn('holidays', 'occasion')) {
             return 0;
         }
+
+        self::ensureOptionalColumns();
 
         $canonical = self::all2026();
         $keepKeys = [];
@@ -91,6 +141,14 @@ class SpectalHolidayCalendar
                 ],
                 $payload
             );
+
+            if (Schema::hasColumn('holidays', 'is_optional')) {
+                \DB::table('holidays')
+                    ->where('created_by', $createdBy)
+                    ->where('start_date', $row['start_date'])
+                    ->where('occasion', $row['occasion'])
+                    ->update(['is_optional' => $row['is_optional'] ? 1 : 0]);
+            }
             $count++;
         }
 
@@ -99,6 +157,11 @@ class SpectalHolidayCalendar
             $key = $holiday->start_date . '|' . $holiday->occasion;
             if (!in_array($key, $keepKeys, true)) {
                 $holiday->delete();
+                continue;
+            }
+            $shouldOptional = self::isOptionalHoliday($holiday);
+            if (Schema::hasColumn('holidays', 'is_optional') && (int) $holiday->is_optional !== (int) $shouldOptional) {
+                \DB::table('holidays')->where('id', $holiday->id)->update(['is_optional' => $shouldOptional ? 1 : 0]);
             }
         }
 

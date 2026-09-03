@@ -541,7 +541,12 @@ class LeavePolicyService
             });
         }
 
-        return $query->first();
+        $holiday = $query->first();
+        if ($holiday && !$includeOptional && \App\Services\SpectalHolidayCalendar::isOptionalHoliday($holiday)) {
+            return null;
+        }
+
+        return $holiday;
     }
 
     /**
@@ -552,24 +557,35 @@ class LeavePolicyService
     public static function optionalHolidayDateOptions(int $createdBy, ?int $year = null): array
     {
         $year = $year ?: (int) Carbon::now('Asia/Kolkata')->year;
-        if (!Schema::hasTable('holidays') || !Schema::hasColumn('holidays', 'is_optional')) {
-            return [];
+        $options = [];
+
+        if (Schema::hasTable('holidays')) {
+            $rows = \App\Models\Holiday::query()
+                ->where('created_by', $createdBy)
+                ->whereYear('start_date', $year)
+                ->orderBy('start_date')
+                ->get();
+
+            foreach ($rows as $holiday) {
+                if (!\App\Services\SpectalHolidayCalendar::isOptionalHoliday($holiday)) {
+                    continue;
+                }
+                $date = Carbon::parse($holiday->start_date);
+                $options[] = [
+                    'date' => $date->toDateString(),
+                    'label' => $date->format('d M Y') . ' — ' . ($holiday->occasion ?? __('Optional Holiday')),
+                ];
+            }
         }
 
-        $rows = \App\Models\Holiday::query()
-            ->where('created_by', $createdBy)
-            ->where('is_optional', 1)
-            ->whereYear('start_date', $year)
-            ->orderBy('start_date')
-            ->get();
-
-        $options = [];
-        foreach ($rows as $holiday) {
-            $date = Carbon::parse($holiday->start_date);
-            $options[] = [
-                'date' => $date->toDateString(),
-                'label' => $date->format('d M Y') . ' — ' . ($holiday->occasion ?? __('Optional Holiday')),
-            ];
+        if (empty($options)) {
+            foreach (\App\Services\SpectalHolidayCalendar::optionalHolidays2026() as $row) {
+                $date = Carbon::parse($row['start_date']);
+                $options[] = [
+                    'date' => $row['start_date'],
+                    'label' => $date->format('d M Y') . ' — ' . $row['occasion'],
+                ];
+            }
         }
 
         return $options;
@@ -612,12 +628,16 @@ class LeavePolicyService
             }
             $match = \App\Models\Holiday::query()
                 ->where('created_by', $createdBy)
-                ->where('is_optional', 1)
                 ->where('start_date', '<=', $start->toDateString())
                 ->where('end_date', '>=', $start->toDateString())
-                ->first();
+                ->get()
+                ->first(fn ($h) => \App\Services\SpectalHolidayCalendar::isOptionalHoliday($h));
             if (!$match) {
-                return __('Optional Holiday can only be taken on one of the published optional public holidays. You may choose any 2, with at least 2 weeks’ notice to your reporting manager.');
+                $onList = collect(\App\Services\SpectalHolidayCalendar::optionalHolidays2026())
+                    ->contains(fn ($row) => $row['start_date'] === $start->toDateString());
+                if (!$onList) {
+                    return __('Optional Holiday can only be taken on one of the published optional public holidays. You may choose any 2, with at least 2 weeks’ notice to your reporting manager.');
+                }
             }
 
             return null;

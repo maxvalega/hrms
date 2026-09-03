@@ -1,6 +1,12 @@
 @php
-    $setting = App\Models\Utility::settings();
-    $plan = App\Models\Utility::getChatGPTSettings();
+    $setting = [];
+    $plan = (object) ['enable_chatgpt' => 'off'];
+    try {
+        $setting = App\Models\Utility::settings();
+        $plan = App\Models\Utility::getChatGPTSettings() ?: $plan;
+    } catch (\Throwable $e) {
+        // Keep form usable even if settings/plan lookup fails
+    }
 @endphp
 {{ Form::open(['url' => 'leave', 'method' => 'post', 'class' => 'needs-validation', 'novalidate', 'files' => true]) }}
 <div class="modal-body">

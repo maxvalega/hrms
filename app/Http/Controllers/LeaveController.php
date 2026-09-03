@@ -158,6 +158,14 @@ class LeaveController extends Controller
             $employmentStatus = null;
             $isSpectal = $this->isSpectalPortal();
 
+            if ($isSpectal) {
+                try {
+                    LeavePolicyService::ensureSpectalOptionalHolidayLeaveType((int) \Auth::user()->creatorId());
+                } catch (\Throwable $e) {
+                    \Log::warning('Leave index: optional holiday leave type ensure failed: ' . $e->getMessage());
+                }
+            }
+
             if (\Auth::user()->type == 'employee') {
                 $user     = \Auth::user();
                 $employee = Employee::where('user_id', '=', $user->id)->first();
@@ -330,12 +338,17 @@ class LeaveController extends Controller
 
     public function create()
     {
-        if (\Auth::user()->can('Create Leave')) {
+        if (!\Auth::user()->can('Create Leave')) {
+            return response()->json(['error' => __('Permission denied.')], 401);
+        }
+
+        try {
             $isProbationRestricted = false;
             $probationWarningMessage = null;
             $isSpectal = $this->isSpectalPortal();
             $applyAsSelf = false;
             $selfEmployee = null;
+            $creatorId = (int) \Auth::user()->creatorId();
 
             if (Auth::user()->type == 'employee') {
                 $employees = Employee::where('user_id', '=', \Auth::user()->id)->first();
@@ -346,57 +359,53 @@ class LeaveController extends Controller
                     $probationWarningMessage = $this->getProbationLeaveNotAllowedMessage($employees);
                 }
             } else {
-                // Spectal HR/admin who also have an employee profile: apply only for self
-                // (full company list was confusing — use Grant Bereavement for on-behalf).
                 $selfEmployee = Employee::where('user_id', \Auth::id())
-                    ->where('created_by', \Auth::user()->creatorId())
+                    ->where('created_by', $creatorId)
                     ->first();
 
                 if ($isSpectal && $selfEmployee) {
                     $employees = $selfEmployee;
                     $applyAsSelf = true;
                 } else {
-                    $employees = Employee::where('created_by', '=', \Auth::user()->creatorId())->get()->pluck('name', 'id');
-                }
-            }
-
-            $creatorId = (int) \Auth::user()->creatorId();
-            if ($isSpectal) {
-                try {
-                    LeavePolicyService::ensureSpectalOptionalHolidayLeaveType($creatorId);
-                } catch (\Throwable $e) {
-                    \Log::warning('Leave create: optional holiday leave type ensure failed: ' . $e->getMessage());
+                    $employees = Employee::where('created_by', '=', $creatorId)->get()->pluck('name', 'id');
                 }
             }
 
             $leavetypes = LeaveType::where('created_by', '=', $creatorId)->get();
             $filterEmployee = $applyAsSelf ? $selfEmployee : null;
             if ($isSpectal) {
-                $leavetypes = $leavetypes->filter(function ($lt) use ($filterEmployee) {
-                    $code = LeavePolicyService::resolvePolicyCode($lt);
-                    // Bereavement is granted via dedicated HR form, not Create Leave
-                    if ($code === 'bereavement') {
-                        return false;
-                    }
+                try {
+                    $leavetypes = $leavetypes->filter(function ($lt) use ($filterEmployee) {
+                        $code = LeavePolicyService::resolvePolicyCode($lt);
+                        if ($code === 'bereavement') {
+                            return false;
+                        }
 
-                    return $this->leavePolicy()->shouldShowOnSpectalBalance($lt, $filterEmployee);
-                })->values();
+                        return $this->leavePolicy()->shouldShowOnSpectalBalance($lt, $filterEmployee);
+                    })->values();
+                } catch (\Throwable $e) {
+                    \Log::warning('Leave create: filter leave types failed: ' . $e->getMessage());
+                    $leavetypes = $leavetypes->filter(function ($lt) {
+                        $title = strtolower((string) ($lt->title ?? ''));
+
+                        return !str_contains($title, 'bereavement');
+                    })->values();
+                }
             }
 
             $substitutes = [];
             if ($applyAsSelf && !empty($selfEmployee)) {
-                $substitutes = $this->getSubstituteList($selfEmployee->id);
-            }
-
-            $optionalHolidayOptions = [];
-            if ($isSpectal) {
                 try {
-                    $optionalHolidayOptions = LeavePolicyService::optionalHolidayDateOptions($creatorId);
+                    $substitutes = $this->getSubstituteList($selfEmployee->id);
                 } catch (\Throwable $e) {
-                    \Log::warning('Leave create: optional holiday options failed: ' . $e->getMessage());
-                    $optionalHolidayOptions = [];
+                    $substitutes = [];
                 }
             }
+
+            // Static list only — never touch holidays DB / leave-type ensure on form open
+            $optionalHolidayOptions = $isSpectal
+                ? LeavePolicyService::optionalHolidayDateOptionsFromCalendar()
+                : [];
 
             return view('leave.create', compact(
                 'employees',
@@ -407,8 +416,22 @@ class LeaveController extends Controller
                 'applyAsSelf',
                 'optionalHolidayOptions'
             ));
-        } else {
-            return response()->json(['error' => __('Permission denied.')], 401);
+        } catch (\Throwable $e) {
+            \Log::error('leave.create failed: ' . $e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            // Return 200 HTML so ajax-popup shows a message instead of a blank 500 page
+            $msg = e(__('Unable to open the leave form. Please contact admin.'));
+            $detail = config('app.debug') ? '<br><small>' . e($e->getMessage()) . '</small>' : '';
+
+            return response(
+                '<div class="modal-body"><div class="alert alert-danger mb-0">' . $msg . $detail . '</div></div>'
+                . '<div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">'
+                . e(__('Close')) . '</button></div>',
+                200
+            );
         }
     }
 

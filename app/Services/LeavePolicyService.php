@@ -557,29 +557,48 @@ class LeavePolicyService
      */
     public static function optionalHolidayDateOptions(int $createdBy, ?int $year = null): array
     {
-        $year = $year ?: (int) Carbon::now('Asia/Kolkata')->year;
-        $options = [];
+        try {
+            $year = $year ?: (int) Carbon::now('Asia/Kolkata')->year;
+            $options = [];
 
-        if (Schema::hasTable('holidays')) {
-            $rows = \App\Models\Holiday::query()
-                ->where('created_by', $createdBy)
-                ->whereYear('start_date', $year)
-                ->orderBy('start_date')
-                ->get();
+            if (Schema::hasTable('holidays')) {
+                $rows = \App\Models\Holiday::query()
+                    ->where('created_by', $createdBy)
+                    ->whereYear('start_date', $year)
+                    ->orderBy('start_date')
+                    ->get();
 
-            foreach ($rows as $holiday) {
-                if (!\App\Services\SpectalHolidayCalendar::isOptionalHoliday($holiday)) {
-                    continue;
+                foreach ($rows as $holiday) {
+                    if (!\App\Services\SpectalHolidayCalendar::isOptionalHoliday($holiday)) {
+                        continue;
+                    }
+                    $date = Carbon::parse($holiday->start_date);
+                    $options[] = [
+                        'date' => $date->toDateString(),
+                        'label' => $date->format('d M Y') . ' — ' . ($holiday->occasion ?? __('Optional Holiday')),
+                    ];
                 }
-                $date = Carbon::parse($holiday->start_date);
-                $options[] = [
-                    'date' => $date->toDateString(),
-                    'label' => $date->format('d M Y') . ' — ' . ($holiday->occasion ?? __('Optional Holiday')),
-                ];
             }
+
+            if (!empty($options)) {
+                return $options;
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('optionalHolidayDateOptions DB read failed: ' . $e->getMessage());
         }
 
-        if (empty($options)) {
+        return self::optionalHolidayDateOptionsFromCalendar();
+    }
+
+    /**
+     * Canonical optional holiday dropdown (no DB). Safe for Create Leave form open.
+     *
+     * @return array<int, array{date:string,label:string}>
+     */
+    public static function optionalHolidayDateOptionsFromCalendar(): array
+    {
+        $options = [];
+        try {
             foreach (\App\Services\SpectalHolidayCalendar::optionalHolidays2026() as $row) {
                 $date = Carbon::parse($row['start_date']);
                 $options[] = [
@@ -587,6 +606,8 @@ class LeavePolicyService
                     'label' => $date->format('d M Y') . ' — ' . $row['occasion'],
                 ];
             }
+        } catch (\Throwable $e) {
+            \Log::warning('optionalHolidayDateOptionsFromCalendar failed: ' . $e->getMessage());
         }
 
         return $options;

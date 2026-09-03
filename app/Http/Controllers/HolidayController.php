@@ -18,7 +18,12 @@ class HolidayController extends Controller
     {
         if (\Auth::user()->can('Manage Holiday')) {
             if (\App\Services\LeavePolicyService::isSpectalPortal()) {
-                SpectalHolidayCalendar::syncForCreator((int) \Auth::user()->creatorId());
+                try {
+                    SpectalHolidayCalendar::syncForCreator((int) \Auth::user()->creatorId());
+                    \App\Services\LeavePolicyService::ensureSpectalOptionalHolidayLeaveType((int) \Auth::user()->creatorId());
+                } catch (\Throwable $e) {
+                    \Log::warning('Holiday index Spectal sync failed: ' . $e->getMessage());
+                }
             }
 
             $holidays = LocalHoliday::where('created_by', '=', \Auth::user()->creatorId());

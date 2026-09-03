@@ -788,45 +788,73 @@ class LeavePolicyService
 
     /**
      * Ensure Spectal company has the Optional Holiday leave type (2/year, no CF).
+     * Schema-safe: only writes columns that exist (avoids 500 if migrations pending).
      */
-    public static function ensureSpectalOptionalHolidayLeaveType(int $createdBy): LeaveType
+    public static function ensureSpectalOptionalHolidayLeaveType(int $createdBy): ?LeaveType
     {
-        $def = self::policyDefinitions()['optional_holiday'];
-        $existing = LeaveType::where('created_by', $createdBy)
-            ->where(function ($q) {
-                $q->where('policy_code', 'optional_holiday')
-                    ->orWhere('title', 'like', '%Optional Holiday%')
-                    ->orWhere('title', 'like', '%Optional Public Holiday%');
-            })
-            ->orderByRaw("CASE WHEN policy_code = 'optional_holiday' THEN 0 ELSE 1 END")
-            ->first();
-
-        $payload = [
-            'title' => $def['title'],
-            'policy_code' => 'optional_holiday',
-            'days' => 2,
-            'monthly_credit' => 0,
-            'annual_credit' => 2,
-            'credit_frequency' => 'annual',
-            'is_prorata' => false,
-            'is_carry_forward' => 0,
-            'max_carry_forward' => 0,
-            'is_encashable' => 0,
-            'min_notice_days' => 14,
-            'notice_rules' => null,
-            'eligible_employee_types' => $def['eligible_employee_types'] ?? ['intern', 'full_time'],
-            'policy_notes' => $def['policy_notes'],
-            'created_by' => $createdBy,
-        ];
-
-        if ($existing) {
-            $existing->fill($payload);
-            $existing->save();
-
-            return $existing;
+        if (!Schema::hasTable('leave_types')) {
+            return null;
         }
 
-        return LeaveType::create($payload);
+        try {
+            $def = self::policyDefinitions()['optional_holiday'];
+            $query = LeaveType::where('created_by', $createdBy);
+
+            if (Schema::hasColumn('leave_types', 'policy_code')) {
+                $query->where(function ($q) {
+                    $q->where('policy_code', 'optional_holiday')
+                        ->orWhere('title', 'like', '%Optional Holiday%')
+                        ->orWhere('title', 'like', '%Optional Public Holiday%');
+                })->orderByRaw("CASE WHEN policy_code = 'optional_holiday' THEN 0 ELSE 1 END");
+            } else {
+                $query->where(function ($q) {
+                    $q->where('title', 'like', '%Optional Holiday%')
+                        ->orWhere('title', 'like', '%Optional Public Holiday%');
+                });
+            }
+
+            $existing = $query->first();
+
+            $payload = [
+                'title' => $def['title'],
+                'days' => 2,
+                'created_by' => $createdBy,
+            ];
+
+            $optional = [
+                'policy_code' => 'optional_holiday',
+                'monthly_credit' => 0,
+                'annual_credit' => 2,
+                'credit_frequency' => 'annual',
+                'is_prorata' => false,
+                'is_carry_forward' => 0,
+                'max_carry_forward' => 0,
+                'is_encashable' => 0,
+                'min_notice_days' => 14,
+                'notice_rules' => null,
+                'eligible_employee_types' => $def['eligible_employee_types'] ?? ['intern', 'full_time'],
+                'policy_notes' => $def['policy_notes'],
+            ];
+
+            foreach ($optional as $column => $value) {
+                if (Schema::hasColumn('leave_types', $column)) {
+                    $payload[$column] = $value;
+                }
+            }
+
+            if ($existing) {
+                $existing->fill($payload);
+                $existing->save();
+
+                return $existing;
+            }
+
+            return LeaveType::create($payload);
+        } catch (\Throwable $e) {
+            \Log::warning('ensureSpectalOptionalHolidayLeaveType failed: ' . $e->getMessage());
+
+            return null;
+        }
     }
 
 

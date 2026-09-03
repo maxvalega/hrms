@@ -12,7 +12,7 @@
         </div>
     @endif
 
-    @if ($plan->enable_chatgpt == 'on')
+    @if (!empty($plan) && (($plan->enable_chatgpt ?? 'off') == 'on'))
         <div class="card-footer text-end">
             <a href="#" class="btn btn-sm btn-primary" data-size="medium" data-ajax-popup-over="true"
                 data-url="{{ route('generate', ['leave']) }}" data-bs-toggle="tooltip" data-bs-placement="top"
@@ -22,8 +22,8 @@
         </div>
     @endif
 
-    @if (!empty($applyAsSelf) || \Auth::user()->type == 'employee')
-        {!! Form::hidden('employee_id', !empty($employees) ? $employees->id : 0, ['id' => 'employee_id']) !!}
+    @if ((!empty($applyAsSelf) || \Auth::user()->type == 'employee') && !empty($employees) && is_object($employees) && isset($employees->id))
+        {!! Form::hidden('employee_id', $employees->id, ['id' => 'employee_id']) !!}
         @if (!empty($applyAsSelf) && \Auth::user()->type != 'employee' && !empty($employees->name))
             <div class="row">
                 <div class="col-md-12">
@@ -38,7 +38,7 @@
             <div class="col-md-12">
                 <div class="form-group">
                     {{ Form::label('employee_id', __('Employee'), ['class' => 'col-form-label']) }}<x-required></x-required>
-                    {{ Form::select('employee_id', $employees, null, ['class' => 'form-control', 'id' => 'employee_id', 'required' => 'required', 'placeholder' => __('Select Employee')]) }}
+                    {{ Form::select('employee_id', $employees ?? [], null, ['class' => 'form-control', 'id' => 'employee_id', 'required' => 'required', 'placeholder' => __('Select Employee')]) }}
                 </div>
             </div>
         </div>

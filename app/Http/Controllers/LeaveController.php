@@ -362,8 +362,11 @@ class LeaveController extends Controller
 
             $creatorId = (int) \Auth::user()->creatorId();
             if ($isSpectal) {
-                LeavePolicyService::ensureSpectalOptionalHolidayLeaveType($creatorId);
-                \App\Services\SpectalHolidayCalendar::syncForCreator($creatorId);
+                try {
+                    LeavePolicyService::ensureSpectalOptionalHolidayLeaveType($creatorId);
+                } catch (\Throwable $e) {
+                    \Log::warning('Leave create: optional holiday leave type ensure failed: ' . $e->getMessage());
+                }
             }
 
             $leavetypes = LeaveType::where('created_by', '=', $creatorId)->get();
@@ -385,9 +388,15 @@ class LeaveController extends Controller
                 $substitutes = $this->getSubstituteList($selfEmployee->id);
             }
 
-            $optionalHolidayOptions = $isSpectal
-                ? LeavePolicyService::optionalHolidayDateOptions($creatorId)
-                : [];
+            $optionalHolidayOptions = [];
+            if ($isSpectal) {
+                try {
+                    $optionalHolidayOptions = LeavePolicyService::optionalHolidayDateOptions($creatorId);
+                } catch (\Throwable $e) {
+                    \Log::warning('Leave create: optional holiday options failed: ' . $e->getMessage());
+                    $optionalHolidayOptions = [];
+                }
+            }
 
             return view('leave.create', compact(
                 'employees',

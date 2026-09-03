@@ -158,14 +158,6 @@ class LeaveController extends Controller
             $employmentStatus = null;
             $isSpectal = $this->isSpectalPortal();
 
-            if ($isSpectal) {
-                try {
-                    LeavePolicyService::ensureSpectalOptionalHolidayLeaveType((int) \Auth::user()->creatorId());
-                } catch (\Throwable $e) {
-                    \Log::warning('Leave index: optional holiday leave type ensure failed: ' . $e->getMessage());
-                }
-            }
-
             if (\Auth::user()->type == 'employee') {
                 $user     = \Auth::user();
                 $employee = Employee::where('user_id', '=', $user->id)->first();
@@ -201,27 +193,34 @@ class LeaveController extends Controller
 
                 $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
                 foreach ($leaveTypes as $leaveType) {
-                    if ($isSpectal && !$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $employee)) {
-                        continue;
+                    try {
+                        if ($isSpectal && !$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $employee)) {
+                            continue;
+                        }
+                        if (empty($employee)) {
+                            continue;
+                        }
+
+                        $summary = $this->calculateLeaveBalanceSummary((int) $employee->id, $leaveType, $date);
+
+                        $leaveBalance[] = [
+                            'leave_type' => $leaveType->title,
+                            'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
+                            'total' => $summary['total'],
+                            'monthly_accrual' => $summary['monthly_accrual'],
+                            'used' => $summary['used'],
+                            'pending' => $summary['pending'],
+                            'available' => $summary['available'],
+                            'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
+                            'carry_forward' => $summary['carry_forward'] ?? 0,
+                            'encashable_leave' => $summary['encashable_leave'] ?? 0,
+                            'opening_balance' => $summary['opening_balance'] ?? 0,
+                            'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
+                            'note' => $summary['note'] ?? null,
+                        ];
+                    } catch (\Throwable $e) {
+                        \Log::warning('Leave index balance failed for type ' . ($leaveType->id ?? '?') . ': ' . $e->getMessage());
                     }
-
-                    $summary = $this->calculateLeaveBalanceSummary((int) $employee->id, $leaveType, $date);
-
-                    $leaveBalance[] = [
-                        'leave_type' => $leaveType->title,
-                        'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
-                        'total' => $summary['total'],
-                        'monthly_accrual' => $summary['monthly_accrual'],
-                        'used' => $summary['used'],
-                        'pending' => $summary['pending'],
-                        'available' => $summary['available'],
-                        'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
-                        'carry_forward' => $summary['carry_forward'] ?? 0,
-                        'encashable_leave' => $summary['encashable_leave'] ?? 0,
-                        'opening_balance' => $summary['opening_balance'] ?? 0,
-                        'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
-                        'note' => $summary['note'] ?? null,
-                    ];
                 }
             } else {
                 $leaves = LocalLeave::where('created_by', '=', \Auth::user()->creatorId())
@@ -266,25 +265,29 @@ class LeaveController extends Controller
 
                         $leaveTypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
                         foreach ($leaveTypes as $leaveType) {
-                            if (!$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $previewEmployee)) {
-                                continue;
+                            try {
+                                if (!$this->leavePolicy()->shouldShowOnSpectalBalance($leaveType, $previewEmployee)) {
+                                    continue;
+                                }
+                                $summary = $this->calculateLeaveBalanceSummary((int) $previewEmployee->id, $leaveType, $date);
+                                $leaveBalance[] = [
+                                    'leave_type' => $leaveType->title,
+                                    'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
+                                    'total' => $summary['total'],
+                                    'monthly_accrual' => $summary['monthly_accrual'],
+                                    'used' => $summary['used'],
+                                    'pending' => $summary['pending'],
+                                    'available' => $summary['available'],
+                                    'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
+                                    'carry_forward' => $summary['carry_forward'] ?? 0,
+                                    'encashable_leave' => $summary['encashable_leave'] ?? 0,
+                                    'opening_balance' => $summary['opening_balance'] ?? 0,
+                                    'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
+                                    'note' => $summary['note'] ?? null,
+                                ];
+                            } catch (\Throwable $e) {
+                                \Log::warning('Leave index balance failed for type ' . ($leaveType->id ?? '?') . ': ' . $e->getMessage());
                             }
-                            $summary = $this->calculateLeaveBalanceSummary((int) $previewEmployee->id, $leaveType, $date);
-                            $leaveBalance[] = [
-                                'leave_type' => $leaveType->title,
-                                'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
-                                'total' => $summary['total'],
-                                'monthly_accrual' => $summary['monthly_accrual'],
-                                'used' => $summary['used'],
-                                'pending' => $summary['pending'],
-                                'available' => $summary['available'],
-                                'credit_mode' => $summary['credit_mode'] ?? 'lump_sum',
-                                'carry_forward' => $summary['carry_forward'] ?? 0,
-                                'encashable_leave' => $summary['encashable_leave'] ?? 0,
-                                'opening_balance' => $summary['opening_balance'] ?? 0,
-                                'accrued_to_date' => $summary['accrued_to_date'] ?? 0,
-                                'note' => $summary['note'] ?? null,
-                            ];
                         }
                     }
 
@@ -317,9 +320,13 @@ class LeaveController extends Controller
 
             // Attach employment status label for table / filters (Spectal)
             if ($isSpectal) {
-                $leaves->each(function ($leave) {
-                    $leave->employment_status_meta = $this->employmentStatusMeta($leave->employees);
-                });
+                try {
+                    $leaves->each(function ($leave) {
+                        $leave->employment_status_meta = $this->employmentStatusMeta($leave->employees);
+                    });
+                } catch (\Throwable $e) {
+                    \Log::warning('Leave index employment status attach failed: ' . $e->getMessage());
+                }
             }
 
             return view('leave.index', compact(

@@ -360,7 +360,13 @@ class LeaveController extends Controller
                 }
             }
 
-            $leavetypes = LeaveType::where('created_by', '=', \Auth::user()->creatorId())->get();
+            $creatorId = (int) \Auth::user()->creatorId();
+            if ($isSpectal) {
+                LeavePolicyService::ensureSpectalOptionalHolidayLeaveType($creatorId);
+                \App\Services\SpectalHolidayCalendar::syncForCreator($creatorId);
+            }
+
+            $leavetypes = LeaveType::where('created_by', '=', $creatorId)->get();
             $filterEmployee = $applyAsSelf ? $selfEmployee : null;
             if ($isSpectal) {
                 $leavetypes = $leavetypes->filter(function ($lt) use ($filterEmployee) {
@@ -380,7 +386,7 @@ class LeaveController extends Controller
             }
 
             $optionalHolidayOptions = $isSpectal
-                ? LeavePolicyService::optionalHolidayDateOptions((int) \Auth::user()->creatorId())
+                ? LeavePolicyService::optionalHolidayDateOptions($creatorId)
                 : [];
 
             return view('leave.create', compact(
@@ -1523,6 +1529,7 @@ class LeaveController extends Controller
             $leaveCounts[] = [
                 'id' => $leaveType->id,
                 'title' => $leaveType->title,
+                'policy_code' => LeavePolicyService::resolvePolicyCode($leaveType),
                 'days' => $summary['total'],
                 'total_leave' => $summary['used'],
                 'pending_leave' => $summary['pending'],
@@ -1743,6 +1750,26 @@ class LeaveController extends Controller
             if ($policyCode === 'cl') {
                 $note = __('Casual Leave is only available during the May–July window and is not an annual leave bank.');
             }
+            if ($policyCode === 'optional_holiday') {
+                $note = __('Max 2 per year from company list. 2 weeks’ notice. No clubbing with leave/Sunday/WFH/public holiday. Lapses at year end (no carry-forward).');
+            }
+        }
+
+        // Optional Holiday: fixed annual bank of 2 (never prorated / never CF)
+        if ($isSpectal && $policyCode === 'optional_holiday') {
+            return [
+                'allowed' => 2.0,
+                'display_total' => 2.0,
+                'total_annual' => 2.0,
+                'monthly_accrual' => 0,
+                'eligible_months' => 0,
+                'credited_months' => 0,
+                'opening_balance' => 0,
+                'accrued_to_date' => 2.0,
+                'credit_mode' => 'lump_sum',
+                'carry_forward' => 0,
+                'note' => $note,
+            ];
         }
 
         // NEW: per-type credit frequency from policy matrix

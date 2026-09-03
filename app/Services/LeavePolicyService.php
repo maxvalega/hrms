@@ -188,10 +188,11 @@ class LeavePolicyService
                 'credit_frequency' => 'annual',
                 'is_prorata' => false,
                 'is_carry_forward' => 0,
+                'max_carry_forward' => 0,
                 'is_encashable' => 0,
                 'min_notice_days' => 14,
                 'eligible_employee_types' => ['intern', 'full_time'],
-                'policy_notes' => 'Choose any 2 optional public holidays from the published list. Inform your reporting manager at least 2 weeks in advance.',
+                'policy_notes' => 'Max 2 per year from the company optional holiday list only. Requires 2 weeks’ advance notice to reporting manager. Cannot be clubbed with any other leave, Sunday, WFH, or public holiday. Not carry-forward — unused days lapse at year end.',
             ],
             'wfh' => [
                 'title' => 'Work From Home (WFH)',
@@ -626,6 +627,17 @@ class LeavePolicyService
             if (!$start->eq($end)) {
                 return __('Optional Holiday must be applied for a single date from the published optional public holiday list.');
             }
+            if ($dayType !== 'full_day') {
+                return __('Optional Holiday must be taken as a full day.');
+            }
+            if ($start->dayOfWeek === Carbon::SUNDAY) {
+                return __('Optional Holiday cannot be applied on Sunday and cannot be clubbed with Sundays.');
+            }
+            // Must be on company optional list (not a mandatory public holiday)
+            $publicOnDate = self::getHolidayRecordOnDate($start->toDateString(), $createdBy, false);
+            if ($publicOnDate) {
+                return __('Optional Holiday cannot be applied on a public holiday and cannot be clubbed with public holidays.');
+            }
             $match = \App\Models\Holiday::query()
                 ->where('created_by', $createdBy)
                 ->where('start_date', '<=', $start->toDateString())
@@ -636,8 +648,12 @@ class LeavePolicyService
                 $onList = collect(\App\Services\SpectalHolidayCalendar::optionalHolidays2026())
                     ->contains(fn ($row) => $row['start_date'] === $start->toDateString());
                 if (!$onList) {
-                    return __('Optional Holiday can only be taken on one of the published optional public holidays. You may choose any 2, with at least 2 weeks’ notice to your reporting manager.');
+                    return __('Optional Holiday can only be applied on one of the optional holidays listed by the company (max 2 per year, with at least 2 weeks’ notice).');
                 }
+            }
+
+            if ($clubError = $this->validateOptionalHolidayClubbing((int) $employee->id, $start)) {
+                return $clubError;
             }
 
             return null;
@@ -693,7 +709,124 @@ class LeavePolicyService
             }
         }
 
+        // Other leave / WFH cannot sit next to an Optional Holiday (no clubbing either direction)
+        if ($clubAgainstOh = $this->validateLeaveNotAdjacentToOptionalHoliday((int) $employee->id, $start, $end, $createdBy)) {
+            return $clubAgainstOh;
+        }
+
         return null;
+    }
+
+    /**
+     * Optional Holiday cannot be clubbed with any other leave or WFH
+     * on the calendar day immediately before or after.
+     */
+    public function validateOptionalHolidayClubbing(int $employeeId, Carbon $ohDate): ?string
+    {
+        $before = $ohDate->copy()->subDay();
+        $after = $ohDate->copy()->addDay();
+
+        $adjacentLeave = LocalLeave::where('employee_id', $employeeId)
+            ->whereIn('status', ['Approved', 'Pending'])
+            ->where(function ($q) {
+                $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
+            })
+            ->where(function ($q) use ($before, $after) {
+                $q->where(function ($q2) use ($before) {
+                    $q2->where('start_date', '<=', $before->toDateString())
+                        ->where('end_date', '>=', $before->toDateString());
+                })->orWhere(function ($q2) use ($after) {
+                    $q2->where('start_date', '<=', $after->toDateString())
+                        ->where('end_date', '>=', $after->toDateString());
+                });
+            })
+            ->exists();
+
+        if ($adjacentLeave) {
+            return __('Optional Holiday cannot be clubbed with any other leave or WFH. There is already leave/WFH on the day before or after this optional holiday.');
+        }
+
+        return null;
+    }
+
+    /**
+     * Block PL/SL/WFH/etc. immediately before or after a claimed Optional Holiday.
+     */
+    public function validateLeaveNotAdjacentToOptionalHoliday(int $employeeId, Carbon $start, Carbon $end, int $createdBy): ?string
+    {
+        $ohTypeIds = LeaveType::where('created_by', $createdBy)
+            ->get()
+            ->filter(fn ($lt) => self::resolvePolicyCode($lt) === 'optional_holiday')
+            ->pluck('id')
+            ->all();
+
+        if (empty($ohTypeIds)) {
+            return null;
+        }
+
+        $before = $start->copy()->subDay()->toDateString();
+        $after = $end->copy()->addDay()->toDateString();
+
+        $adjacentOh = LocalLeave::where('employee_id', $employeeId)
+            ->whereIn('leave_type_id', $ohTypeIds)
+            ->whereIn('status', ['Approved', 'Pending'])
+            ->where(function ($q) use ($before, $after) {
+                $q->where(function ($q2) use ($before) {
+                    $q2->where('start_date', '<=', $before)->where('end_date', '>=', $before);
+                })->orWhere(function ($q2) use ($after) {
+                    $q2->where('start_date', '<=', $after)->where('end_date', '>=', $after);
+                });
+            })
+            ->exists();
+
+        if ($adjacentOh) {
+            return __('This leave/WFH cannot be clubbed with Optional Holiday. Choose dates that are not immediately before or after an Optional Holiday.');
+        }
+
+        return null;
+    }
+
+    /**
+     * Ensure Spectal company has the Optional Holiday leave type (2/year, no CF).
+     */
+    public static function ensureSpectalOptionalHolidayLeaveType(int $createdBy): LeaveType
+    {
+        $def = self::policyDefinitions()['optional_holiday'];
+        $existing = LeaveType::where('created_by', $createdBy)
+            ->where(function ($q) {
+                $q->where('policy_code', 'optional_holiday')
+                    ->orWhere('title', 'like', '%Optional Holiday%')
+                    ->orWhere('title', 'like', '%Optional Public Holiday%');
+            })
+            ->orderByRaw("CASE WHEN policy_code = 'optional_holiday' THEN 0 ELSE 1 END")
+            ->first();
+
+        $payload = [
+            'title' => $def['title'],
+            'policy_code' => 'optional_holiday',
+            'days' => 2,
+            'monthly_credit' => 0,
+            'annual_credit' => 2,
+            'credit_frequency' => 'annual',
+            'is_prorata' => false,
+            'is_carry_forward' => 0,
+            'max_carry_forward' => 0,
+            'is_encashable' => 0,
+            'min_notice_days' => 14,
+            'notice_rules' => null,
+            'eligible_employee_types' => $def['eligible_employee_types'] ?? ['intern', 'full_time'],
+            'policy_notes' => $def['policy_notes'],
+            'created_by' => $createdBy,
+        ];
+
+        if ($existing) {
+            $existing->fill($payload);
+            $existing->save();
+
+            return $existing;
+        }
+
+        return LeaveType::create($payload);
     }
 
 
@@ -878,6 +1011,9 @@ class LeavePolicyService
             $leaveType->min_notice_days = 14;
             $leaveType->notice_rules = null;
             $leaveType->is_prorata = false;
+            $leaveType->is_carry_forward = 0;
+            $leaveType->max_carry_forward = 0;
+            $leaveType->is_encashable = 0;
         }
 
         return $leaveType;
@@ -1002,6 +1138,10 @@ class LeavePolicyService
         if ($requiredCalendarDays !== null) {
             $diff = $applied->diffInDays($start, false);
             if ($diff < $requiredCalendarDays) {
+                if (self::resolvePolicyCode($leaveType) === 'optional_holiday') {
+                    return __('Optional Holiday requires at least 2 weeks’ (14 days) advance notice to your reporting manager.');
+                }
+
                 return __('This leave requires at least :days days\' advance notice.', ['days' => $requiredCalendarDays]);
             }
         }

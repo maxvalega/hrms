@@ -80,7 +80,8 @@
     <div class="row" id="optional-holiday-row" style="display:none;">
         <div class="col-md-12">
             <div class="alert alert-warning py-2">
-                {{ __('You may choose any 2 optional public holidays. Inform your reporting manager at least 2 weeks in advance.') }}
+                <strong>{{ __('Optional Holiday rules') }}:</strong>
+                {{ __('Max 2 per year from the company list only. Apply at least 2 weeks in advance. Cannot be clubbed with any other leave, Sunday, WFH, or public holiday. Not carry-forward — unused days lapse at year end.') }}
             </div>
             <div class="form-group">
                 <label class="col-form-label">{{ __('Optional Public Holiday') }}</label>
@@ -414,6 +415,7 @@
                             .text(optionText)
                             .attr('data-title', value.title)
                             .attr('data-approval', value.approval_requirement || 'na')
+                            .attr('data-policy', value.policy_code || '')
                             .attr('data-used', used)
                             .attr('data-pending', pending)
                             .attr('data-available', available)
@@ -477,6 +479,25 @@
             if (v) {
                 $('#start_date').val(v);
                 $('#end_date').val(v);
+            }
+        });
+
+        $('form').on('submit', function(e) {
+            var selectedOption = $('#leave_type_id').find('option:selected');
+            var policyCode = (selectedOption.data('policy') || '').toString().toLowerCase();
+            var titleLower = (selectedOption.text() || '').toLowerCase();
+            var isOptionalHoliday = policyCode === 'optional_holiday' || /optional/.test(titleLower);
+            if (isOptionalHoliday) {
+                var ohDate = $('#optional_holiday_date').val();
+                if (!ohDate) {
+                    e.preventDefault();
+                    alert('{{ __('Please select an optional public holiday from the company list.') }}');
+                    return false;
+                }
+                $('#start_date').val(ohDate);
+                $('#end_date').val(ohDate);
+                $('#day_type_full').prop('checked', true);
+                updateDayTypeHidden();
             }
         });
 

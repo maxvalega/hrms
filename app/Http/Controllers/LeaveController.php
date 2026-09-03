@@ -591,13 +591,17 @@ class LeaveController extends Controller
                 return redirect()->back()->with('error', __('You already have a leave or WFH application (Pending or Approved) on the selected date(s).'));
             }
 
-            if (Schema::hasTable('attendance_regularisations')) {
-                $hasRegularisation = \App\Models\AttendanceRegularisation::where('employee_id', $employee->id)
-                    ->whereIn('status', ['Approved', 'Pending'])
-                    ->whereBetween('regularisation_date', [$request->start_date, $request->end_date])
-                    ->exists();
-                if ($hasRegularisation) {
-                    return redirect()->back()->with('error', __('You already have an Attendance Regularisation request on the selected date(s).'));
+            if (Schema::hasTable('attendance_regularisations') && Schema::hasColumn('attendance_regularisations', 'date')) {
+                try {
+                    $hasRegularisation = \App\Models\AttendanceRegularisation::where('employee_id', $employee->id)
+                        ->whereIn('status', ['Approved', 'Pending'])
+                        ->whereBetween('date', [$request->start_date, $request->end_date])
+                        ->exists();
+                    if ($hasRegularisation) {
+                        return redirect()->back()->with('error', __('You already have an Attendance Regularisation request on the selected date(s).'));
+                    }
+                } catch (\Throwable $e) {
+                    \Log::warning('Leave store: regularisation overlap check skipped: ' . $e->getMessage());
                 }
             }
 

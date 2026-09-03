@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exports\HolidayExport;
 use App\Imports\HolidayImport;
 use App\Models\Holiday as LocalHoliday;
+use App\Services\SpectalHolidayCalendar;
 use Illuminate\Http\Request;
 use App\Models\Utility;
 use Illuminate\Support\Facades\Auth;
@@ -16,6 +17,10 @@ class HolidayController extends Controller
     public function index(Request $request)
     {
         if (\Auth::user()->can('Manage Holiday')) {
+            if (\App\Services\LeavePolicyService::isSpectalPortal()) {
+                SpectalHolidayCalendar::syncForCreator((int) \Auth::user()->creatorId());
+            }
+
             $holidays = LocalHoliday::where('created_by', '=', \Auth::user()->creatorId());
 
             if (!empty($request->start_date)) {
@@ -24,7 +29,7 @@ class HolidayController extends Controller
             if (!empty($request->end_date)) {
                 $holidays->where('end_date', '<=', $request->end_date);
             }
-            $holidays = $holidays->get();
+            $holidays = $holidays->orderBy('start_date')->get();
 
             return view('holiday.index', compact('holidays'));
         }
@@ -62,6 +67,12 @@ class HolidayController extends Controller
         $holiday->start_date = $request->start_date;
         $holiday->end_date = $request->end_date;
         $holiday->created_by = \Auth::user()->creatorId();
+        if (\Schema::hasColumn('holidays', 'is_optional')) {
+            $holiday->is_optional = $request->boolean('is_optional');
+        }
+        if (\Schema::hasColumn('holidays', 'day_type')) {
+            $holiday->day_type = $request->input('day_type', 'full_day');
+        }
         $holiday->save();
 
         \App\Services\InAppNotifier::notifyCompanyEmployees(\Auth::user()->creatorId(), [
@@ -148,6 +159,12 @@ class HolidayController extends Controller
         $holiday->occasion = $request->occasion;
         $holiday->start_date = $request->start_date;
         $holiday->end_date = $request->end_date;
+        if (\Schema::hasColumn('holidays', 'is_optional')) {
+            $holiday->is_optional = $request->boolean('is_optional');
+        }
+        if (\Schema::hasColumn('holidays', 'day_type')) {
+            $holiday->day_type = $request->input('day_type', 'full_day');
+        }
         $holiday->save();
 
         return redirect()->route('holiday.index')->with('success', 'Holiday successfully updated.');

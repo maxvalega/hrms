@@ -100,6 +100,7 @@
                         <thead>
                             <tr>
                                 <th>{{ __('Occasion') }}</th>
+                                <th>{{ __('Type') }}</th>
                                 <th>{{ __('Start Date') }}</th>
                                 <th>{{ __('End Date') }}</th>
                                 @if (Gate::check('Edit Holiday') || Gate::check('Delete Holiday'))
@@ -110,7 +111,21 @@
                         <tbody>
                             @foreach ($holidays as $holiday)
                                 <tr>
-                                    <td>{{ $holiday->occasion }}</td>
+                                    <td>
+                                        {{ $holiday->occasion }}
+                                        @if (($holiday->day_type ?? 'full_day') === 'second_half')
+                                            <span class="badge bg-secondary ms-1">{{ __('Second Half') }}</span>
+                                        @elseif (($holiday->day_type ?? 'full_day') === 'first_half')
+                                            <span class="badge bg-secondary ms-1">{{ __('First Half') }}</span>
+                                        @endif
+                                    </td>
+                                    <td>
+                                        @if (!empty($holiday->is_optional))
+                                            <span class="badge bg-warning text-dark">{{ __('Optional') }}</span>
+                                        @else
+                                            <span class="badge bg-danger">{{ __('Public') }}</span>
+                                        @endif
+                                    </td>
                                     <td>{{ \Auth::user()->dateFormat($holiday->start_date) }}</td>
                                     <td>{{ \Auth::user()->dateFormat($holiday->end_date) }}</td>
                                     @if (Gate::check('Edit Holiday') || Gate::check('Delete Holiday'))

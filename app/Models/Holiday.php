@@ -17,6 +17,8 @@ class Holiday extends Model
         'status',
         'location_id',
         'created_by',
+        'is_optional',
+        'day_type',
     ];
     
     public function location()

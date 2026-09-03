@@ -30,6 +30,16 @@
             {{ Form::date('end_date', null, ['class' => 'form-control ']) }}
         </div>
         </div>
+        <div class="row col-md-12">
+        <div class="form-group col-md-6">
+            {{ Form::label('is_optional', __('Holiday Type'), ['class' => 'col-form-label']) }}
+            {{ Form::select('is_optional', ['0' => __('Public Holiday'), '1' => __('Optional Public Holiday')], null, ['class' => 'form-control']) }}
+        </div>
+        <div class="form-group col-md-6">
+            {{ Form::label('day_type', __('Day Coverage'), ['class' => 'col-form-label']) }}
+            {{ Form::select('day_type', ['full_day' => __('Full Day'), 'first_half' => __('First Half'), 'second_half' => __('Second Half')], null, ['class' => 'form-control']) }}
+        </div>
+        </div>
     </div>
 </div>
 <div class="modal-footer">

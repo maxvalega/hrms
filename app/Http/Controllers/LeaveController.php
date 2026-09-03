@@ -379,13 +379,18 @@ class LeaveController extends Controller
                 $substitutes = $this->getSubstituteList($selfEmployee->id);
             }
 
+            $optionalHolidayOptions = $isSpectal
+                ? LeavePolicyService::optionalHolidayDateOptions((int) \Auth::user()->creatorId())
+                : [];
+
             return view('leave.create', compact(
                 'employees',
                 'leavetypes',
                 'substitutes',
                 'isProbationRestricted',
                 'probationWarningMessage',
-                'applyAsSelf'
+                'applyAsSelf',
+                'optionalHolidayOptions'
             ));
         } else {
             return response()->json(['error' => __('Permission denied.')], 401);
@@ -522,7 +527,7 @@ class LeaveController extends Controller
                 return redirect()->back()->with('error', $this->getProbationLeaveNotAllowedMessage($employee));
             }
 
-            if ($spectalError = $this->leavePolicy()->validateSpectalApplication($leave_type, $employee, $request->start_date, $request->end_date, (float) $total_leave_days)) {
+            if ($spectalError = $this->leavePolicy()->validateSpectalApplication($leave_type, $employee, $request->start_date, $request->end_date, (float) $total_leave_days, (string) $request->day_type)) {
                 return redirect()->back()->with('error', $spectalError);
             }
 
@@ -895,7 +900,7 @@ class LeaveController extends Controller
                     return redirect()->back()->with('error', $this->getProbationLeaveNotAllowedMessage($employee));
                 }
 
-                if ($spectalError = $this->leavePolicy()->validateSpectalApplication($leave_type, $employee, $request->start_date, $request->end_date, (float) $total_leave_days)) {
+                if ($spectalError = $this->leavePolicy()->validateSpectalApplication($leave_type, $employee, $request->start_date, $request->end_date, (float) $total_leave_days, (string) $request->day_type)) {
                     return redirect()->back()->with('error', $spectalError);
                 }
 
@@ -1598,14 +1603,19 @@ class LeaveController extends Controller
 
                 foreach ($holidays as $holiday) {
                     $hTitle = $holiday->occasion ?? $holiday->title ?? __('Public Holiday');
+                    if (!empty($holiday->is_optional)) {
+                        $hTitle = __('Optional') . ': ' . $hTitle;
+                    } elseif (($holiday->day_type ?? 'full_day') === 'second_half') {
+                        $hTitle .= ' (' . __('Second Half') . ')';
+                    }
                     $hEnd = !empty($holiday->end_date) ? Carbon::parse($holiday->end_date)->addDay()->toDateString() : (!empty($holiday->start_date) ? Carbon::parse($holiday->start_date)->addDay()->toDateString() : date('Y-m-d'));
                     $arrayJson[] = [
                         'id' => 'holiday_' . $holiday->id,
-                        'title' => '🎉 ' . $hTitle,
+                        'title' => (!empty($holiday->is_optional) ? '○ ' : '🎉 ') . $hTitle,
                         'start' => $holiday->start_date ?? $holiday->holiday_date ?? date('Y-m-d'),
                         'end' => $hEnd,
-                        'className' => 'bg-danger text-white',
-                        'textColor' => '#FFF',
+                        'className' => !empty($holiday->is_optional) ? 'bg-warning text-dark' : 'bg-danger text-white',
+                        'textColor' => !empty($holiday->is_optional) ? '#000' : '#FFF',
                         'allDay' => true,
                         'url' => '#',
                     ];
@@ -1667,14 +1677,18 @@ class LeaveController extends Controller
             ->get();
 
         foreach ($holidays as $holiday) {
+            if (!empty($holiday->is_optional)) {
+                continue;
+            }
+            $weight = (($holiday->day_type ?? 'full_day') === 'full_day') ? 1.0 : 0.5;
             if (!empty($holiday->start_date) && !empty($holiday->end_date)) {
                 $hStart = Carbon::parse($holiday->start_date)->startOfDay();
                 $hEnd = Carbon::parse($holiday->end_date)->startOfDay();
                 for ($date = $hStart->copy(); $date->lte($hEnd); $date->addDay()) {
-                    $holidayDates[$date->toDateString()] = true;
+                    $holidayDates[$date->toDateString()] = $weight;
                 }
             } elseif (!empty($holiday->holiday_date)) {
-                $holidayDates[Carbon::parse($holiday->holiday_date)->toDateString()] = true;
+                $holidayDates[Carbon::parse($holiday->holiday_date)->toDateString()] = $weight;
             }
         }
 
@@ -1691,6 +1705,11 @@ class LeaveController extends Controller
             }
 
             if ((!$holidayClubbing || $this->isSpectalPortal()) && isset($holidayDates[$dateKey])) {
+                $weight = (float) $holidayDates[$dateKey];
+                if ($weight >= 1) {
+                    continue;
+                }
+                $total += max(0, 1 - $weight);
                 continue;
             }
 

@@ -203,13 +203,18 @@ class HomeController extends Controller
 
                         foreach ($holidays as $holiday) {
                             $hTitle = $holiday->occasion ?? $holiday->title ?? __('Public Holiday');
+                            if (!empty($holiday->is_optional)) {
+                                $hTitle = __('Optional') . ': ' . $hTitle;
+                            } elseif (($holiday->day_type ?? 'full_day') === 'second_half') {
+                                $hTitle .= ' (' . __('Second Half') . ')';
+                            }
                             $hEnd = !empty($holiday->end_date) ? \Carbon\Carbon::parse($holiday->end_date)->addDay()->toDateString() : (!empty($holiday->start_date) ? \Carbon\Carbon::parse($holiday->start_date)->addDay()->toDateString() : date('Y-m-d'));
                             $arrEvents[] = [
                                 'id' => 'holiday_' . $holiday->id,
-                                'title' => '🎉 ' . $hTitle,
+                                'title' => (!empty($holiday->is_optional) ? '○ ' : '🎉 ') . $hTitle,
                                 'start' => $holiday->start_date ?? $holiday->holiday_date ?? date('Y-m-d'),
                                 'end' => $hEnd,
-                                'className' => 'bg-danger text-white',
+                                'className' => !empty($holiday->is_optional) ? 'bg-warning text-dark' : 'bg-danger text-white',
                                 'url' => '#',
                                 'allDay' => true,
                             ];
@@ -306,13 +311,18 @@ class HomeController extends Controller
 
                     foreach ($holidays as $holiday) {
                         $hTitle = $holiday->occasion ?? $holiday->title ?? __('Public Holiday');
+                        if (!empty($holiday->is_optional)) {
+                            $hTitle = __('Optional') . ': ' . $hTitle;
+                        } elseif (($holiday->day_type ?? 'full_day') === 'second_half') {
+                            $hTitle .= ' (' . __('Second Half') . ')';
+                        }
                         $hEnd = !empty($holiday->end_date) ? \Carbon\Carbon::parse($holiday->end_date)->addDay()->toDateString() : (!empty($holiday->start_date) ? \Carbon\Carbon::parse($holiday->start_date)->addDay()->toDateString() : date('Y-m-d'));
                         $arrEvents[] = [
                             'id' => 'holiday_' . $holiday->id,
-                            'title' => '🎉 ' . $hTitle,
+                            'title' => (!empty($holiday->is_optional) ? '○ ' : '🎉 ') . $hTitle,
                             'start' => $holiday->start_date ?? $holiday->holiday_date ?? date('Y-m-d'),
                             'end' => $hEnd,
-                            'className' => 'bg-danger text-white',
+                            'className' => !empty($holiday->is_optional) ? 'bg-warning text-dark' : 'bg-danger text-white',
                             'url' => '#',
                             'allDay' => true,
                         ];

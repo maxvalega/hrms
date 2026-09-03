@@ -186,11 +186,12 @@ class LeavePolicyService
                 'monthly_credit' => 0,
                 'annual_credit' => 2,
                 'credit_frequency' => 'annual',
-                'is_prorata' => true,
+                'is_prorata' => false,
                 'is_carry_forward' => 0,
                 'is_encashable' => 0,
+                'min_notice_days' => 14,
                 'eligible_employee_types' => ['intern', 'full_time'],
-                'policy_notes' => 'Yearly 2. Annual credit. Intern + Full time.',
+                'policy_notes' => 'Choose any 2 optional public holidays from the published list. Inform your reporting manager at least 2 weeks in advance.',
             ],
             'wfh' => [
                 'title' => 'Work From Home (WFH)',
@@ -354,7 +355,7 @@ class LeavePolicyService
      */
     public static function spectalProbationVisibleCodes(): array
     {
-        return ['sick', 'comp_off', 'wfh'];
+        return ['sick', 'comp_off', 'wfh', 'optional_holiday'];
     }
 
     /**
@@ -482,7 +483,7 @@ class LeavePolicyService
 
         // Interns: Sick, Comp-off, and WFH
         if ($empCode === 'intern') {
-            return in_array($code, ['sick', 'comp_off', 'wfh'], true);
+            return in_array($code, ['sick', 'comp_off', 'wfh', 'optional_holiday'], true);
         }
 
         // Normalize allowed list; consultants count as full_time for Spectal leave matrix
@@ -498,28 +499,12 @@ class LeavePolicyService
         return count(array_intersect($matchCodes, $allowedNorm)) > 0;
     }
 
-    public static function getHolidayOnDate(string $date, int $createdBy): ?string
+    /**
+     * Mandatory (non-optional) public holiday covering a date, if any.
+     */
+    public static function getHolidayOnDate(string $date, int $createdBy, bool $includeOptional = false): ?string
     {
-        if (!Schema::hasTable('holidays')) {
-            return null;
-        }
-
-        $d = Carbon::parse($date)->toDateString();
-        $holiday = \App\Models\Holiday::where(function ($q) use ($createdBy) {
-                if (Schema::hasColumn('holidays', 'created_by')) {
-                    $q->where('created_by', $createdBy)->orWhereNull('created_by');
-                }
-            })
-            ->where(function ($q) use ($d) {
-                $q->where(function ($sq) use ($d) {
-                    $sq->where('start_date', '<=', $d)->where('end_date', '>=', $d);
-                })->orWhere(function ($sq) use ($d) {
-                    if (Schema::hasColumn('holidays', 'holiday_date')) {
-                        $sq->where('holiday_date', $d);
-                    }
-                });
-            })
-            ->first();
+        $holiday = self::getHolidayRecordOnDate($date, $createdBy, $includeOptional);
 
         if ($holiday) {
             return (string) ($holiday->occasion ?? $holiday->title ?? __('Public Holiday'));
@@ -528,7 +513,69 @@ class LeavePolicyService
         return null;
     }
 
-    public function validateSpectalApplication(LeaveType $leaveType, Employee $employee, string $startDate, ?string $endDate = null, float $totalDays = 1.0): ?string
+    public static function getHolidayRecordOnDate(string $date, int $createdBy, bool $includeOptional = false): ?\App\Models\Holiday
+    {
+        if (!Schema::hasTable('holidays')) {
+            return null;
+        }
+
+        $d = Carbon::parse($date)->toDateString();
+        $query = \App\Models\Holiday::query()
+            ->where(function ($q) use ($createdBy) {
+                if (Schema::hasColumn('holidays', 'created_by')) {
+                    $q->where('created_by', $createdBy)->orWhereNull('created_by');
+                }
+            })
+            ->where(function ($q) use ($d) {
+                $q->where(function ($sq) use ($d) {
+                    $sq->where('start_date', '<=', $d)->where('end_date', '>=', $d);
+                });
+                if (Schema::hasColumn('holidays', 'holiday_date')) {
+                    $q->orWhere('holiday_date', $d);
+                }
+            });
+
+        if (!$includeOptional && Schema::hasColumn('holidays', 'is_optional')) {
+            $query->where(function ($q) {
+                $q->where('is_optional', 0)->orWhereNull('is_optional');
+            });
+        }
+
+        return $query->first();
+    }
+
+    /**
+     * Optional public holiday dates employees may claim (max 2 / year).
+     *
+     * @return array<int, array{date:string,label:string}>
+     */
+    public static function optionalHolidayDateOptions(int $createdBy, ?int $year = null): array
+    {
+        $year = $year ?: (int) Carbon::now('Asia/Kolkata')->year;
+        if (!Schema::hasTable('holidays') || !Schema::hasColumn('holidays', 'is_optional')) {
+            return [];
+        }
+
+        $rows = \App\Models\Holiday::query()
+            ->where('created_by', $createdBy)
+            ->where('is_optional', 1)
+            ->whereYear('start_date', $year)
+            ->orderBy('start_date')
+            ->get();
+
+        $options = [];
+        foreach ($rows as $holiday) {
+            $date = Carbon::parse($holiday->start_date);
+            $options[] = [
+                'date' => $date->toDateString(),
+                'label' => $date->format('d M Y') . ' — ' . ($holiday->occasion ?? __('Optional Holiday')),
+            ];
+        }
+
+        return $options;
+    }
+
+    public function validateSpectalApplication(LeaveType $leaveType, Employee $employee, string $startDate, ?string $endDate = null, float $totalDays = 1.0, string $dayType = 'full_day'): ?string
     {
         if (!self::isSpectalPortal()) {
             return null;
@@ -559,16 +606,40 @@ class LeavePolicyService
         $end = Carbon::parse($endDate, 'Asia/Kolkata')->startOfDay();
         $createdBy = (int) ($employee->created_by ?? \Auth::user()->creatorId());
 
+        if ($code === 'optional_holiday') {
+            if (!$start->eq($end)) {
+                return __('Optional Holiday must be applied for a single date from the published optional public holiday list.');
+            }
+            $match = \App\Models\Holiday::query()
+                ->where('created_by', $createdBy)
+                ->where('is_optional', 1)
+                ->where('start_date', '<=', $start->toDateString())
+                ->where('end_date', '>=', $start->toDateString())
+                ->first();
+            if (!$match) {
+                return __('Optional Holiday can only be taken on one of the published optional public holidays. You may choose any 2, with at least 2 weeks’ notice to your reporting manager.');
+            }
+
+            return null;
+        }
+
         // Single day Sunday check for all leave types
         if ($start->eq($end) && $start->dayOfWeek === Carbon::SUNDAY) {
             return __('Leave cannot be applied on Sunday.');
         }
 
-        // Single day Public Holiday check for all leave types
+        // Single day Public Holiday check (optional holidays are working days unless claimed)
         if ($start->eq($end)) {
-            $holidayName = self::getHolidayOnDate($startDate, $createdBy);
-            if ($holidayName !== null) {
-                return __('Cannot apply leave on a public holiday (:holiday).', ['holiday' => $holidayName]);
+            $holiday = self::getHolidayRecordOnDate($startDate, $createdBy, false);
+            if ($holiday) {
+                $holidayDayType = (string) ($holiday->day_type ?? 'full_day');
+                $blocks = $holidayDayType === 'full_day'
+                    || $dayType === 'full_day'
+                    || $holidayDayType === $dayType;
+                if ($blocks) {
+                    $name = (string) ($holiday->occasion ?? __('Public Holiday'));
+                    return __('Cannot apply leave on a public holiday (:holiday).', ['holiday' => $name]);
+                }
             }
         }
 
@@ -581,7 +652,7 @@ class LeavePolicyService
                 if (!in_array($dow, [Carbon::TUESDAY, Carbon::WEDNESDAY, Carbon::THURSDAY], true)) {
                     return __('Work From Home (WFH) can only be applied for Tuesday, Wednesday, or Thursday.');
                 }
-                $holidayName = self::getHolidayOnDate($d->toDateString(), $createdBy);
+                $holidayName = self::getHolidayOnDate($d->toDateString(), $createdBy, false);
                 if ($holidayName !== null) {
                     return __('Work From Home cannot be applied on public holidays (:holiday).', ['holiday' => $holidayName]);
                 }
@@ -779,11 +850,14 @@ class LeavePolicyService
             $leaveType->notice_rules = null;
         }
 
-        if ($code === 'cl') {
-            $leaveType->credit_frequency = 'seasonal';
-            $leaveType->days = 0;
-            $leaveType->annual_credit = 0;
+        if ($code === 'optional_holiday') {
+            $leaveType->credit_frequency = 'annual';
+            $leaveType->annual_credit = 2;
+            $leaveType->days = 2;
             $leaveType->monthly_credit = 0;
+            $leaveType->min_notice_days = 14;
+            $leaveType->notice_rules = null;
+            $leaveType->is_prorata = false;
         }
 
         return $leaveType;

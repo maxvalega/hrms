@@ -76,7 +76,24 @@
             </div>
         </div>
     </div>
-    <div class="row">
+    @php $optionalHolidayOptions = $optionalHolidayOptions ?? []; @endphp
+    <div class="row" id="optional-holiday-row" style="display:none;">
+        <div class="col-md-12">
+            <div class="alert alert-warning py-2">
+                {{ __('You may choose any 2 optional public holidays. Inform your reporting manager at least 2 weeks in advance.') }}
+            </div>
+            <div class="form-group">
+                <label class="col-form-label">{{ __('Optional Public Holiday') }}</label>
+                <select id="optional_holiday_date" class="form-control">
+                    <option value="">{{ __('Select optional holiday') }}</option>
+                    @foreach ($optionalHolidayOptions as $opt)
+                        <option value="{{ $opt['date'] }}">{{ $opt['label'] }}</option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
+    </div>
+    <div class="row" id="normal-leave-dates-row">
         <div class="col-md-6">
             <div class="form-group">
                 {{ Form::label('start_date', __('Start Date'), ['class' => 'col-form-label']) }}<x-required></x-required>
@@ -279,6 +296,19 @@
                 $('#medical-error-msg').text('');
             }
 
+            var policyCode = (selectedOption.data('policy') || '').toString().toLowerCase();
+            var isOptionalHoliday = policyCode === 'optional_holiday' || /optional/.test(titleLower);
+            if (isOptionalHoliday) {
+                $('#optional-holiday-row').show();
+                $('#normal-leave-dates-row').hide();
+                $('#day_type_full').prop('checked', true);
+                $('#half_day_options').hide();
+                updateDayTypeHidden();
+            } else {
+                $('#optional-holiday-row').hide();
+                $('#normal-leave-dates-row').show();
+            }
+
             var requiresFamily = String(selectedOption.data('requires-family') || '0') === '1'
                 || /bereavement/.test(titleLower);
             if (requiresFamily) {
@@ -439,6 +469,14 @@
                 }
 
                 $('#medical-error-msg').text('');
+            }
+        });
+
+        $('#optional_holiday_date').on('change', function() {
+            var v = $(this).val();
+            if (v) {
+                $('#start_date').val(v);
+                $('#end_date').val(v);
             }
         });
 

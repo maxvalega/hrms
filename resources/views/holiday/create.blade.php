@@ -28,6 +28,14 @@
             {{ Form::label('end_date', __('End Date'), ['class' => 'col-form-label']) }}
             {{ Form::date('end_date', null, ['class' => 'form-control current_date', 'autocomplete' => 'off']) }}
         </div>
+        <div class="form-group col-md-6">
+            {{ Form::label('is_optional', __('Holiday Type'), ['class' => 'col-form-label']) }}
+            {{ Form::select('is_optional', ['0' => __('Public Holiday'), '1' => __('Optional Public Holiday')], '0', ['class' => 'form-control']) }}
+        </div>
+        <div class="form-group col-md-6">
+            {{ Form::label('day_type', __('Day Coverage'), ['class' => 'col-form-label']) }}
+            {{ Form::select('day_type', ['full_day' => __('Full Day'), 'first_half' => __('First Half'), 'second_half' => __('Second Half')], 'full_day', ['class' => 'form-control']) }}
+        </div>
         @if(isset($setting['is_enabled']) && $setting['is_enabled'] =='on')
         <div class="form-group col-md-6">
             {{ Form::label('synchronize_type', __('Synchroniz in Google Calendar ?'), ['class' => 'form-label']) }}

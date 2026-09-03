@@ -98,9 +98,9 @@
         data-original-title="{{ __('Download') }}" style="margin-right: 5px;">
         <span class="btn-inner--icon"><i class="ti ti-download"></i></span>
     </a>
-    <a href="{{ route('leave.report.export') }}" class="btn btn-sm btn-primary float-end" data-bs-toggle="tooltip"
-        data-bs-original-title="{{ __('Export') }}">
-        <i class="ti ti-file-export"></i>
+    <a href="{{ route('report.leave.export', request()->query()) }}" class="btn btn-sm btn-success float-end" data-bs-toggle="tooltip"
+        data-bs-original-title="{{ __('Export Excel') }}">
+        <i class="ti ti-file-spreadsheet"></i>
     </a>
 @endsection
 
@@ -193,7 +193,7 @@
                                             data-original-title="{{ __('Reset') }}">
                                             <span class="btn-inner--icon"><i class="ti ti-refresh text-white-off"></i></span>
                                         </a>
-                                        <a href="{{ route('report.leave.export', ['type' => isset($_GET['type']) ? $_GET['type'] : 'monthly', 'month' => isset($_GET['month']) ? $_GET['month'] : date('Y-m'), 'year' => isset($_GET['year']) ? $_GET['year'] : date('Y'), 'branch' => isset($_GET['branch']) ? $_GET['branch'] : '', 'department' => isset($_GET['department']) ? $_GET['department'] : '']) }}" class="btn btn-sm btn-success" style="white-space:nowrap;">
+                                        <a href="{{ route('report.leave.export', request()->query()) }}" class="btn btn-sm btn-success" style="white-space:nowrap;">
                                             <i class="ti ti-file-spreadsheet me-1"></i>{{ __('Excel') }}
                                         </a>
                                     </div>
@@ -219,7 +219,7 @@
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">{{ __('Leave Report') }}</h5>
-                <a href="{{ route('report.leave.export', ['type' => isset($_GET['type']) ? $_GET['type'] : 'monthly', 'month' => isset($_GET['month']) ? $_GET['month'] : date('Y-m'), 'year' => isset($_GET['year']) ? $_GET['year'] : date('Y'), 'branch' => isset($_GET['branch']) ? $_GET['branch'] : '', 'department' => isset($_GET['department']) ? $_GET['department'] : '']) }}" class="btn btn-sm btn-success">
+                <a href="{{ route('report.leave.export', request()->query()) }}" class="btn btn-sm btn-success">
                     <i class="ti ti-file-spreadsheet me-1"></i>{{ __('Export Excel') }}
                 </a>
             </div>

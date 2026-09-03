@@ -119,6 +119,184 @@ class ReportController extends Controller
         }
     }
 
+    public function leaveExport(Request $request)
+    {
+        if (!\Auth::user()->can('Manage Report')) {
+            abort(403);
+        }
+
+        $rows = $this->buildLeaveReportRows($request);
+
+        if ($request->type == 'yearly' && !empty($request->year)) {
+            $label = 'FY-' . $request->year . '-' . ((int) $request->year + 1);
+        } elseif ($request->type == 'monthly' && !empty($request->month)) {
+            $label = date('M-Y', strtotime($request->month));
+        } else {
+            $label = date('M-Y');
+        }
+
+        $filename = 'leave-report-' . $label . '.csv';
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ];
+
+        $callback = function () use ($rows) {
+            $f = fopen('php://output', 'w');
+            fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
+            fputcsv($f, [
+                'Employee ID',
+                'Employee',
+                'Opening',
+                'Availed',
+                'Remaining',
+                'Carry Fwd',
+                'Lapsed',
+                'Encashment Days',
+                'Encashment Amount',
+                'Pending',
+            ]);
+
+            foreach ($rows as $leave) {
+                $empId = !empty($leave['employee_id'])
+                    ? \Auth::user()->employeeIdFormat($leave['employee_id'])
+                    : '';
+                $encashAmt = ((float) ($leave['encash_days'] ?? 0) > 0)
+                    ? round((float) ($leave['encash_amount'] ?? 0), 2)
+                    : '';
+
+                fputcsv($f, [
+                    $empId,
+                    $leave['employee'] ?? '',
+                    $leave['opening'] ?? 0,
+                    $leave['availed'] ?? 0,
+                    $leave['remaining'] ?? 0,
+                    $leave['carry_forward'] ?? 0,
+                    $leave['lapsed'] ?? 0,
+                    $leave['encash_days'] ?? 0,
+                    $encashAmt,
+                    $leave['pending'] ?? 0,
+                ]);
+            }
+            fclose($f);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Same dataset used by Leave Report UI and Excel export.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function buildLeaveReportRows(Request $request): array
+    {
+        $employees = Employee::where('created_by', \Auth::user()->creatorId());
+        if (!empty($request->branch)) {
+            $employees->where('branch_id', $request->branch);
+        }
+        if (!empty($request->department)) {
+            $employees->where('department_id', $request->department);
+        }
+        $employees = $employees->orderBy('employee_id')->get();
+
+        $leaveTypes = LeaveType::where('created_by', \Auth::user()->creatorId())->get();
+
+        if ($request->type == 'yearly' && !empty($request->year)) {
+            $pStart = $request->year . '-04-01';
+            $pEnd = ($request->year + 1) . '-03-31';
+            $month = null;
+            $year = (int) $request->year;
+        } elseif ($request->type == 'monthly' && !empty($request->month)) {
+            $pStart = date('Y-m-01', strtotime($request->month));
+            $pEnd = date('Y-m-t', strtotime($request->month));
+            $month = date('m', strtotime($request->month));
+            $year = (int) date('Y', strtotime($request->month));
+        } else {
+            $pStart = date('Y-m-01');
+            $pEnd = date('Y-m-t');
+            $month = date('m');
+            $year = (int) date('Y');
+        }
+
+        $leaves = [];
+        foreach ($employees as $employee) {
+            $pendingQuery = Leave::where('employee_id', $employee->id)->where('status', 'Pending');
+
+            if ($request->type == 'yearly' && !empty($request->year)) {
+                $pendingQuery->whereYear('start_date', $year);
+            } else {
+                $pendingQuery->whereMonth('start_date', $month)->whereYear('start_date', $year);
+            }
+
+            $pending = $pendingQuery->count();
+
+            $empSalary = \DB::table('employee_salaries')->where('employee_id', $employee->id)->first();
+            $sumOpening = $sumAvailed = $sumRemaining = $sumCF = $sumLapsed = $sumEncashDays = $sumEncashAmt = 0;
+
+            foreach ($leaveTypes as $lt) {
+                $beforeTaken = (float) Leave::where('employee_id', $employee->id)->where('status', 'Approved')
+                    ->where('leave_type_id', $lt->id)->where('start_date', '<', $pStart)->sum('total_leave_days');
+                $opening = max(0, (float) $lt->days - $beforeTaken);
+
+                $availed = (float) Leave::where('employee_id', $employee->id)->where('status', 'Approved')
+                    ->where('leave_type_id', $lt->id)
+                    ->where('start_date', '>=', $pStart)->where('start_date', '<=', $pEnd)
+                    ->sum('total_leave_days');
+
+                $remaining = max(0, $opening - $availed);
+
+                $cf = 0;
+                if (!empty($lt->is_carry_forward) && $remaining > 0) {
+                    $maxCF = !empty($lt->max_carry_forward) && (float) $lt->max_carry_forward > 0
+                        ? (float) $lt->max_carry_forward
+                        : $remaining;
+                    $cf = min($remaining, $maxCF);
+                }
+
+                $encashDays = 0;
+                $encashAmt = 0;
+                if (!empty($lt->is_encashable) && $remaining > $cf) {
+                    $encashDays = $remaining - $cf;
+                    $ctc = $empSalary ? (float) $empSalary->ctc : 0;
+                    $basicPct = $empSalary ? (float) ($empSalary->basic_percentage ?? 50) : 50;
+                    $basis = $lt->encash_basis ?? 'basic';
+                    $monthlyComp = ($basis === 'gross')
+                        ? round($ctc / 12, 2)
+                        : round($ctc * $basicPct / 100 / 12, 2);
+                    $dailyRate = round($monthlyComp / 26, 2);
+                    $encashAmt = round($encashDays * $dailyRate, 2);
+                }
+
+                $lapsed = $remaining - $cf - $encashDays;
+
+                $sumOpening += $opening;
+                $sumAvailed += $availed;
+                $sumRemaining += $remaining;
+                $sumCF += $cf;
+                $sumLapsed += $lapsed;
+                $sumEncashDays += $encashDays;
+                $sumEncashAmt += $encashAmt;
+            }
+
+            $leaves[] = [
+                'id' => $employee->id,
+                'employee_id' => $employee->employee_id,
+                'employee' => $employee->name,
+                'pending' => $pending,
+                'opening' => $sumOpening,
+                'availed' => $sumAvailed,
+                'remaining' => $sumRemaining,
+                'carry_forward' => $sumCF,
+                'lapsed' => $sumLapsed,
+                'encash_days' => $sumEncashDays,
+                'encash_amount' => $sumEncashAmt,
+            ];
+        }
+
+        return $leaves;
+    }
+
     public function leave(Request $request)
     {
         if (\Auth::user()->can('Manage Report')) {
@@ -129,292 +307,72 @@ class ReportController extends Controller
             $department = Department::where('created_by', \Auth::user()->creatorId())->get()->pluck('name', 'id');
             $department->prepend('All', '');
 
-            $filterYear['branch']        = __('All');
-            $filterYear['department']    = __('All');
-            $filterYear['type']          = __('Monthly');
+            $filterYear['branch'] = __('All');
+            $filterYear['department'] = __('All');
+            $filterYear['type'] = __('Monthly');
             $filterYear['dateYearRange'] = date('M-Y');
-            $employees                   = Employee::where('created_by', \Auth::user()->creatorId());
+
             if (!empty($request->branch)) {
-                $employees->where('branch_id', $request->branch);
                 $filterYear['branch'] = !empty(Branch::find($request->branch)) ? Branch::find($request->branch)->name : '';
             }
             if (!empty($request->department)) {
-                $employees->where('department_id', $request->department);
                 $filterYear['department'] = !empty(Department::find($request->department)) ? Department::find($request->department)->name : '';
             }
 
-            $employees = $employees->get();
+            if ($request->type == 'monthly' && !empty($request->month)) {
+                $filterYear['dateYearRange'] = date('M-Y', strtotime($request->month));
+                $filterYear['type'] = __('Monthly');
+            } elseif ($request->type == 'yearly' && !empty($request->year)) {
+                $filterYear['dateYearRange'] = $request->year;
+                $filterYear['type'] = __('Yearly');
+            } elseif (!isset($request->type)) {
+                $filterYear['dateYearRange'] = date('M-Y');
+                $filterYear['type'] = __('Monthly');
+            }
 
-            $leaves        = [];
-            $totalApproved = $totalReject = $totalPending = 0;
-            foreach ($employees as $employee) {
+            $leaves = $this->buildLeaveReportRows($request);
 
-                $employeeLeave['id']          = $employee->id;
-                $employeeLeave['employee_id'] = $employee->employee_id;
-                $employeeLeave['employee']    = $employee->name;
+            $totalApproved = 0;
+            $totalReject = 0;
+            $totalPending = 0;
+            foreach ($leaves as $row) {
+                $totalPending += (int) ($row['pending'] ?? 0);
+            }
 
-                $approved = Leave::where('employee_id', $employee->id)->where('status', 'Approved');
-                $reject   = Leave::where('employee_id', $employee->id)->where('status', 'Reject');
-                $pending  = Leave::where('employee_id', $employee->id)->where('status', 'Pending');
-
-                // Attendance module: count days marked as 'Leave' in attendance_employees
-                $attLeave = AttendanceEmployee::where('employee_id', $employee->id)->where('status', 'Leave');
-
-                if ($request->type == 'monthly' && !empty($request->month)) {
-                    $month = date('m', strtotime($request->month));
-                    $year  = date('Y', strtotime($request->month));
-
-                    $approved->whereMonth('start_date', $month)->whereYear('start_date', $year);
-                    $reject->whereMonth('start_date', $month)->whereYear('start_date', $year);
-                    $pending->whereMonth('start_date', $month)->whereYear('start_date', $year);
-                    $attLeave->whereMonth('date', $month)->whereYear('date', $year);
-
-                    $filterYear['dateYearRange'] = date('M-Y', strtotime($request->month));
-                    $filterYear['type']          = __('Monthly');
-                } elseif (!isset($request->type)) {
-                    $month     = date('m');
-                    $year      = date('Y');
-                    $monthYear = date('Y-m');
-
-                    $approved->whereMonth('start_date', $month)->whereYear('start_date', $year);
-                    $reject->whereMonth('start_date', $month)->whereYear('start_date', $year);
-                    $pending->whereMonth('start_date', $month)->whereYear('start_date', $year);
-                    $attLeave->whereMonth('date', $month)->whereYear('date', $year);
-
-                    $filterYear['dateYearRange'] = date('M-Y', strtotime($monthYear));
-                    $filterYear['type']          = __('Monthly');
-                }
-
+            // Keep approved/reject totals for legacy filter cards if present
+            foreach ($leaves as $row) {
+                $q = Leave::where('employee_id', $row['id'])->where('status', 'Approved');
+                $r = Leave::where('employee_id', $row['id'])->where('status', 'Reject');
                 if ($request->type == 'yearly' && !empty($request->year)) {
-                    $approved->whereYear('start_date', $request->year);
-                    $reject->whereYear('start_date', $request->year);
-                    $pending->whereYear('start_date', $request->year);
-                    $attLeave->whereYear('date', $request->year);
-
-                    $filterYear['dateYearRange'] = $request->year;
-                    $filterYear['type']          = __('Yearly');
-                }
-
-                $approved = $approved->count();
-                $reject   = $reject->count();
-                $pending  = $pending->count();
-                $attLeaveCount = $attLeave->count();
-
-                // Also count total leave days from approved leaves (sum of total_leave_days)
-                $approvedDays = Leave::where('employee_id', $employee->id)->where('status', 'Approved');
-                if ($request->type == 'monthly' && !empty($request->month)) {
-                    $approvedDays->whereMonth('start_date', $month)->whereYear('start_date', $year);
-                } elseif ($request->type == 'yearly' && !empty($request->year)) {
-                    $approvedDays->whereYear('start_date', $request->year);
-                } else {
-                    $approvedDays->whereMonth('start_date', date('m'))->whereYear('start_date', date('Y'));
-                }
-                $totalDays = $approvedDays->sum('total_leave_days');
-
-                $totalApproved += $approved;
-                $totalReject   += $reject;
-                $totalPending  += $pending;
-
-                $employeeLeave['approved']    = $approved;
-                $employeeLeave['reject']      = $reject;
-                $employeeLeave['pending']     = $pending;
-                $employeeLeave['total_days']  = $totalDays;
-                $employeeLeave['att_leave']   = $attLeaveCount;
-
-                // Compute per-employee leave summary (opening, remaining, CF, lapsed, encash)
-                $leaveTypes = LeaveType::where('created_by', \Auth::user()->creatorId())->get();
-                // Determine period
-                if ($request->type == 'yearly' && !empty($request->year)) {
-                    $pStart = $request->year . '-04-01';
-                    $pEnd   = ($request->year + 1) . '-03-31';
+                    $q->whereYear('start_date', $request->year);
+                    $r->whereYear('start_date', $request->year);
                 } elseif ($request->type == 'monthly' && !empty($request->month)) {
-                    $pStart = date('Y-m-01', strtotime($request->month));
-                    $pEnd   = date('Y-m-t', strtotime($request->month));
+                    $m = date('m', strtotime($request->month));
+                    $y = date('Y', strtotime($request->month));
+                    $q->whereMonth('start_date', $m)->whereYear('start_date', $y);
+                    $r->whereMonth('start_date', $m)->whereYear('start_date', $y);
                 } else {
-                    $pStart = date('Y-m-01');
-                    $pEnd   = date('Y-m-t');
+                    $q->whereMonth('start_date', date('m'))->whereYear('start_date', date('Y'));
+                    $r->whereMonth('start_date', date('m'))->whereYear('start_date', date('Y'));
                 }
-
-                $empSalary = \DB::table('employee_salaries')->where('employee_id', $employee->id)->first();
-                $sumOpening = $sumAvailed = $sumRemaining = $sumCF = $sumLapsed = $sumEncashDays = $sumEncashAmt = 0;
-                foreach ($leaveTypes as $lt) {
-                    $beforeTaken = (float) Leave::where('employee_id', $employee->id)->where('status', 'Approved')
-                        ->where('leave_type_id', $lt->id)->where('start_date', '<', $pStart)->sum('total_leave_days');
-                    $opening = max(0, $lt->days - $beforeTaken);
-
-                    $availed = (float) Leave::where('employee_id', $employee->id)->where('status', 'Approved')
-                        ->where('leave_type_id', $lt->id)
-                        ->where('start_date', '>=', $pStart)->where('start_date', '<=', $pEnd)->sum('total_leave_days');
-
-                    $remaining = max(0, $opening - $availed);
-
-                    $cf = 0;
-                    if ($lt->is_carry_forward && $remaining > 0) {
-                        $maxCF = $lt->max_carry_forward > 0 ? (float) $lt->max_carry_forward : $remaining;
-                        $cf = min($remaining, $maxCF);
-                    }
-
-                    $encashDays = 0; $encashAmt = 0;
-                    if ($lt->is_encashable && $remaining > $cf) {
-                        $encashDays = $remaining - $cf;
-                        $ctc = $empSalary ? (float) $empSalary->ctc : 0;
-                        $basicPct = $empSalary ? (float) ($empSalary->basic_percentage ?? 50) : 50;
-                        $basis = $lt->encash_basis ?? 'basic';
-                        $monthlyComp = ($basis === 'gross') ? round($ctc / 12, 2) : round($ctc * $basicPct / 100 / 12, 2);
-                        $dailyRate = round($monthlyComp / 26, 2);
-                        $encashAmt = round($encashDays * $dailyRate, 2);
-                    }
-
-                    $lapsed = $remaining - $cf - $encashDays;
-
-                    $sumOpening += $opening;
-                    $sumAvailed += $availed;
-                    $sumRemaining += $remaining;
-                    $sumCF += $cf;
-                    $sumLapsed += $lapsed;
-                    $sumEncashDays += $encashDays;
-                    $sumEncashAmt += $encashAmt;
-                }
-
-                $employeeLeave['opening']      = $sumOpening;
-                $employeeLeave['availed']       = $sumAvailed;
-                $employeeLeave['remaining']     = $sumRemaining;
-                $employeeLeave['carry_forward'] = $sumCF;
-                $employeeLeave['lapsed']        = $sumLapsed;
-                $employeeLeave['encash_days']   = $sumEncashDays;
-                $employeeLeave['encash_amount'] = $sumEncashAmt;
-
-                $leaves[] = $employeeLeave;
+                $totalApproved += $q->count();
+                $totalReject += $r->count();
             }
 
             $starting_year = date('Y', strtotime('-5 year'));
-            $ending_year   = date('Y', strtotime('+5 year'));
+            $ending_year = date('Y', strtotime('+5 year'));
 
             $filterYear['starting_year'] = $starting_year;
-            $filterYear['ending_year']   = $ending_year;
+            $filterYear['ending_year'] = $ending_year;
 
             $filter['totalApproved'] = $totalApproved;
-            $filter['totalReject']   = $totalReject;
-            $filter['totalPending']  = $totalPending;
+            $filter['totalReject'] = $totalReject;
+            $filter['totalPending'] = $totalPending;
 
             return view('report.leave', compact('department', 'branch', 'leaves', 'filterYear', 'filter'));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
-    }
-
-    public function leaveExport(Request $request)
-    {
-        if (!\Auth::user()->can('Manage Report')) abort(403);
-
-        $cid = \Auth::user()->creatorId();
-        $employees = Employee::where('created_by', $cid);
-        if (!empty($request->branch)) $employees->where('branch_id', $request->branch);
-        if (!empty($request->department)) $employees->where('department_id', $request->department);
-        $employees = $employees->get();
-
-        $leaveTypes = LeaveType::where('created_by', $cid)->get();
-
-        if ($request->type == 'yearly' && !empty($request->year)) {
-            $pStart = $request->year . '-04-01';
-            $pEnd   = ($request->year + 1) . '-03-31';
-            $label  = 'FY-' . $request->year . '-' . ($request->year + 1);
-        } elseif ($request->type == 'monthly' && !empty($request->month)) {
-            $pStart = date('Y-m-01', strtotime($request->month));
-            $pEnd   = date('Y-m-t', strtotime($request->month));
-            $label  = date('M-Y', strtotime($request->month));
-        } else {
-            $pStart = date('Y-m-01');
-            $pEnd   = date('Y-m-t');
-            $label  = date('M-Y');
-        }
-
-        $filename = 'leave-report-' . $label . '.csv';
-        $headers = [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-        ];
-
-        $callback = function () use ($employees, $leaveTypes, $pStart, $pEnd) {
-            $f = fopen('php://output', 'w');
-            fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
-
-            // Header row
-            $header = ['Employee ID', 'Employee', 'Department'];
-            foreach ($leaveTypes as $lt) {
-                $header[] = $lt->title . ' (Quota)';
-                $header[] = $lt->title . ' (Availed)';
-                $header[] = $lt->title . ' (Balance)';
-            }
-            $header = array_merge($header, ['Total Opening', 'Total Availed', 'Total Remaining', 'Carry Forward', 'Lapsed', 'Encash Days', 'Encash Basis', 'Monthly Component', 'Daily Rate', 'Encash Amount', 'Pending']);
-            fputcsv($f, $header);
-
-            foreach ($employees as $emp) {
-                $deptName = \DB::table('departments')->where('id', $emp->department_id)->value('name') ?? '—';
-                $empSalary = \DB::table('employee_salaries')->where('employee_id', $emp->id)->first();
-                $row = [$emp->employee_id, $emp->name, $deptName];
-
-                $ctc = $empSalary ? (float) $empSalary->ctc : 0;
-                $basicPct = $empSalary ? (float) ($empSalary->basic_percentage ?? 50) : 50;
-                $sumOpening = $sumAvailed = $sumRemaining = $sumCF = $sumLapsed = $sumEncashDays = $sumEncashAmt = 0;
-                $encashBasis = '—'; $empMonthlyComp = 0; $empDailyRate = 0;
-
-                foreach ($leaveTypes as $lt) {
-                    $beforeTaken = (float) Leave::where('employee_id', $emp->id)->where('status', 'Approved')
-                        ->where('leave_type_id', $lt->id)->where('start_date', '<', $pStart)->sum('total_leave_days');
-                    $opening = max(0, $lt->days - $beforeTaken);
-                    $availed = (float) Leave::where('employee_id', $emp->id)->where('status', 'Approved')
-                        ->where('leave_type_id', $lt->id)
-                        ->where('start_date', '>=', $pStart)->where('start_date', '<=', $pEnd)->sum('total_leave_days');
-                    $remaining = max(0, $opening - $availed);
-
-                    $row[] = $lt->days;
-                    $row[] = $availed;
-                    $row[] = $remaining;
-
-                    $cf = 0;
-                    if ($lt->is_carry_forward && $remaining > 0) {
-                        $maxCF = $lt->max_carry_forward > 0 ? (float) $lt->max_carry_forward : $remaining;
-                        $cf = min($remaining, $maxCF);
-                    }
-                    $encashDays = 0; $encashAmt = 0;
-                    if ($lt->is_encashable && $remaining > $cf) {
-                        $encashDays = $remaining - $cf;
-                        $basis = $lt->encash_basis ?? 'basic';
-                        if ($basis === 'basic') {
-                            $monthlyComp = round($ctc * $basicPct / 100 / 12, 2);
-                        } elseif ($basis === 'gross') {
-                            $monthlyComp = round($ctc / 12, 2);
-                        } else {
-                            $monthlyComp = round($ctc / 12, 2);
-                        }
-                        $dailyRate = round($monthlyComp / 26, 2);
-                        $encashAmt = round($encashDays * $dailyRate, 2);
-                        $encashBasis = ucfirst($basis);
-                        $empMonthlyComp = $monthlyComp;
-                        $empDailyRate = $dailyRate;
-                    }
-                    $lapsed = $remaining - $cf - $encashDays;
-
-                    $sumOpening += $opening;
-                    $sumAvailed += $availed;
-                    $sumRemaining += $remaining;
-                    $sumCF += $cf;
-                    $sumLapsed += $lapsed;
-                    $sumEncashDays += $encashDays;
-                    $sumEncashAmt += $encashAmt;
-                }
-
-                $pending = Leave::where('employee_id', $emp->id)->where('status', 'Pending')
-                    ->where('start_date', '>=', $pStart)->where('start_date', '<=', $pEnd)->count();
-
-                $row = array_merge($row, [$sumOpening, $sumAvailed, $sumRemaining, $sumCF, $sumLapsed, $sumEncashDays, $encashBasis, $empMonthlyComp, $empDailyRate, $sumEncashAmt, $pending]);
-                fputcsv($f, $row);
-            }
-            fclose($f);
-        };
-
-        return response()->stream($callback, 200, $headers);
     }
 
     public function employeeLeave(Request $request, $employee_id, $status, $type, $month, $year)

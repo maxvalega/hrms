@@ -21,6 +21,7 @@ use App\Models\LeaveType;
 use App\Models\PaySlip;
 use App\Models\ReimbursementClaim;
 use App\Models\TimeSheet;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -139,25 +140,12 @@ class ReportController extends Controller
             ->where('title', 'not like', '[OLD]%')
             ->get();
 
-        if ($request->type == 'yearly' && !empty($request->year)) {
-            $pStart = $request->year . '-04-01';
-            $pEnd = ($request->year + 1) . '-03-31';
-            $label = 'FY-' . $request->year . '-' . ($request->year + 1);
-            $month = null;
-            $year = (int) $request->year;
-        } elseif ($request->type == 'monthly' && !empty($request->month)) {
-            $pStart = date('Y-m-01', strtotime($request->month));
-            $pEnd = date('Y-m-t', strtotime($request->month));
-            $label = date('M-Y', strtotime($request->month));
-            $month = date('m', strtotime($request->month));
-            $year = (int) date('Y', strtotime($request->month));
-        } else {
-            $pStart = date('Y-m-01');
-            $pEnd = date('Y-m-t');
-            $label = date('M-Y');
-            $month = date('m');
-            $year = (int) date('Y');
-        }
+        $period = $this->resolveLeaveReportPeriod($request);
+        $pEnd = $period['p_end'];
+        $availFrom = $period['avail_from'];
+        $label = $period['label'];
+        $month = $period['month'];
+        $year = $period['year'];
 
         $filename = 'leave-report-' . $label . '.csv';
         $headers = [
@@ -165,7 +153,7 @@ class ReportController extends Controller
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ];
 
-        $callback = function () use ($employees, $leaveTypes, $pStart, $pEnd, $request, $month, $year) {
+        $callback = function () use ($employees, $leaveTypes, $pEnd, $availFrom, $request, $month, $year) {
             $f = fopen('php://output', 'w');
             fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
@@ -205,21 +193,15 @@ class ReportController extends Controller
                 $empDailyRate = 0;
 
                 foreach ($leaveTypes as $lt) {
-                    $beforeTaken = (float) Leave::where('employee_id', $emp->id)
-                        ->whereRaw('LOWER(TRIM(status)) = ?', ['approved'])
-                        ->where('leave_type_id', $lt->id)
-                        ->where(function ($q) {
-                            $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
-                        })
-                        ->where('start_date', '<', $pStart)
-                        ->sum('total_leave_days');
-
-                    $opening = max(0, (float) $lt->days - $beforeTaken);
-                    $availed = $this->sumApprovedLeaveDaysInPeriod((int) $emp->id, $pStart, $pEnd, (int) $lt->id);
+                    $opening = max(0, (float) ($lt->annual_credit ?? $lt->days ?? 0));
+                    if ($opening <= 0) {
+                        $opening = max(0, (float) $lt->days);
+                    }
+                    $availed = $this->sumApprovedLeaveDaysInPeriod((int) $emp->id, $availFrom, $pEnd, (int) $lt->id);
                     $remaining = max(0, $opening - $availed);
 
                     // Original columns: Quota / Availed / Balance
-                    $row[] = (float) $lt->days;
+                    $row[] = $opening;
                     $row[] = $availed;
                     $row[] = $remaining;
 
@@ -257,13 +239,12 @@ class ReportController extends Controller
                     $sumEncashAmt += $encashAmt;
                 }
 
-                $allAvailed = $this->sumApprovedLeaveDaysInPeriod((int) $emp->id, $pStart, $pEnd, null);
+                $allAvailed = $this->sumApprovedLeaveDaysInPeriod((int) $emp->id, $availFrom, $pEnd, null);
                 if ($allAvailed > $sumAvailed) {
                     $sumAvailed = $allAvailed;
                     $sumRemaining = max(0, $sumOpening - $sumAvailed);
                 }
 
-                // Pending: same period filter as on-screen report
                 $pendingQuery = Leave::where('employee_id', $emp->id)
                     ->whereRaw('LOWER(TRIM(status)) = ?', ['pending'])
                     ->where(function ($q) {
@@ -298,6 +279,63 @@ class ReportController extends Controller
     }
 
     /**
+     * Report window + entitlement window for Opening / Availed.
+     * Opening = full type quotas; Availed = approved leave from entitlement start through period end (YTD).
+     *
+     * @return array{p_start:string,p_end:string,avail_from:string,label:string,month:?string,year:int}
+     */
+    protected function resolveLeaveReportPeriod(Request $request): array
+    {
+        if ($request->type == 'yearly' && !empty($request->year)) {
+            $year = (int) $request->year;
+            $pStart = $year . '-04-01';
+            $pEnd = ($year + 1) . '-03-31';
+            $availFrom = $pStart;
+            $label = 'FY-' . $year . '-' . ($year + 1);
+            $month = null;
+        } elseif ($request->type == 'monthly' && !empty($request->month)) {
+            $year = (int) date('Y', strtotime($request->month));
+            $month = date('m', strtotime($request->month));
+            $pStart = date('Y-m-01', strtotime($request->month));
+            $pEnd = date('Y-m-t', strtotime($request->month));
+            $label = date('M-Y', strtotime($request->month));
+
+            if (\App\Services\LeavePolicyService::isSpectalPortal()) {
+                $cycle = \App\Services\LeavePolicyService::spectalCycleDates(Carbon::parse($pEnd, 'Asia/Kolkata'));
+                $availFrom = $cycle['cycle_start'];
+            } else {
+                $availFrom = $year . '-01-01';
+            }
+        } else {
+            $year = (int) date('Y');
+            $month = date('m');
+            $pStart = date('Y-m-01');
+            $pEnd = date('Y-m-t');
+            $label = date('M-Y');
+            if (\App\Services\LeavePolicyService::isSpectalPortal()) {
+                $cycle = \App\Services\LeavePolicyService::spectalCycleDates(Carbon::parse($pEnd, 'Asia/Kolkata'));
+                $availFrom = $cycle['cycle_start'];
+            } else {
+                $availFrom = $year . '-01-01';
+            }
+        }
+
+        // Never count availed before entitlement window
+        if ($availFrom > $pEnd) {
+            $availFrom = $pStart;
+        }
+
+        return [
+            'p_start' => $pStart,
+            'p_end' => $pEnd,
+            'avail_from' => $availFrom,
+            'label' => $label,
+            'month' => $month,
+            'year' => $year,
+        ];
+    }
+
+    /**
      * Approved leave days that overlap a report period.
      * Counts all matching leaves (optionally one type) so Availed is not lost when
      * leave_type_id is missing, [OLD], or from another type list.
@@ -328,6 +366,10 @@ class ReportController extends Controller
     /**
      * Same dataset used by Leave Report UI and Excel export.
      *
+     * Opening = full type quotas.
+     * Availed = approved leave from leave-year/cycle start through selected period end (YTD).
+     * Remaining = Opening − Availed.
+     *
      * @return array<int, array<string, mixed>>
      */
     protected function buildLeaveReportRows(Request $request): array
@@ -341,25 +383,12 @@ class ReportController extends Controller
         }
         $employees = $employees->orderBy('employee_id')->get();
 
-        // Include all company leave types so approved leave against any type is counted
         $leaveTypes = LeaveType::where('created_by', \Auth::user()->creatorId())->get();
-
-        if ($request->type == 'yearly' && !empty($request->year)) {
-            $pStart = $request->year . '-04-01';
-            $pEnd = ($request->year + 1) . '-03-31';
-            $month = null;
-            $year = (int) $request->year;
-        } elseif ($request->type == 'monthly' && !empty($request->month)) {
-            $pStart = date('Y-m-01', strtotime($request->month));
-            $pEnd = date('Y-m-t', strtotime($request->month));
-            $month = date('m', strtotime($request->month));
-            $year = (int) date('Y', strtotime($request->month));
-        } else {
-            $pStart = date('Y-m-01');
-            $pEnd = date('Y-m-t');
-            $month = date('m');
-            $year = (int) date('Y');
-        }
+        $period = $this->resolveLeaveReportPeriod($request);
+        $pEnd = $period['p_end'];
+        $availFrom = $period['avail_from'];
+        $month = $period['month'];
+        $year = $period['year'];
 
         $leaves = [];
         foreach ($employees as $employee) {
@@ -381,22 +410,18 @@ class ReportController extends Controller
             $sumOpening = $sumAvailed = $sumRemaining = $sumCF = $sumLapsed = $sumEncashDays = $sumEncashAmt = 0;
 
             foreach ($leaveTypes as $lt) {
-                // Skip soft-retired types from quota/opening (still counted in total availed below)
                 if (str_starts_with((string) ($lt->title ?? ''), '[OLD]')) {
                     continue;
                 }
 
-                $beforeTaken = (float) Leave::where('employee_id', $employee->id)
-                    ->whereRaw('LOWER(TRIM(status)) = ?', ['approved'])
-                    ->where('leave_type_id', $lt->id)
-                    ->where(function ($q) {
-                        $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
-                    })
-                    ->where('start_date', '<', $pStart)
-                    ->sum('total_leave_days');
-                $opening = max(0, (float) $lt->days - $beforeTaken);
+                // Opening = full quota for the leave year
+                $opening = max(0, (float) ($lt->annual_credit ?? $lt->days ?? 0));
+                if ($opening <= 0) {
+                    $opening = max(0, (float) $lt->days);
+                }
 
-                $availed = $this->sumApprovedLeaveDaysInPeriod((int) $employee->id, $pStart, $pEnd, (int) $lt->id);
+                // Availed = YTD through selected period end
+                $availed = $this->sumApprovedLeaveDaysInPeriod((int) $employee->id, $availFrom, $pEnd, (int) $lt->id);
                 $remaining = max(0, $opening - $availed);
 
                 $cf = 0;
@@ -432,8 +457,7 @@ class ReportController extends Controller
                 $sumEncashAmt += $encashAmt;
             }
 
-            // Include approved leave not tied to current (non-[OLD]) leave types
-            $allAvailed = $this->sumApprovedLeaveDaysInPeriod((int) $employee->id, $pStart, $pEnd, null);
+            $allAvailed = $this->sumApprovedLeaveDaysInPeriod((int) $employee->id, $availFrom, $pEnd, null);
             if ($allAvailed > $sumAvailed) {
                 $sumAvailed = $allAvailed;
                 $sumRemaining = max(0, $sumOpening - $sumAvailed);

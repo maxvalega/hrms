@@ -125,14 +125,38 @@ class ReportController extends Controller
             abort(403);
         }
 
-        $rows = $this->buildLeaveReportRows($request);
+        $cid = \Auth::user()->creatorId();
+        $employees = Employee::where('created_by', $cid);
+        if (!empty($request->branch)) {
+            $employees->where('branch_id', $request->branch);
+        }
+        if (!empty($request->department)) {
+            $employees->where('department_id', $request->department);
+        }
+        $employees = $employees->orderBy('employee_id')->get();
+
+        $leaveTypes = LeaveType::where('created_by', $cid)
+            ->where('title', 'not like', '[OLD]%')
+            ->get();
 
         if ($request->type == 'yearly' && !empty($request->year)) {
-            $label = 'FY-' . $request->year . '-' . ((int) $request->year + 1);
+            $pStart = $request->year . '-04-01';
+            $pEnd = ($request->year + 1) . '-03-31';
+            $label = 'FY-' . $request->year . '-' . ($request->year + 1);
+            $month = null;
+            $year = (int) $request->year;
         } elseif ($request->type == 'monthly' && !empty($request->month)) {
+            $pStart = date('Y-m-01', strtotime($request->month));
+            $pEnd = date('Y-m-t', strtotime($request->month));
             $label = date('M-Y', strtotime($request->month));
+            $month = date('m', strtotime($request->month));
+            $year = (int) date('Y', strtotime($request->month));
         } else {
+            $pStart = date('Y-m-01');
+            $pEnd = date('Y-m-t');
             $label = date('M-Y');
+            $month = date('m');
+            $year = (int) date('Y');
         }
 
         $filename = 'leave-report-' . $label . '.csv';
@@ -141,42 +165,135 @@ class ReportController extends Controller
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ];
 
-        $callback = function () use ($rows) {
+        $callback = function () use ($employees, $leaveTypes, $pStart, $pEnd, $request, $month, $year) {
             $f = fopen('php://output', 'w');
             fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
-            fputcsv($f, [
-                'Employee ID',
-                'Employee',
-                'Opening',
-                'Availed',
-                'Remaining',
-                'Carry Fwd',
+
+            // Keep original export columns
+            $header = ['Employee ID', 'Employee', 'Department'];
+            foreach ($leaveTypes as $lt) {
+                $header[] = $lt->title . ' (Quota)';
+                $header[] = $lt->title . ' (Availed)';
+                $header[] = $lt->title . ' (Balance)';
+            }
+            $header = array_merge($header, [
+                'Total Opening',
+                'Total Availed',
+                'Total Remaining',
+                'Carry Forward',
                 'Lapsed',
-                'Encashment Days',
-                'Encashment Amount',
+                'Encash Days',
+                'Encash Basis',
+                'Monthly Component',
+                'Daily Rate',
+                'Encash Amount',
                 'Pending',
             ]);
+            fputcsv($f, $header);
 
-            foreach ($rows as $leave) {
-                $empId = !empty($leave['employee_id'])
-                    ? \Auth::user()->employeeIdFormat($leave['employee_id'])
-                    : '';
-                $encashAmt = ((float) ($leave['encash_days'] ?? 0) > 0)
-                    ? round((float) ($leave['encash_amount'] ?? 0), 2)
-                    : '';
+            foreach ($employees as $emp) {
+                $deptName = \DB::table('departments')->where('id', $emp->department_id)->value('name') ?? '—';
+                $empSalary = \DB::table('employee_salaries')->where('employee_id', $emp->id)->first();
+                $empIdFormatted = \Auth::user()->employeeIdFormat($emp->employee_id);
+                $row = [$empIdFormatted, $emp->name, $deptName];
 
-                fputcsv($f, [
-                    $empId,
-                    $leave['employee'] ?? '',
-                    $leave['opening'] ?? 0,
-                    $leave['availed'] ?? 0,
-                    $leave['remaining'] ?? 0,
-                    $leave['carry_forward'] ?? 0,
-                    $leave['lapsed'] ?? 0,
-                    $leave['encash_days'] ?? 0,
-                    $encashAmt,
-                    $leave['pending'] ?? 0,
+                $ctc = $empSalary ? (float) $empSalary->ctc : 0;
+                $basicPct = $empSalary ? (float) ($empSalary->basic_percentage ?? 50) : 50;
+                $sumOpening = $sumAvailed = $sumRemaining = $sumCF = $sumLapsed = $sumEncashDays = $sumEncashAmt = 0;
+                $encashBasis = '—';
+                $empMonthlyComp = 0;
+                $empDailyRate = 0;
+
+                foreach ($leaveTypes as $lt) {
+                    $beforeTaken = (float) Leave::where('employee_id', $emp->id)
+                        ->where('status', 'Approved')
+                        ->where('leave_type_id', $lt->id)
+                        ->where(function ($q) {
+                            $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
+                        })
+                        ->where('start_date', '<', $pStart)
+                        ->sum('total_leave_days');
+
+                    $opening = max(0, (float) $lt->days - $beforeTaken);
+
+                    $availed = (float) Leave::where('employee_id', $emp->id)
+                        ->where('status', 'Approved')
+                        ->where('leave_type_id', $lt->id)
+                        ->where(function ($q) {
+                            $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
+                        })
+                        ->where('start_date', '>=', $pStart)
+                        ->where('start_date', '<=', $pEnd)
+                        ->sum('total_leave_days');
+
+                    $remaining = max(0, $opening - $availed);
+
+                    // Original columns: Quota / Availed / Balance
+                    $row[] = (float) $lt->days;
+                    $row[] = $availed;
+                    $row[] = $remaining;
+
+                    $cf = 0;
+                    if (!empty($lt->is_carry_forward) && $remaining > 0) {
+                        $maxCF = !empty($lt->max_carry_forward) && (float) $lt->max_carry_forward > 0
+                            ? (float) $lt->max_carry_forward
+                            : $remaining;
+                        $cf = min($remaining, $maxCF);
+                    }
+
+                    $encashDays = 0;
+                    $encashAmt = 0;
+                    if (!empty($lt->is_encashable) && $remaining > $cf) {
+                        $encashDays = $remaining - $cf;
+                        $basis = $lt->encash_basis ?? 'basic';
+                        $monthlyComp = ($basis === 'gross')
+                            ? round($ctc / 12, 2)
+                            : round($ctc * $basicPct / 100 / 12, 2);
+                        $dailyRate = round($monthlyComp / 26, 2);
+                        $encashAmt = round($encashDays * $dailyRate, 2);
+                        $encashBasis = ucfirst($basis);
+                        $empMonthlyComp = $monthlyComp;
+                        $empDailyRate = $dailyRate;
+                    }
+
+                    $lapsed = $remaining - $cf - $encashDays;
+
+                    $sumOpening += $opening;
+                    $sumAvailed += $availed;
+                    $sumRemaining += $remaining;
+                    $sumCF += $cf;
+                    $sumLapsed += $lapsed;
+                    $sumEncashDays += $encashDays;
+                    $sumEncashAmt += $encashAmt;
+                }
+
+                // Pending: same period filter as on-screen report
+                $pendingQuery = Leave::where('employee_id', $emp->id)
+                    ->where('status', 'Pending')
+                    ->where(function ($q) {
+                        $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
+                    });
+                if ($request->type == 'yearly' && !empty($request->year)) {
+                    $pendingQuery->whereYear('start_date', $year);
+                } else {
+                    $pendingQuery->whereMonth('start_date', $month)->whereYear('start_date', $year);
+                }
+                $pending = $pendingQuery->count();
+
+                $row = array_merge($row, [
+                    $sumOpening,
+                    $sumAvailed,
+                    $sumRemaining,
+                    $sumCF,
+                    $sumLapsed,
+                    $sumEncashDays,
+                    $encashBasis,
+                    $empMonthlyComp,
+                    $empDailyRate,
+                    $sumEncashAmt,
+                    $pending,
                 ]);
+                fputcsv($f, $row);
             }
             fclose($f);
         };
@@ -200,7 +317,9 @@ class ReportController extends Controller
         }
         $employees = $employees->orderBy('employee_id')->get();
 
-        $leaveTypes = LeaveType::where('created_by', \Auth::user()->creatorId())->get();
+        $leaveTypes = LeaveType::where('created_by', \Auth::user()->creatorId())
+            ->where('title', 'not like', '[OLD]%')
+            ->get();
 
         if ($request->type == 'yearly' && !empty($request->year)) {
             $pStart = $request->year . '-04-01';
@@ -221,7 +340,11 @@ class ReportController extends Controller
 
         $leaves = [];
         foreach ($employees as $employee) {
-            $pendingQuery = Leave::where('employee_id', $employee->id)->where('status', 'Pending');
+            $pendingQuery = Leave::where('employee_id', $employee->id)
+                ->where('status', 'Pending')
+                ->where(function ($q) {
+                    $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
+                });
 
             if ($request->type == 'yearly' && !empty($request->year)) {
                 $pendingQuery->whereYear('start_date', $year);
@@ -236,11 +359,18 @@ class ReportController extends Controller
 
             foreach ($leaveTypes as $lt) {
                 $beforeTaken = (float) Leave::where('employee_id', $employee->id)->where('status', 'Approved')
-                    ->where('leave_type_id', $lt->id)->where('start_date', '<', $pStart)->sum('total_leave_days');
+                    ->where('leave_type_id', $lt->id)
+                    ->where(function ($q) {
+                        $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
+                    })
+                    ->where('start_date', '<', $pStart)->sum('total_leave_days');
                 $opening = max(0, (float) $lt->days - $beforeTaken);
 
                 $availed = (float) Leave::where('employee_id', $employee->id)->where('status', 'Approved')
                     ->where('leave_type_id', $lt->id)
+                    ->where(function ($q) {
+                        $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
+                    })
                     ->where('start_date', '>=', $pStart)->where('start_date', '<=', $pEnd)
                     ->sum('total_leave_days');
 

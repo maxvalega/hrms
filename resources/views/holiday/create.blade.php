@@ -5,7 +5,7 @@
 {{ Form::open(['url' => 'holiday', 'method' => 'post', 'class' => 'needs-validation', 'novalidate']) }}
 <div class="modal-body">
 
-    @if ($plan->enable_chatgpt == 'on')
+    @if (!empty($plan) && ($plan->enable_chatgpt ?? '') == 'on')
     <div class="card-footer text-end">
         <a href="#" class="btn btn-sm btn-primary" data-size="medium" data-ajax-popup-over="true"
             data-url="{{ route('generate', ['holiday']) }}" data-bs-toggle="tooltip" data-bs-placement="top"

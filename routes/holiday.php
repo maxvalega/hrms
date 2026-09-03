@@ -1,11 +1,5 @@
 <?php
-use Illuminate\Support\Facades\Route;
 
-Route::middleware(['auth'])->group(function () {
-    Route::get('holiday', 'HolidayController@index')->name('holiday.index');
-    Route::get('holiday/create', 'HolidayController@create')->name('holiday.create');
-    Route::post('holiday', 'HolidayController@store')->name('holiday.store');
-    Route::get('holiday/{id}/edit', 'HolidayController@edit')->name('holiday.edit');
-    Route::put('holiday/{id}', 'HolidayController@update')->name('holiday.update');
-    Route::delete('holiday/{id}', 'HolidayController@destroy')->name('holiday.destroy');
-});
+// Holiday CRUD routes live in routes/web.php (Route::resource('holiday', ...)).
+// Do not re-register them here with string controllers — Laravel 11 cannot resolve
+// 'HolidayController@edit', which caused a 500 "Server Error" on the Edit popup.

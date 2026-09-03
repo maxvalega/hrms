@@ -118,11 +118,15 @@ class HolidayController extends Controller
 
     public function edit(LocalHoliday $holiday)
     {
-        if (\Auth::user()->can('Edit Holiday')) {
-            return view('holiday.edit', compact('holiday'));
+        if (!\Auth::user()->can('Edit Holiday')) {
+            return response()->json(['error' => __('Permission denied.')], 401);
         }
 
-        return redirect()->back()->with('error', __('Permission denied.'));
+        if ((int) ($holiday->created_by ?? 0) !== (int) \Auth::user()->creatorId()) {
+            return response()->json(['error' => __('Permission denied.')], 401);
+        }
+
+        return view('holiday.edit', compact('holiday'));
     }
 
     public function update(Request $request, LocalHoliday $holiday)

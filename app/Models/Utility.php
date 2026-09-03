@@ -2334,8 +2334,22 @@ HTML;
 
     public static function getChatGPTSettings()
     {
-        $user = User::find(\Auth::user()->creatorId());
-        $plan = \App\Models\Plan::find($user->plan);
+        $user = \Auth::check() ? User::find(\Auth::user()->creatorId()) : null;
+        if (!$user) {
+            $user = \Auth::user();
+        }
+
+        $plan = null;
+        if ($user && !empty($user->plan)) {
+            $plan = \App\Models\Plan::find($user->plan);
+        }
+        if (!$plan) {
+            $plan = \App\Models\Plan::orderBy('id')->first();
+        }
+        if (!$plan) {
+            $plan = new \App\Models\Plan(['enable_chatgpt' => 'off']);
+        }
+
         return $plan;
     }
 

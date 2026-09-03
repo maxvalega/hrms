@@ -21,6 +21,10 @@ class Holiday extends Model
     
     public function location()
     {
+        if (!\Illuminate\Support\Facades\Schema::hasColumn($this->getTable(), 'location_id')) {
+            return $this->belongsTo(Branch::class, 'id')->whereRaw('1 = 0');
+        }
+
         return $this->belongsTo(Branch::class, 'location_id');
     }
     

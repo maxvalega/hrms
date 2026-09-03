@@ -206,7 +206,7 @@ class ReportController extends Controller
 
                 foreach ($leaveTypes as $lt) {
                     $beforeTaken = (float) Leave::where('employee_id', $emp->id)
-                        ->where('status', 'Approved')
+                        ->whereRaw('LOWER(TRIM(status)) = ?', ['approved'])
                         ->where('leave_type_id', $lt->id)
                         ->where(function ($q) {
                             $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
@@ -215,17 +215,7 @@ class ReportController extends Controller
                         ->sum('total_leave_days');
 
                     $opening = max(0, (float) $lt->days - $beforeTaken);
-
-                    $availed = (float) Leave::where('employee_id', $emp->id)
-                        ->where('status', 'Approved')
-                        ->where('leave_type_id', $lt->id)
-                        ->where(function ($q) {
-                            $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
-                        })
-                        ->where('start_date', '>=', $pStart)
-                        ->where('start_date', '<=', $pEnd)
-                        ->sum('total_leave_days');
-
+                    $availed = $this->sumApprovedLeaveDaysInPeriod((int) $emp->id, $pStart, $pEnd, (int) $lt->id);
                     $remaining = max(0, $opening - $availed);
 
                     // Original columns: Quota / Availed / Balance
@@ -267,9 +257,15 @@ class ReportController extends Controller
                     $sumEncashAmt += $encashAmt;
                 }
 
+                $allAvailed = $this->sumApprovedLeaveDaysInPeriod((int) $emp->id, $pStart, $pEnd, null);
+                if ($allAvailed > $sumAvailed) {
+                    $sumAvailed = $allAvailed;
+                    $sumRemaining = max(0, $sumOpening - $sumAvailed);
+                }
+
                 // Pending: same period filter as on-screen report
                 $pendingQuery = Leave::where('employee_id', $emp->id)
-                    ->where('status', 'Pending')
+                    ->whereRaw('LOWER(TRIM(status)) = ?', ['pending'])
                     ->where(function ($q) {
                         $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
                     });
@@ -302,6 +298,34 @@ class ReportController extends Controller
     }
 
     /**
+     * Approved leave days that overlap a report period.
+     * Counts all matching leaves (optionally one type) so Availed is not lost when
+     * leave_type_id is missing, [OLD], or from another type list.
+     */
+    protected function sumApprovedLeaveDaysInPeriod(int $employeeId, string $pStart, string $pEnd, ?int $leaveTypeId = null): float
+    {
+        $query = Leave::where('employee_id', $employeeId)
+            ->whereRaw('LOWER(TRIM(status)) = ?', ['approved'])
+            ->where(function ($q) {
+                $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
+            })
+            // Overlaps [pStart, pEnd]
+            ->where('start_date', '<=', $pEnd)
+            ->where(function ($q) use ($pStart) {
+                $q->where('end_date', '>=', $pStart)
+                    ->orWhere(function ($q2) use ($pStart) {
+                        $q2->whereNull('end_date')->where('start_date', '>=', $pStart);
+                    });
+            });
+
+        if ($leaveTypeId !== null) {
+            $query->where('leave_type_id', $leaveTypeId);
+        }
+
+        return round((float) $query->sum('total_leave_days'), 2);
+    }
+
+    /**
      * Same dataset used by Leave Report UI and Excel export.
      *
      * @return array<int, array<string, mixed>>
@@ -317,9 +341,8 @@ class ReportController extends Controller
         }
         $employees = $employees->orderBy('employee_id')->get();
 
-        $leaveTypes = LeaveType::where('created_by', \Auth::user()->creatorId())
-            ->where('title', 'not like', '[OLD]%')
-            ->get();
+        // Include all company leave types so approved leave against any type is counted
+        $leaveTypes = LeaveType::where('created_by', \Auth::user()->creatorId())->get();
 
         if ($request->type == 'yearly' && !empty($request->year)) {
             $pStart = $request->year . '-04-01';
@@ -341,7 +364,7 @@ class ReportController extends Controller
         $leaves = [];
         foreach ($employees as $employee) {
             $pendingQuery = Leave::where('employee_id', $employee->id)
-                ->where('status', 'Pending')
+                ->whereRaw('LOWER(TRIM(status)) = ?', ['pending'])
                 ->where(function ($q) {
                     $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
                 });
@@ -358,22 +381,22 @@ class ReportController extends Controller
             $sumOpening = $sumAvailed = $sumRemaining = $sumCF = $sumLapsed = $sumEncashDays = $sumEncashAmt = 0;
 
             foreach ($leaveTypes as $lt) {
-                $beforeTaken = (float) Leave::where('employee_id', $employee->id)->where('status', 'Approved')
+                // Skip soft-retired types from quota/opening (still counted in total availed below)
+                if (str_starts_with((string) ($lt->title ?? ''), '[OLD]')) {
+                    continue;
+                }
+
+                $beforeTaken = (float) Leave::where('employee_id', $employee->id)
+                    ->whereRaw('LOWER(TRIM(status)) = ?', ['approved'])
                     ->where('leave_type_id', $lt->id)
                     ->where(function ($q) {
                         $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
                     })
-                    ->where('start_date', '<', $pStart)->sum('total_leave_days');
+                    ->where('start_date', '<', $pStart)
+                    ->sum('total_leave_days');
                 $opening = max(0, (float) $lt->days - $beforeTaken);
 
-                $availed = (float) Leave::where('employee_id', $employee->id)->where('status', 'Approved')
-                    ->where('leave_type_id', $lt->id)
-                    ->where(function ($q) {
-                        $q->whereNull('remark')->orWhere('remark', '!=', 'System-generated substitute block');
-                    })
-                    ->where('start_date', '>=', $pStart)->where('start_date', '<=', $pEnd)
-                    ->sum('total_leave_days');
-
+                $availed = $this->sumApprovedLeaveDaysInPeriod((int) $employee->id, $pStart, $pEnd, (int) $lt->id);
                 $remaining = max(0, $opening - $availed);
 
                 $cf = 0;
@@ -407,6 +430,13 @@ class ReportController extends Controller
                 $sumLapsed += $lapsed;
                 $sumEncashDays += $encashDays;
                 $sumEncashAmt += $encashAmt;
+            }
+
+            // Include approved leave not tied to current (non-[OLD]) leave types
+            $allAvailed = $this->sumApprovedLeaveDaysInPeriod((int) $employee->id, $pStart, $pEnd, null);
+            if ($allAvailed > $sumAvailed) {
+                $sumAvailed = $allAvailed;
+                $sumRemaining = max(0, $sumOpening - $sumAvailed);
             }
 
             $leaves[] = [

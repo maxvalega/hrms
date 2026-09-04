@@ -1777,7 +1777,21 @@ class LeaveController extends Controller
         return $allowance['allowed'];
     }
 
-    protected function getLeaveAllowanceDetails(LeaveType $leaveType, ?Employee $employee, array $cycleDates, bool $includeCarryForward = true): array
+    /**
+     * Public balance snapshot for reports (same rules as Leave dashboard).
+     * $asOf controls accrual month and usage cut-off (end of that month).
+     */
+    public function balanceSummaryAsOf(int $employeeId, LeaveType $leaveType, ?Carbon $asOf = null): array
+    {
+        $asOf = $asOf ? $asOf->copy() : Carbon::now('Asia/Kolkata');
+        $cycleDates = $this->isSpectalPortal()
+            ? LeavePolicyService::spectalCycleDates($asOf)
+            : Utility::AnnualLeaveCycle();
+
+        return $this->calculateLeaveBalanceSummary($employeeId, $leaveType, $cycleDates, false, $asOf);
+    }
+
+    protected function getLeaveAllowanceDetails(LeaveType $leaveType, ?Employee $employee, array $cycleDates, bool $includeCarryForward = true, ?Carbon $asOf = null): array
     {
         $settings = Utility::settings();
         $isSpectal = $this->isSpectalPortal();
@@ -1936,7 +1950,7 @@ class LeaveController extends Controller
             $eligibleMonths = $accrualStart->diffInMonths($cycleEnd) + 1;
         }
 
-        $asOfMonth = Carbon::now()->startOfMonth();
+        $asOfMonth = ($asOf ?? Carbon::now('Asia/Kolkata'))->copy()->startOfMonth();
         if ($asOfMonth->greaterThan($cycleEnd)) {
             $asOfMonth = $cycleEnd->copy();
         }
@@ -2052,17 +2066,28 @@ class LeaveController extends Controller
         ];
     }
 
-    protected function calculateLeaveBalanceSummary(int $employeeId, LeaveType $leaveType, array $cycleDates, bool $companyWide = false): array
+    protected function calculateLeaveBalanceSummary(int $employeeId, LeaveType $leaveType, array $cycleDates, bool $companyWide = false, ?Carbon $asOf = null): array
     {
         $employee = $employeeId > 0 ? Employee::find($employeeId) : null;
-        $allowance = $this->getLeaveAllowanceDetails($leaveType, $employee, $cycleDates);
+        $allowance = $this->getLeaveAllowanceDetails($leaveType, $employee, $cycleDates, true, $asOf);
         $usageEmployeeId = $companyWide ? null : ($employeeId > 0 ? $employeeId : null);
 
         $policyCode = LeavePolicyService::resolvePolicyCode($leaveType);
         $isMonthlyCap = ($leaveType->credit_frequency === 'monthly_cap') || $policyCode === 'wfh';
 
         if ($isMonthlyCap) {
-            $usage = $this->getLeaveUsageForCurrentMonth($usageEmployeeId, (int) $leaveType->id, $cycleDates);
+            $usage = $this->getLeaveUsageForCurrentMonth(
+                $usageEmployeeId,
+                (int) $leaveType->id,
+                $cycleDates,
+                null,
+                $asOf ? $asOf->toDateString() : null
+            );
+        } elseif ($asOf) {
+            // Cut usage at report month end (keep cycle start padding)
+            $usageCycle = $cycleDates;
+            $usageCycle['end_date'] = $asOf->copy()->endOfMonth()->addDay()->toDateString();
+            $usage = $this->getLeaveUsageByCycle($usageEmployeeId, (int) $leaveType->id, $usageCycle);
         } else {
             $usage = $this->getLeaveUsageByCycle($usageEmployeeId, (int) $leaveType->id, $cycleDates);
         }

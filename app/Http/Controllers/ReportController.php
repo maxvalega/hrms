@@ -21,6 +21,7 @@ use App\Models\LeaveType;
 use App\Models\PaySlip;
 use App\Models\ReimbursementClaim;
 use App\Models\TimeSheet;
+use App\Services\LeavePolicyService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -147,13 +148,19 @@ class ReportController extends Controller
         $month = $period['month'];
         $year = $period['year'];
 
+        $asOf = Carbon::parse($pEnd, 'Asia/Kolkata');
+        $isSpectal = LeavePolicyService::isSpectalPortal();
+        /** @var LeaveController $leaveCtrl */
+        $leaveCtrl = app(LeaveController::class);
+        $policy = app(LeavePolicyService::class);
+
         $filename = 'leave-report-' . $label . '.csv';
         $headers = [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="' . $filename . '"',
         ];
 
-        $callback = function () use ($employees, $leaveTypes, $pEnd, $availFrom, $request, $month, $year) {
+        $callback = function () use ($employees, $leaveTypes, $pEnd, $availFrom, $request, $month, $year, $asOf, $isSpectal, $leaveCtrl, $policy) {
             $f = fopen('php://output', 'w');
             fprintf($f, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
@@ -193,15 +200,26 @@ class ReportController extends Controller
                 $empDailyRate = 0;
 
                 foreach ($leaveTypes as $lt) {
-                    $opening = max(0, (float) ($lt->annual_credit ?? $lt->days ?? 0));
-                    if ($opening <= 0) {
-                        $opening = max(0, (float) $lt->days);
+                    $quota = max(0, (float) ($lt->annual_credit ?? $lt->days ?? 0));
+                    if ($quota <= 0) {
+                        $quota = max(0, (float) $lt->days);
                     }
-                    $availed = $this->sumApprovedLeaveDaysInPeriod((int) $emp->id, $availFrom, $pEnd, (int) $lt->id);
-                    $remaining = max(0, $opening - $availed);
 
-                    // Original columns: Quota / Availed / Balance
-                    $row[] = $opening;
+                    $includeInTotals = !($isSpectal && !$policy->shouldShowOnSpectalBalance($lt, $emp, $asOf));
+                    if (!$includeInTotals) {
+                        $row[] = $quota;
+                        $row[] = 0;
+                        $row[] = 0;
+                        continue;
+                    }
+
+                    $metrics = $this->leaveReportTypeMetrics($leaveCtrl, $emp, $lt, $availFrom, $pEnd, $asOf, $isSpectal);
+                    $opening = $metrics['opening'];
+                    $availed = $metrics['availed'];
+                    $remaining = $metrics['remaining'];
+
+                    // Original columns: Quota (policy annual) / Availed / Balance (entitlement − availed)
+                    $row[] = $quota;
                     $row[] = $availed;
                     $row[] = $remaining;
 
@@ -258,9 +276,9 @@ class ReportController extends Controller
                 $pending = $pendingQuery->count();
 
                 $row = array_merge($row, [
-                    $sumOpening,
-                    $sumAvailed,
-                    $sumRemaining,
+                    round($sumOpening, 2),
+                    round($sumAvailed, 2),
+                    round($sumRemaining, 2),
                     $sumCF,
                     $sumLapsed,
                     $sumEncashDays,
@@ -366,7 +384,8 @@ class ReportController extends Controller
     /**
      * Same dataset used by Leave Report UI and Excel export.
      *
-     * Opening = full type quotas.
+     * Spectal Opening = accrued entitlement as of period end (same as Leave dashboard Total).
+     * Non-Spectal Opening = annual quota.
      * Availed = approved leave from leave-year/cycle start through selected period end (YTD).
      * Remaining = Opening − Availed.
      *
@@ -389,6 +408,11 @@ class ReportController extends Controller
         $availFrom = $period['avail_from'];
         $month = $period['month'];
         $year = $period['year'];
+        $asOf = Carbon::parse($pEnd, 'Asia/Kolkata');
+        $isSpectal = LeavePolicyService::isSpectalPortal();
+        /** @var LeaveController $leaveCtrl */
+        $leaveCtrl = app(LeaveController::class);
+        $policy = app(LeavePolicyService::class);
 
         $leaves = [];
         foreach ($employees as $employee) {
@@ -414,15 +438,14 @@ class ReportController extends Controller
                     continue;
                 }
 
-                // Opening = full quota for the leave year
-                $opening = max(0, (float) ($lt->annual_credit ?? $lt->days ?? 0));
-                if ($opening <= 0) {
-                    $opening = max(0, (float) $lt->days);
+                if ($isSpectal && !$policy->shouldShowOnSpectalBalance($lt, $employee, $asOf)) {
+                    continue;
                 }
 
-                // Availed = YTD through selected period end
-                $availed = $this->sumApprovedLeaveDaysInPeriod((int) $employee->id, $availFrom, $pEnd, (int) $lt->id);
-                $remaining = max(0, $opening - $availed);
+                $metrics = $this->leaveReportTypeMetrics($leaveCtrl, $employee, $lt, $availFrom, $pEnd, $asOf, $isSpectal);
+                $opening = $metrics['opening'];
+                $availed = $metrics['availed'];
+                $remaining = $metrics['remaining'];
 
                 $cf = 0;
                 if (!empty($lt->is_carry_forward) && $remaining > 0) {
@@ -468,9 +491,9 @@ class ReportController extends Controller
                 'employee_id' => $employee->employee_id,
                 'employee' => $employee->name,
                 'pending' => $pending,
-                'opening' => $sumOpening,
-                'availed' => $sumAvailed,
-                'remaining' => $sumRemaining,
+                'opening' => round($sumOpening, 2),
+                'availed' => round($sumAvailed, 2),
+                'remaining' => round($sumRemaining, 2),
                 'carry_forward' => $sumCF,
                 'lapsed' => $sumLapsed,
                 'encash_days' => $sumEncashDays,
@@ -479,6 +502,48 @@ class ReportController extends Controller
         }
 
         return $leaves;
+    }
+
+    /**
+     * Per-type Opening / Availed / Remaining for leave reports.
+     *
+     * @return array{opening: float, availed: float, remaining: float, quota: float}
+     */
+    protected function leaveReportTypeMetrics(
+        LeaveController $leaveCtrl,
+        Employee $employee,
+        LeaveType $lt,
+        string $availFrom,
+        string $pEnd,
+        Carbon $asOf,
+        bool $isSpectal
+    ): array {
+        $quota = max(0, (float) ($lt->annual_credit ?? $lt->days ?? 0));
+        if ($quota <= 0) {
+            $quota = max(0, (float) $lt->days);
+        }
+
+        if ($isSpectal) {
+            try {
+                $summary = $leaveCtrl->balanceSummaryAsOf((int) $employee->id, $lt, $asOf);
+                $opening = max(0, (float) ($summary['total'] ?? 0));
+                $availed = max(0, (float) ($summary['used'] ?? 0));
+            } catch (\Throwable $e) {
+                \Log::warning('Leave report balance failed for emp ' . $employee->id . ' type ' . $lt->id . ': ' . $e->getMessage());
+                $opening = $quota;
+                $availed = $this->sumApprovedLeaveDaysInPeriod((int) $employee->id, $availFrom, $pEnd, (int) $lt->id);
+            }
+        } else {
+            $opening = $quota;
+            $availed = $this->sumApprovedLeaveDaysInPeriod((int) $employee->id, $availFrom, $pEnd, (int) $lt->id);
+        }
+
+        return [
+            'quota' => $quota,
+            'opening' => $opening,
+            'availed' => $availed,
+            'remaining' => max(0, round($opening - $availed, 2)),
+        ];
     }
 
     public function leave(Request $request)

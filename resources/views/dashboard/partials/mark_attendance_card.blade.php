@@ -44,10 +44,9 @@
                                         </button>
                                         {{ Form::close() }}
                                     @else
-                                        <div class="attendance-time-display">
-                                            <span class="attendance-time-value text-muted">{{ __('—') }}</span>
-                                            <small class="d-block text-muted mt-1">{{ __('Clock in to start') }}</small>
-                                        </div>
+                                        <button type="button" class="btn btn-outline-secondary w-100" disabled>
+                                            {{ __('Clock in to start') }}
+                                        </button>
                                     @endif
                                 </div>
                             </div>
@@ -111,10 +110,18 @@
                                                             @php
                                                                 $h = (int) floor($diffSec / 3600);
                                                                 $m = (int) floor(($diffSec % 3600) / 60);
+                                                                $s = (int) ($diffSec % 60);
                                                                 if ($h < 0) { $h = 0; }
                                                                 if ($m < 0) { $m = 0; }
+                                                                if ($s < 0) { $s = 0; }
                                                             @endphp
-                                                            {{ sprintf('%d h %02d m', $h, $m) }}
+                                                            @if($h > 0)
+                                                                {{ sprintf('%d h %02d m', $h, $m) }}
+                                                            @elseif($m > 0)
+                                                                {{ sprintf('%d m %02d s', $m, $s) }}
+                                                            @else
+                                                                {{ sprintf('%d s', max(1, $s ?: $diffSec)) }}
+                                                            @endif
                                                         @endif
                                                     </td>
                                                 </tr>
@@ -128,8 +135,15 @@
                                                         $totalSeconds = max(0, (int) ($totalSeconds ?? 0));
                                                         $h = (int) floor($totalSeconds / 3600);
                                                         $m = (int) floor(($totalSeconds % 3600) / 60);
+                                                        $s = (int) ($totalSeconds % 60);
                                                     @endphp
-                                                    {{ sprintf('%d h %02d m', $h, $m) }}
+                                                    @if($h > 0)
+                                                        {{ sprintf('%d h %02d m', $h, $m) }}
+                                                    @elseif($m > 0)
+                                                        {{ sprintf('%d m %02d s', $m, $s) }}
+                                                    @else
+                                                        {{ sprintf('%d s', $totalSeconds) }}
+                                                    @endif
                                                 </th>
                                             </tr>
                                         </tfoot>

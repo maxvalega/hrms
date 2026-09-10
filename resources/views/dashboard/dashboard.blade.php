@@ -230,6 +230,19 @@
         }
         .attendance-block.attendance-clock-in  { border-left: 4px solid #6366f1 !important; }
         .attendance-block.attendance-clock-out { border-left: 4px solid #ef4444 !important; }
+        .attendance-dashboard-card > .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .attendance-block {
+            min-height: 118px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
 
         /* Pending leave approvals — premium look */
         .pending-leave-card {

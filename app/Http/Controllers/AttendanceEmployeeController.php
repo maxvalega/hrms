@@ -1846,8 +1846,8 @@ class AttendanceEmployeeController extends Controller
             AttendanceEmployee::where('id', $id)->update($attendanceEmployee);
 
             $successMsg = __('Employee successfully clock Out.');
-            if (!$photoOutVerified) {
-                $successMsg .= ' ' . __('Photo could not be verified; marked as Not verified.');
+            if (!$photoOutVerified && empty($this->getProfilePhotoPath())) {
+                $successMsg .= ' ' . __('Upload your profile photo for verification next time.');
             }
             return redirect()->route('dashboard')->with('success', $successMsg);
         }

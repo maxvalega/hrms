@@ -43,7 +43,7 @@
             @if(\App\Support\TenantHost::isJeminiMainPortal() && !$hideModulesForSpectal)
                 <li class="dash-item {{ request()->routeIs('dashboard') && str_contains(request()->getRequestUri(), 'mark-attendance') ? 'active' : '' }}">
                     <a href="{{ route('dashboard') }}#mark-attendance" class="dash-link">
-                        <span class="dash-micon"><i class="ti ti-clock-play"></i></span>
+                        <span class="dash-micon"><i class="ti ti-clock"></i></span>
                         <span class="dash-mtext">{{ __('Clock In / Clock Out') }}</span>
                     </a>
                 </li>

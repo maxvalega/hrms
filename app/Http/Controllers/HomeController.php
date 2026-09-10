@@ -270,7 +270,7 @@ class HomeController extends Controller
                 return view('dashboard.super_admin', compact('user', 'chartData'));
             } else {
                 // Company/HR branch: also load attendance card data if this user has an employee record (so clock in/out shows after re-login or when same user is both company and employee)
-                $empForAttendance = Employee::where('user_id', '=', $user->id)->first();
+                $empForAttendance = Employee::ensureForClockPunch($user);
                 $employeeAttendance = null;
                 $officeTime = [
                     'startTime' => Utility::getValByName('company_start_time'),
@@ -278,11 +278,6 @@ class HomeController extends Controller
                 ];
                 $showAttendanceCard = false;
                 $todaySessions = collect();
-                if (empty($empForAttendance) && \App\Support\TenantHost::isJeminiMainPortal() && !empty($user->email)) {
-                    $empForAttendance = Employee::where('created_by', $user->creatorId())
-                        ->where('email', $user->email)
-                        ->first();
-                }
                 if (!empty($empForAttendance)) {
                     $showAttendanceCard = true;
                     $todaySessions = AttendanceEmployee::where('employee_id', '=', $empForAttendance->id)

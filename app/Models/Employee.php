@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Support\TenantHost;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 use SebastianBergmann\CodeCoverage\Percentage;
 
 class Employee extends Model
@@ -68,6 +70,70 @@ class Employee extends Model
         'salary',
         'created_by',
     ];
+
+    public static function ensureForClockPunch(?User $user = null): ?self
+    {
+        $user = $user ?: \Auth::user();
+        if (!$user) {
+            return null;
+        }
+
+        $emp = static::where('user_id', $user->id)->first();
+        if ($emp) {
+            return $emp;
+        }
+
+        $creatorId = method_exists($user, 'creatorId') ? $user->creatorId() : (int) $user->created_by;
+
+        if (!empty($user->email)) {
+            $emp = static::where('created_by', $creatorId)->where('email', $user->email)->first();
+            if ($emp) {
+                if ((int) $emp->user_id !== (int) $user->id) {
+                    $emp->user_id = $user->id;
+                    $emp->save();
+                }
+
+                return $emp;
+            }
+        }
+
+        if (!TenantHost::isJeminiMainPortal() || !in_array($user->type, ['company', 'hr'], true)) {
+            return null;
+        }
+
+        try {
+            $columns = Schema::getColumnListing('employees');
+            $latest = static::where('created_by', $creatorId)->latest('id')->first();
+            $nextNum = $latest ? max(1, ((int) $latest->employee_id) + 1) : 1;
+
+            $row = [
+                'user_id' => $user->id,
+                'name' => $user->name ?: 'Admin',
+                'email' => $user->email,
+                'password' => $user->password,
+                'phone' => $user->phone ?? '',
+                'employee_id' => (string) $nextNum,
+                'branch_id' => Schema::hasTable('branches') ? (int) (Branch::where('created_by', $creatorId)->value('id') ?: 0) : 0,
+                'department_id' => Schema::hasTable('departments') ? (int) (Department::where('created_by', $creatorId)->value('id') ?: 0) : 0,
+                'designation_id' => Schema::hasTable('designations') ? (int) (Designation::where('created_by', $creatorId)->value('id') ?: 0) : 0,
+                'company_doj' => date('Y-m-d'),
+                'created_by' => $creatorId,
+                'gender' => '',
+                'address' => '',
+            ];
+
+            $payload = [];
+            foreach ($row as $key => $value) {
+                if (in_array($key, $columns, true)) {
+                    $payload[$key] = $value;
+                }
+            }
+
+            return static::create($payload);
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
 
     public function documents()
     {

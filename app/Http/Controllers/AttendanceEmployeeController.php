@@ -1738,16 +1738,20 @@ class AttendanceEmployeeController extends Controller
             }
         }
 
-        $employeeId = ! empty(\Auth::user()->employee) ? (int) \Auth::user()->employee->id : 0;
+        $employeeId = 0;
+        $empForPunch = Employee::ensureForClockPunch(\Auth::user());
+        if ($empForPunch) {
+            $employeeId = (int) $empForPunch->id;
+        }
         if ($employeeId <= 0) {
-            $empByUser = Employee::where('user_id', \Auth::id())->first();
-            $employeeId = $empByUser ? (int) $empByUser->id : 0;
+            return redirect()->back()->with('error', __('Employee profile not found. Cannot mark attendance.'));
         }
         $todayAttendance = AttendanceEmployee::where('employee_id', '=', $employeeId)->where('date', date('Y-m-d'))->first();
 
         $startTime = Utility::getValByName('company_start_time');
         $endTime   = Utility::getValByName('company_end_time');
-        if (Auth::user()->type == 'employee') {
+        $canSelfPunch = in_array(Auth::user()->type, ['employee', 'company', 'hr'], true);
+        if ($canSelfPunch) {
 
             $date = date("Y-m-d");
             $time = date("H:i:s");
@@ -1883,12 +1887,9 @@ class AttendanceEmployeeController extends Controller
 
         // Resolve employee ID: use relation first, then fallback to query by user_id (relation may be null after login/session)
         $employeeId = 0;
-        if (!empty(\Auth::user()->employee)) {
-            $employeeId = (int) \Auth::user()->employee->id;
-        }
-        if ($employeeId <= 0) {
-            $empByUser = Employee::where('user_id', \Auth::user()->id)->first();
-            $employeeId = $empByUser ? (int) $empByUser->id : 0;
+        $empForPunch = Employee::ensureForClockPunch(\Auth::user());
+        if ($empForPunch) {
+            $employeeId = (int) $empForPunch->id;
         }
         if ($employeeId <= 0) {
             return redirect()->back()->with('error', __('Employee profile not found. Cannot mark attendance. Please contact HR to link your account to an employee.'));

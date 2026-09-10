@@ -655,7 +655,7 @@
         $showClockCard = !$isSpectalDashboard && isset($officeTime) && (
             !empty($showAttendanceCard)
             || \Auth::user()->type == 'employee'
-            || ($isJeminiDashboard && !empty($heroEmpRow))
+            || ($isJeminiDashboard && in_array(\Auth::user()->type, ['company', 'hr'], true))
         );
         $heroCompanyName = '';
         try {

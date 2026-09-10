@@ -6,6 +6,7 @@ use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Role;
 
@@ -26,13 +27,20 @@ class TransferLoginAccess extends Command
         $deleteFrom = !$this->option('keep-from');
 
         $from = User::whereRaw('LOWER(email) = ?', [$fromEmail])->first();
-        if (!$from) {
-            $this->error("From user not found: {$fromEmail}");
-
-            return self::FAILURE;
-        }
-
         $to = User::whereRaw('LOWER(email) = ?', [$toEmail])->first();
+
+        if (!$from) {
+            $this->warn("{$fromEmail} is already gone on this database.");
+            $this->blockLeftoverLogins($fromEmail);
+            if ($to) {
+                $this->info("Use {$toEmail} (id {$to->id}, type {$to->type}).");
+            } else {
+                $this->error("{$toEmail} was not found either. Run this on the jemini.co.in server database.");
+                return self::FAILURE;
+            }
+
+            return self::SUCCESS;
+        }
         if (!$to) {
             $this->info("{$toEmail} does not exist yet — renaming {$fromEmail} to {$toEmail}.");
             $from->email = $toEmail;
@@ -178,7 +186,28 @@ class TransferLoginAccess extends Command
 
         Employee::where('user_id', $fromId)->update(['user_id' => 0]);
 
+        if (Schema::hasColumn('users', 'is_login_enable')) {
+            $from->is_login_enable = 0;
+        }
+        $from->password = Hash::make(bin2hex(random_bytes(16)));
+        $from->email = 'deleted+'.$fromId.'.'.$from->email;
+        $from->save();
         $from->delete();
+    }
+
+    protected function blockLeftoverLogins(string $fromEmail): void
+    {
+        $emails = array_unique([$fromEmail, 'sainisoniya813@gmail.com']);
+        $users = User::where(function ($q) use ($emails) {
+            foreach ($emails as $email) {
+                $q->orWhereRaw('LOWER(email) = ?', [strtolower($email)]);
+            }
+        })->get();
+
+        foreach ($users as $user) {
+            $this->line("Blocking leftover login {$user->email} (id {$user->id}).");
+            $this->deleteFromUser($user);
+        }
     }
 
     protected function tablesWithColumn(string $column): array

@@ -278,6 +278,11 @@ class HomeController extends Controller
                 ];
                 $showAttendanceCard = false;
                 $todaySessions = collect();
+                if (empty($empForAttendance) && \App\Support\TenantHost::isJeminiMainPortal() && !empty($user->email)) {
+                    $empForAttendance = Employee::where('created_by', $user->creatorId())
+                        ->where('email', $user->email)
+                        ->first();
+                }
                 if (!empty($empForAttendance)) {
                     $showAttendanceCard = true;
                     $todaySessions = AttendanceEmployee::where('employee_id', '=', $empForAttendance->id)

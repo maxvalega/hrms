@@ -40,6 +40,14 @@
                     <span class="dash-mtext">{{ __('Dashboard') }}</span>
                 </a>
             </li>
+            @if(\App\Support\TenantHost::isJeminiMainPortal() && !$hideModulesForSpectal)
+                <li class="dash-item {{ request()->routeIs('dashboard') && str_contains(request()->getRequestUri(), 'mark-attendance') ? 'active' : '' }}">
+                    <a href="{{ route('dashboard') }}#mark-attendance" class="dash-link">
+                        <span class="dash-micon"><i class="ti ti-clock-play"></i></span>
+                        <span class="dash-mtext">{{ __('Clock In / Clock Out') }}</span>
+                    </a>
+                </li>
+            @endif
             <!--dashboard-->
 
             <!-- reports -->
@@ -263,6 +271,11 @@
                             class="dash-mtext">{{ __('Time Management') }}</span><span class="dash-arrow"><i
                                 data-feather="chevron-right"></i></span></a>
                     <ul class="dash-submenu">
+                        @if(\App\Support\TenantHost::isJeminiMainPortal())
+                            <li class="dash-item">
+                                <a class="dash-link" href="{{ route('dashboard') }}#mark-attendance">{{ __('Clock In / Clock Out') }}</a>
+                            </li>
+                        @endif
                         @can('Manage TimeSheet')
                             <li class="dash-item">
                                 <a class="dash-link" href="{{ route('timesheet.index') }}">{{ __('Timesheet') }}</a>

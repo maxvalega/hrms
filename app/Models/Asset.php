@@ -128,6 +128,23 @@ class Asset extends Model
         return '—';
     }
 
+    public function assignedEmployeeNames(): string
+    {
+        $holder = $this->holderName();
+        if ($holder !== '—') {
+            return $holder;
+        }
+
+        $ids = array_filter(array_map('trim', explode(',', (string) $this->employee_id)));
+        if (!$ids) {
+            return '—';
+        }
+
+        $names = Employee::whereIn('id', $ids)->orderBy('name')->pluck('name')->all();
+
+        return $names ? implode(', ', $names) : '—';
+    }
+
     public function isAvailable(): bool
     {
         return $this->status === self::STATUS_INVENTORY;
@@ -222,11 +239,20 @@ class Asset extends Model
 
     public static function assignedToEmployee(int $employeeId, int $creatorId)
     {
+        $id = (string) $employeeId;
+
         return static::where('created_by', $creatorId)
-            ->where('status', self::STATUS_ASSIGNED)
-            ->where(function ($q) use ($employeeId) {
+            ->where(function ($q) use ($employeeId, $id) {
                 $q->where('current_employee_id', $employeeId)
-                    ->orWhere('employee_id', (string) $employeeId);
+                    ->orWhere('employee_id', $id)
+                    ->orWhere('employee_id', 'like', $id . ',%')
+                    ->orWhere('employee_id', 'like', '%,' . $id)
+                    ->orWhere('employee_id', 'like', '%,' . $id . ',%');
+            })
+            ->where(function ($q) {
+                $q->where('status', self::STATUS_ASSIGNED)
+                    ->orWhereNull('status')
+                    ->orWhere('status', '');
             })
             ->orderBy('name')
             ->get();

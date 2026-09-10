@@ -81,11 +81,17 @@ class AssetController extends Controller
     public function index(Request $request)
     {
         if (!Auth::user()->can('Manage Assets')) {
-            if ($this->lifecycleEnabled()) {
+            if (TenantHost::isJeminiMainPortal()) {
                 return redirect()->route('account-assets.mine');
             }
 
             return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        if (TenantHost::isJeminiMainPortal()) {
+            $assets = Asset::where('created_by', Auth::user()->creatorId())->orderByDesc('id')->get();
+
+            return view('assets.lifecycle.company_index', compact('assets'));
         }
 
         if (!$this->lifecycleEnabled()) {
@@ -143,6 +149,10 @@ class AssetController extends Controller
 
         $employee = $this->companyEmployees();
 
+        if (TenantHost::isJeminiMainPortal()) {
+            return view('assets.lifecycle.create', compact('employee'));
+        }
+
         if ($this->lifecycleEnabled()) {
             return view('assets.lifecycle.create', compact('employee'));
         }
@@ -154,6 +164,10 @@ class AssetController extends Controller
     {
         if (!Auth::user()->can('Create Assets')) {
             return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        if (TenantHost::isJeminiMainPortal()) {
+            return $this->storeAssigned($request);
         }
 
         if ($this->lifecycleEnabled()) {
@@ -188,6 +202,54 @@ class AssetController extends Controller
         $assets->save();
 
         return redirect()->route('account-assets.index')->with('success', __('Assets successfully created.'));
+    }
+
+    protected function storeAssigned(Request $request)
+    {
+        $validator = \Validator::make(
+            $request->all(),
+            [
+                'employee_id' => 'required',
+                'name' => 'required',
+                'purchase_date' => 'required',
+                'supported_date' => 'required',
+                'amount' => 'required',
+            ]
+        );
+        if ($validator->fails()) {
+            return redirect()->back()->with('error', $validator->getMessageBag()->first());
+        }
+
+        $ids = array_values(array_filter((array) $request->employee_id));
+        $asset = new Asset();
+        $asset->employee_id = implode(',', $ids);
+        $asset->name = $request->name;
+        $asset->purchase_date = $request->purchase_date;
+        $asset->supported_date = $request->supported_date;
+        $asset->amount = $request->amount;
+        $asset->description = $request->description;
+        $asset->created_by = Auth::user()->creatorId();
+        $this->syncAssignmentColumns($asset, $ids);
+        $asset->save();
+
+        return redirect()->route('account-assets.index')->with('success', __('Assets successfully created.'));
+    }
+
+    protected function syncAssignmentColumns(Asset $asset, array $employeeIds): void
+    {
+        if (!Asset::hasLifecycleSchema()) {
+            return;
+        }
+
+        $first = isset($employeeIds[0]) ? (int) $employeeIds[0] : 0;
+        $asset->current_employee_id = $first ?: null;
+        $asset->status = $first ? Asset::STATUS_ASSIGNED : Asset::STATUS_INVENTORY;
+        if (empty($asset->condition)) {
+            $asset->condition = 'good';
+        }
+        if (empty($asset->asset_code)) {
+            $asset->asset_code = Asset::nextAssetCode($asset->created_by ?: Auth::user()->creatorId());
+        }
     }
 
     protected function storeLifecycle(Request $request)
@@ -306,6 +368,10 @@ class AssetController extends Controller
 
         $employee = $this->companyEmployees();
 
+        if (TenantHost::isJeminiMainPortal()) {
+            return view('assets.lifecycle.edit', compact('asset', 'employee'));
+        }
+
         if ($this->lifecycleEnabled()) {
             return view('assets.lifecycle.edit', compact('asset', 'employee'));
         }
@@ -322,6 +388,10 @@ class AssetController extends Controller
         $asset = Asset::find($id);
         if (!$asset || $asset->created_by != Auth::user()->creatorId()) {
             return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        if (TenantHost::isJeminiMainPortal()) {
+            return $this->updateAssigned($request, $asset);
         }
 
         if ($this->lifecycleEnabled()) {
@@ -384,6 +454,35 @@ class AssetController extends Controller
         $asset->supported_date = $request->supported_date;
         $asset->amount = $request->amount;
         $asset->description = $request->description;
+        $asset->save();
+
+        return redirect()->route('account-assets.index')->with('success', __('Assets successfully updated.'));
+    }
+
+    protected function updateAssigned(Request $request, Asset $asset)
+    {
+        $validator = \Validator::make(
+            $request->all(),
+            [
+                'employee_id' => 'required',
+                'name' => 'required',
+                'purchase_date' => 'required',
+                'supported_date' => 'required',
+                'amount' => 'required',
+            ]
+        );
+        if ($validator->fails()) {
+            return redirect()->back()->with('error', $validator->getMessageBag()->first());
+        }
+
+        $ids = array_values(array_filter((array) $request->employee_id));
+        $asset->name = $request->name;
+        $asset->employee_id = implode(',', $ids);
+        $asset->purchase_date = $request->purchase_date;
+        $asset->supported_date = $request->supported_date;
+        $asset->amount = $request->amount;
+        $asset->description = $request->description;
+        $this->syncAssignmentColumns($asset, $ids);
         $asset->save();
 
         return redirect()->route('account-assets.index')->with('success', __('Assets successfully updated.'));

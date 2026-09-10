@@ -1678,7 +1678,9 @@ class AttendanceEmployeeController extends Controller
 
     public function update(Request $request, $id)
     {
-        if (\Auth::user()->type == 'company' || \Auth::user()->type == 'hr') {
+        $isSelfClockOut = $request->has('out') || $request->filled('photo_base64_out');
+
+        if (!$isSelfClockOut && (\Auth::user()->type == 'company' || \Auth::user()->type == 'hr')) {
             $employeeId      = AttendanceEmployee::where('employee_id', $request->employee_id)->first();
             $check = AttendanceEmployee::where('id', '=', $id)->where('employee_id', '=', $request->employee_id)->where('date', $request->date)->first();
 

@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Asset;
 use App\Models\Employee;
 use App\Models\ExitChecklistItem;
 use App\Models\ExitResignation;
 use App\Models\FnfSettlement;
 use App\Models\User;
+use App\Support\TenantHost;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -208,12 +210,27 @@ class ExitManagementController extends Controller
 
         $r->load(['user', 'manager', 'hr', 'checklist', 'fnf']);
 
+        $assignedAssets = collect();
+        $assetLifecycle = TenantHost::assetLifecycleEnabled();
+        $canReturnAssets = $assetLifecycle && ($user->can('Edit Assets') || $user->can('manage-exits'));
+        if ($assetLifecycle) {
+            $employee = Employee::where('user_id', $r->user_id)
+                ->where('created_by', $user->creatorId())
+                ->first();
+            if ($employee) {
+                $assignedAssets = Asset::assignedToEmployee($employee->id, $user->creatorId());
+            }
+        }
+
         return view('exit_management.show', [
-            'r'          => $r,
-            'isHr'       => $user->can('manage-exits'),
-            'isMgr'      => $user->can('manager-approve-exit'),
-            'isOwner'    => $r->user_id === $user->id,
-            'canMgrAct'  => $this->canManagerAct($user, $r),
+            'r'               => $r,
+            'isHr'            => $user->can('manage-exits'),
+            'isMgr'           => $user->can('manager-approve-exit'),
+            'isOwner'         => $r->user_id === $user->id,
+            'canMgrAct'       => $this->canManagerAct($user, $r),
+            'assignedAssets'  => $assignedAssets,
+            'assetLifecycle'  => $assetLifecycle,
+            'canReturnAssets' => $canReturnAssets,
         ]);
     }
 

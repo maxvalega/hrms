@@ -101,6 +101,7 @@ $app = Application::configure(basePath: $basePath)
             'Pusher' => \App\Http\Middleware\getPusherSettings::class,
             'mobile.app.key' => \App\Http\Middleware\EnsureMobileAppKeyIsValid::class,
             'tenant.host' => \App\Http\Middleware\EnsureTenantHost::class,
+            'jemini.portal' => \App\Http\Middleware\EnsureJeminiMainPortal::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
             'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,

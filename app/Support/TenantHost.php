@@ -74,6 +74,38 @@ class TenantHost
     }
 
     /**
+     * True only on jemini.co.in / www.jemini.co.in (plus localhost for local work).
+     * Company subdomains and any other host stay false.
+     */
+    public static function isJeminiMainPortal(?string $host = null): bool
+    {
+        $host = strtolower($host ?? self::currentHost());
+
+        if (self::isLocalHost($host)) {
+            return true;
+        }
+
+        return in_array($host, ['jemini.co.in', 'www.jemini.co.in'], true);
+    }
+
+    /**
+     * Asset lifecycle (inventory → assign → exit/repair return → reassign)
+     * is jemini.co.in-only and needs the extended assets schema.
+     */
+    public static function assetLifecycleEnabled(?string $host = null): bool
+    {
+        if (!self::isJeminiMainPortal($host)) {
+            return false;
+        }
+
+        try {
+            return Schema::hasColumn('assets', 'status');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * Extract company subdomain from host, e.g. spectal.jemini.co.in → spectal.
      */
     public static function subdomainFromHost(?string $host = null): ?string

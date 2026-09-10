@@ -14,7 +14,8 @@ class AssetsExport implements FromCollection,WithHeadings
     */
     public function collection()
     {
-        $data=Asset::where('created_by', \Auth::user()->creatorId())->get();
+        $data=Asset::where('created_by', \Auth::user()->creatorId())
+            ->get(['id', 'employee_id', 'name', 'purchase_date', 'supported_date', 'amount', 'description', 'created_by']);
         foreach($data as $k=>$assets)
         {
             $data[$k]["employee_id"]=Employee::employee_name($assets->employee_id);

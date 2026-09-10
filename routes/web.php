@@ -1425,6 +1425,15 @@ Route::group(['middleware' => ['verified']], function () {
             'XSS',
         ]
     );
+    Route::middleware(['auth', 'XSS', 'jemini.portal'])->group(function () {
+        Route::get('account-assets/{id}/assign', [AssetController::class, 'assignForm'])->name('account-assets.assign.form')->whereNumber('id');
+        Route::post('account-assets/{id}/assign', [AssetController::class, 'assign'])->name('account-assets.assign')->whereNumber('id');
+        Route::get('account-assets/{id}/return', [AssetController::class, 'returnForm'])->name('account-assets.return.form')->whereNumber('id');
+        Route::post('account-assets/{id}/return', [AssetController::class, 'returnAsset'])->name('account-assets.return')->whereNumber('id');
+        Route::get('account-assets/{id}/restore', [AssetController::class, 'restoreForm'])->name('account-assets.restore.form')->whereNumber('id');
+        Route::post('account-assets/{id}/restore', [AssetController::class, 'restore'])->name('account-assets.restore')->whereNumber('id');
+        Route::post('exit-management/{id}/assets/return', [AssetController::class, 'returnAllFromExit'])->name('exit-management.assets.return')->whereNumber('id');
+    });
     Route::resource('document-upload', DucumentUploadController::class)->middleware(
         [
             'auth',

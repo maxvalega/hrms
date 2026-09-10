@@ -154,6 +154,49 @@
                 </div>
             </div>
 
+            {{-- ───────── Assigned company assets (jemini.co.in only) ───────── --}}
+            @if(!empty($assetLifecycle))
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <h6 class="mb-0"><i class="ti ti-device-laptop me-1"></i>{{ __('Company assets with this employee') }}</h6>
+                        @if(!empty($canReturnAssets) && $assignedAssets->count() && !in_array($r->status, ['completed', 'manager_rejected', 'hr_rejected'], true))
+                            <form method="POST" action="{{ route('exit-management.assets.return', $r->id) }}" onsubmit="return confirm('{{ __('Take back all assigned assets and restore them to inventory?') }}')">
+                                @csrf
+                                <button class="btn btn-sm btn-warning">
+                                    <i class="ti ti-transfer-in me-1"></i>{{ __('Take all back to inventory') }}
+                                </button>
+                            </form>
+                        @endif
+                    </div>
+                    <div class="card-body">
+                        @forelse($assignedAssets as $asset)
+                            <div class="chk-item">
+                                <i class="ti ti-device-laptop fs-5 text-primary"></i>
+                                <div class="chk-name">
+                                    <strong>{{ $asset->asset_code }} · {{ $asset->name }}</strong>
+                                    <div class="chk-meta">
+                                        {{ $asset->category ?: __('Asset') }}
+                                        @if($asset->serial_number) · {{ $asset->serial_number }} @endif
+                                        · {{ $asset->conditionLabel() }}
+                                    </div>
+                                </div>
+                                @if(!empty($canReturnAssets))
+                                    <a href="{{ route('account-assets.show', $asset->id) }}" class="btn btn-sm btn-light border">{{ __('History') }}</a>
+                                    <a href="#" class="btn btn-sm btn-warning"
+                                        data-ajax-popup="true" data-size="lg"
+                                        data-title="{{ __('Take back asset') }}"
+                                        data-url="{{ route('account-assets.return.form', $asset->id) }}?reason=exit&resignation_id={{ $r->id }}">
+                                        {{ __('Take back') }}
+                                    </a>
+                                @endif
+                            </div>
+                        @empty
+                            <p class="text-muted small mb-0">{{ __('No company assets are currently assigned. They may already have been restored to inventory.') }}</p>
+                        @endforelse
+                    </div>
+                </div>
+            @endif
+
             {{-- ───────── Checklist (HR-only edit; everyone sees status) ───────── --}}
             @if(in_array($r->status, ['hr_approved', 'completed'], true))
                 <div class="card mb-3">

@@ -870,8 +870,14 @@
             @endcan
             @endif
 
-            <!-- assets-->
-            @if (!$hideModulesForSpectal && Gate::check('Manage Assets'))
+            <!-- assets: full lifecycle on jemini.co.in only; other hosts keep the simple register -->
+            @if (\App\Support\TenantHost::isJeminiMainPortal() && Gate::check('Manage Assets'))
+                <li class="dash-item {{ Request::segment(1) == 'account-assets' ? 'active' : '' }}">
+                    <a href="{{ route('account-assets.index') }}" class="dash-link"><span class="dash-micon"><i
+                                class="ti ti-device-laptop"></i></span><span
+                            class="dash-mtext">{{ __('Asset Management') }}</span></a>
+                </li>
+            @elseif (!$hideModulesForSpectal && Gate::check('Manage Assets'))
                 <li class="dash-item">
                     <a href="{{ route('account-assets.index') }}" class="dash-link"><span class="dash-micon"><i
                                 class="ti ti-medical-cross"></i></span><span

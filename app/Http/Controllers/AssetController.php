@@ -34,9 +34,42 @@ class AssetController extends Controller
             ->pluck('name', 'id');
     }
 
+    public function mine()
+    {
+        $this->assertLifecycle();
+
+        $user = Auth::user();
+        $employee = Employee::where('user_id', $user->id)
+            ->where('created_by', $user->creatorId())
+            ->first();
+
+        $current = collect();
+        $previous = collect();
+        if ($employee) {
+            $current = Asset::assignedToEmployee($employee->id, $user->creatorId());
+            $previousIds = AssetMovement::where('employee_id', $employee->id)
+                ->where('created_by', $user->creatorId())
+                ->pluck('asset_id')
+                ->unique()
+                ->filter(fn ($id) => !$current->contains('id', $id));
+            $previous = $previousIds->isEmpty()
+                ? collect()
+                : Asset::where('created_by', $user->creatorId())
+                    ->whereIn('id', $previousIds)
+                    ->orderBy('name')
+                    ->get();
+        }
+
+        return view('assets.lifecycle.mine', compact('current', 'previous', 'employee'));
+    }
+
     public function index(Request $request)
     {
         if (!Auth::user()->can('Manage Assets')) {
+            if ($this->lifecycleEnabled()) {
+                return redirect()->route('account-assets.mine');
+            }
+
             return redirect()->back()->with('error', __('Permission denied.'));
         }
 
@@ -210,18 +243,26 @@ class AssetController extends Controller
 
     public function show($id)
     {
-        if (!Auth::user()->can('Manage Assets')) {
-            return redirect()->back()->with('error', __('Permission denied.'));
-        }
-
         $this->assertLifecycle();
 
         $asset = $this->findCompanyAsset($id);
-        $asset->load(['currentEmployee', 'movements.employee', 'movements.performer', 'movements.replacement']);
-        $employee = $this->companyEmployees();
-        $inventory = Asset::availableInInventory(Auth::user()->creatorId(), $asset->id);
+        $user = Auth::user();
+        $canManage = $user->can('Manage Assets');
+        $myEmployee = Employee::where('user_id', $user->id)->where('created_by', $user->creatorId())->first();
+        $isMine = $myEmployee && (
+            (int) $asset->current_employee_id === (int) $myEmployee->id
+            || AssetMovement::where('asset_id', $asset->id)->where('employee_id', $myEmployee->id)->exists()
+        );
 
-        return view('assets.lifecycle.show', compact('asset', 'employee', 'inventory'));
+        if (!$canManage && !$isMine) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        $asset->load(['currentEmployee', 'movements.employee', 'movements.performer', 'movements.replacement']);
+        $employee = $canManage ? $this->companyEmployees() : collect();
+        $inventory = $canManage ? Asset::availableInInventory($user->creatorId(), $asset->id) : collect();
+
+        return view('assets.lifecycle.show', compact('asset', 'employee', 'inventory', 'canManage'));
     }
 
     public function edit($id)

@@ -2,7 +2,11 @@
 @section('page-title') {{ __('Asset') }} — {{ $asset->name }} @endsection
 @section('breadcrumb')
     <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">{{ __('Home') }}</a></li>
-    <li class="breadcrumb-item"><a href="{{ route('account-assets.index') }}">{{ __('Asset Management') }}</a></li>
+    @can('Manage Assets')
+        <li class="breadcrumb-item"><a href="{{ route('account-assets.index') }}">{{ __('Asset Management') }}</a></li>
+    @else
+        <li class="breadcrumb-item"><a href="{{ route('account-assets.mine') }}">{{ __('My Assets') }}</a></li>
+    @endcan
     <li class="breadcrumb-item">{{ $asset->asset_code ?: $asset->name }}</li>
 @endsection
 
@@ -25,7 +29,11 @@
 @endpush
 
 @section('action-button')
-    <a href="{{ route('account-assets.index') }}" class="btn btn-sm btn-light border me-1"><i class="ti ti-arrow-left"></i></a>
+    @can('Manage Assets')
+        <a href="{{ route('account-assets.index') }}" class="btn btn-sm btn-light border me-1"><i class="ti ti-arrow-left"></i></a>
+    @else
+        <a href="{{ route('account-assets.mine') }}" class="btn btn-sm btn-light border me-1"><i class="ti ti-arrow-left"></i></a>
+    @endcan
     @can('Edit Assets')
         <a href="#" data-url="{{ route('account-assets.edit', $asset->id) }}" data-ajax-popup="true"
             data-title="{{ __('Edit asset') }}" data-size="lg" class="btn btn-sm btn-primary me-1">
@@ -108,12 +116,14 @@
                         <div class="val">{{ $asset->supported_date ? \Auth::user()->dateFormat($asset->supported_date) : '—' }}</div>
                     </div>
                 </div>
+                @can('Manage Assets')
                 <div class="col-md-3">
                     <div class="meta-card">
                         <div class="lbl">{{ __('Amount') }}</div>
                         <div class="val">{{ \Auth::user()->priceFormat($asset->amount) }}</div>
                     </div>
                 </div>
+                @endcan
                 <div class="col-md-3">
                     <div class="meta-card">
                         <div class="lbl">{{ __('Notes') }}</div>

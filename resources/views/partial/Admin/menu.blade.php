@@ -886,6 +886,40 @@
             @endif
 
 
+            @if (\App\Support\TenantHost::isJeminiMainPortal())
+                @if (in_array(Auth::user()->type, ['company', 'hr', 'super admin'], true))
+                    <li class="dash-item dash-hasmenu {{ Request::segment(1) == 'employee-letters' ? 'dash-trigger active' : '' }}">
+                        <a href="#!" class="dash-link">
+                            <span class="dash-micon"><i class="ti ti-mail-forward"></i></span>
+                            <span class="dash-mtext">{{ __('Employee Letters') }}</span>
+                            <span class="dash-arrow"><i data-feather="chevron-right"></i></span>
+                        </a>
+                        <ul class="dash-submenu">
+                            <li class="dash-item {{ request()->routeIs('employee-letters.index') || request()->routeIs('employee-letters.create') || request()->routeIs('employee-letters.show') ? 'active' : '' }}">
+                                <a class="dash-link" href="{{ route('employee-letters.index') }}">{{ __('Issue Letters') }}</a>
+                            </li>
+                            <li class="dash-item {{ request()->routeIs('employee-letters.formats*') ? 'active' : '' }}">
+                                <a class="dash-link" href="{{ route('employee-letters.formats') }}">{{ __('Letter Formats') }}</a>
+                            </li>
+                        </ul>
+                    </li>
+                @elseif (Auth::user()->type == 'employee')
+                    <li class="dash-item {{ request()->routeIs('account-assets.mine') || (request()->routeIs('account-assets.show') && !Gate::check('Manage Assets')) ? 'active' : '' }}">
+                        <a href="{{ route('account-assets.mine') }}" class="dash-link">
+                            <span class="dash-micon"><i class="ti ti-device-laptop"></i></span>
+                            <span class="dash-mtext">{{ __('My Assets') }}</span>
+                        </a>
+                    </li>
+                    <li class="dash-item {{ request()->routeIs('employee-letters.mine') || request()->routeIs('employee-letters.show') ? 'active' : '' }}">
+                        <a href="{{ route('employee-letters.mine') }}" class="dash-link">
+                            <span class="dash-micon"><i class="ti ti-mail"></i></span>
+                            <span class="dash-mtext">{{ __('My Letters') }}</span>
+                        </a>
+                    </li>
+                @endif
+            @endif
+
+
             <!-- document-->
             @if(!$hideModulesForSpectal)
             <li class="dash-item {{ Request::segment(1) == 'document-upload' ? 'active' : '' }}">

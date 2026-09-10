@@ -85,6 +85,7 @@ use App\Http\Controllers\PlanController;
 use App\Http\Controllers\PlanRequestController;
 use App\Http\Controllers\CouponController;
 use App\Http\Controllers\AssetController;
+use App\Http\Controllers\EmployeeLetterController;
 use App\Http\Controllers\DucumentUploadController;
 use App\Http\Controllers\IndicatorController;
 use App\Http\Controllers\AppraisalController;
@@ -1419,6 +1420,7 @@ Route::group(['middleware' => ['verified']], function () {
             'XSS',
         ]
     );
+    Route::get('account-assets/mine', [AssetController::class, 'mine'])->name('account-assets.mine')->middleware(['auth', 'XSS', 'jemini.portal']);
     Route::resource('account-assets', AssetController::class)->middleware(
         [
             'auth',
@@ -1433,6 +1435,17 @@ Route::group(['middleware' => ['verified']], function () {
         Route::get('account-assets/{id}/restore', [AssetController::class, 'restoreForm'])->name('account-assets.restore.form')->whereNumber('id');
         Route::post('account-assets/{id}/restore', [AssetController::class, 'restore'])->name('account-assets.restore')->whereNumber('id');
         Route::post('exit-management/{id}/assets/return', [AssetController::class, 'returnAllFromExit'])->name('exit-management.assets.return')->whereNumber('id');
+
+        Route::get('employee-letters', [EmployeeLetterController::class, 'index'])->name('employee-letters.index');
+        Route::get('employee-letters/create', [EmployeeLetterController::class, 'create'])->name('employee-letters.create');
+        Route::post('employee-letters', [EmployeeLetterController::class, 'store'])->name('employee-letters.store');
+        Route::get('employee-letters/formats', [EmployeeLetterController::class, 'formats'])->name('employee-letters.formats');
+        Route::get('employee-letters/formats/{type}', [EmployeeLetterController::class, 'editFormat'])->name('employee-letters.formats.edit');
+        Route::post('employee-letters/formats/{type}', [EmployeeLetterController::class, 'updateFormat'])->name('employee-letters.formats.update');
+        Route::get('employee-letters/mine', [EmployeeLetterController::class, 'mine'])->name('employee-letters.mine');
+        Route::get('employee-letters/{id}', [EmployeeLetterController::class, 'show'])->name('employee-letters.show')->whereNumber('id');
+        Route::get('employee-letters/{id}/pdf', [EmployeeLetterController::class, 'pdf'])->name('employee-letters.pdf')->whereNumber('id');
+        Route::post('employee-letters/{id}/email', [EmployeeLetterController::class, 'email'])->name('employee-letters.email')->whereNumber('id');
     });
     Route::resource('document-upload', DucumentUploadController::class)->middleware(
         [

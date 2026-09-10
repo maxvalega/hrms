@@ -24,6 +24,7 @@ class FilterRequest
         'mail_from_name',
         'g-recaptcha-response',
         'selfie_data',
+        'content',
     ];
 
     /**

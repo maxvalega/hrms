@@ -1420,13 +1420,13 @@ Route::group(['middleware' => ['verified']], function () {
             'XSS',
         ]
     );
-    Route::get('account-assets/mine', [AssetController::class, 'mine'])->name('account-assets.mine')->middleware(['auth', 'XSS', 'jemini.portal']);
+    Route::get('account-assets/mine', [AssetController::class, 'mine'])->name('account-assets.mine')->middleware(['auth', 'XSS']);
     Route::resource('account-assets', AssetController::class)->middleware(
         [
             'auth',
             'XSS',
         ]
-    );
+    )->whereNumber('account_asset');
     Route::middleware(['auth', 'XSS', 'jemini.portal'])->group(function () {
         Route::get('account-assets/{id}/assign', [AssetController::class, 'assignForm'])->name('account-assets.assign.form')->whereNumber('id');
         Route::post('account-assets/{id}/assign', [AssetController::class, 'assign'])->name('account-assets.assign')->whereNumber('id');

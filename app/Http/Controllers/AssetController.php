@@ -36,7 +36,9 @@ class AssetController extends Controller
 
     public function mine()
     {
-        $this->assertLifecycle();
+        if (!TenantHost::isJeminiMainPortal()) {
+            abort(404);
+        }
 
         $user = Auth::user();
         $employee = Employee::where('user_id', $user->id)
@@ -46,18 +48,31 @@ class AssetController extends Controller
         $current = collect();
         $previous = collect();
         if ($employee) {
-            $current = Asset::assignedToEmployee($employee->id, $user->creatorId());
-            $previousIds = AssetMovement::where('employee_id', $employee->id)
-                ->where('created_by', $user->creatorId())
-                ->pluck('asset_id')
-                ->unique()
-                ->filter(fn ($id) => !$current->contains('id', $id));
-            $previous = $previousIds->isEmpty()
-                ? collect()
-                : Asset::where('created_by', $user->creatorId())
-                    ->whereIn('id', $previousIds)
+            if (Asset::hasLifecycleSchema()) {
+                $current = Asset::assignedToEmployee($employee->id, $user->creatorId());
+                $previousIds = AssetMovement::where('employee_id', $employee->id)
+                    ->where('created_by', $user->creatorId())
+                    ->pluck('asset_id')
+                    ->unique()
+                    ->filter(fn ($id) => !$current->contains('id', $id));
+                $previous = $previousIds->isEmpty()
+                    ? collect()
+                    : Asset::where('created_by', $user->creatorId())
+                        ->whereIn('id', $previousIds)
+                        ->orderBy('name')
+                        ->get();
+            } else {
+                $current = Asset::where('created_by', $user->creatorId())
+                    ->where(function ($q) use ($employee) {
+                        $id = (string) $employee->id;
+                        $q->where('employee_id', $id)
+                            ->orWhere('employee_id', 'like', $id . ',%')
+                            ->orWhere('employee_id', 'like', '%,' . $id)
+                            ->orWhere('employee_id', 'like', '%,' . $id . ',%');
+                    })
                     ->orderBy('name')
                     ->get();
+            }
         }
 
         return view('assets.lifecycle.mine', compact('current', 'previous', 'employee'));
@@ -243,24 +258,37 @@ class AssetController extends Controller
 
     public function show($id)
     {
-        $this->assertLifecycle();
+        if (!TenantHost::isJeminiMainPortal()) {
+            abort(404);
+        }
 
         $asset = $this->findCompanyAsset($id);
         $user = Auth::user();
         $canManage = $user->can('Manage Assets');
         $myEmployee = Employee::where('user_id', $user->id)->where('created_by', $user->creatorId())->first();
-        $isMine = $myEmployee && (
-            (int) $asset->current_employee_id === (int) $myEmployee->id
-            || AssetMovement::where('asset_id', $asset->id)->where('employee_id', $myEmployee->id)->exists()
-        );
-
-        if (!$canManage && !$isMine) {
-            return redirect()->back()->with('error', __('Permission denied.'));
+        $isMine = false;
+        if ($myEmployee) {
+            if (Asset::hasLifecycleSchema()) {
+                $isMine = (int) $asset->current_employee_id === (int) $myEmployee->id
+                    || AssetMovement::where('asset_id', $asset->id)->where('employee_id', $myEmployee->id)->exists();
+            } else {
+                $ids = array_filter(array_map('trim', explode(',', (string) $asset->employee_id)));
+                $isMine = in_array((string) $myEmployee->id, $ids, true);
+            }
         }
 
-        $asset->load(['currentEmployee', 'movements.employee', 'movements.performer', 'movements.replacement']);
+        if (!$canManage && !$isMine) {
+            return redirect()->route('account-assets.mine')->with('error', __('Permission denied.'));
+        }
+
+        if (Asset::hasLifecycleSchema()) {
+            $asset->load(['currentEmployee', 'movements.employee', 'movements.performer', 'movements.replacement']);
+        }
+
         $employee = $canManage ? $this->companyEmployees() : collect();
-        $inventory = $canManage ? Asset::availableInInventory($user->creatorId(), $asset->id) : collect();
+        $inventory = ($canManage && Asset::hasLifecycleSchema())
+            ? Asset::availableInInventory($user->creatorId(), $asset->id)
+            : collect();
 
         return view('assets.lifecycle.show', compact('asset', 'employee', 'inventory', 'canManage'));
     }

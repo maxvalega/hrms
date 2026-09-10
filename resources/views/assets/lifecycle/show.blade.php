@@ -134,6 +134,7 @@
         </div>
     </div>
 
+    @if(\App\Models\Asset::hasLifecycleSchema())
     <div class="card">
         <div class="card-header">
             <h6 class="mb-0"><i class="ti ti-history me-1"></i>{{ __('Movement history') }}</h6>
@@ -171,4 +172,5 @@
             @endif
         </div>
     </div>
+    @endif
 @endsection

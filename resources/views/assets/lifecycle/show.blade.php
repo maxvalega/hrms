@@ -79,62 +79,56 @@
                     <div class="mt-2"><span class="am-badge {{ $asset->statusBadgeClass() }}">{{ $asset->statusLabel() }}</span></div>
                 </div>
             </div>
-            <div class="row g-3 mt-2">
-                <div class="col-md-3">
-                    <div class="meta-card">
-                        <div class="lbl">{{ __('Holder') }}</div>
-                        <div class="val">{{ $asset->holderName() }}</div>
-                    </div>
+            @php
+                $isHr = \Illuminate\Support\Facades\Gate::check('Manage Assets');
+                $cards = [];
+                if ($asset->serial_number) {
+                    $cards[] = [__('Serial'), $asset->serial_number];
+                }
+                if ($asset->category) {
+                    $cards[] = [__('Category'), $asset->category];
+                }
+                if ($asset->condition) {
+                    $cards[] = [__('Condition'), $asset->conditionLabel()];
+                }
+                if ($isHr) {
+                    $holder = $asset->holderName();
+                    if ($holder && $holder !== '—') {
+                        array_unshift($cards, [__('Assigned to'), $holder]);
+                    }
+                    if ($asset->location) {
+                        $cards[] = [__('Location'), $asset->location];
+                    }
+                    if ($asset->purchase_date) {
+                        $cards[] = [__('Purchase date'), \Auth::user()->dateFormat($asset->purchase_date)];
+                    }
+                    if ($asset->supported_date) {
+                        $cards[] = [__('Support until'), \Auth::user()->dateFormat($asset->supported_date)];
+                    }
+                    if ((float) $asset->amount > 0) {
+                        $cards[] = [__('Amount'), \Auth::user()->priceFormat($asset->amount)];
+                    }
+                    if ($asset->description) {
+                        $cards[] = [__('Notes'), $asset->description];
+                    }
+                }
+            @endphp
+            @if(count($cards))
+                <div class="row g-3 mt-2">
+                    @foreach($cards as [$lbl, $val])
+                        <div class="col-md-3">
+                            <div class="meta-card">
+                                <div class="lbl">{{ $lbl }}</div>
+                                <div class="val">{{ $val }}</div>
+                            </div>
+                        </div>
+                    @endforeach
                 </div>
-                <div class="col-md-3">
-                    <div class="meta-card">
-                        <div class="lbl">{{ __('Category') }}</div>
-                        <div class="val">{{ $asset->category ?: '—' }}</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="meta-card">
-                        <div class="lbl">{{ __('Condition') }}</div>
-                        <div class="val">{{ $asset->conditionLabel() }}</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="meta-card">
-                        <div class="lbl">{{ __('Location') }}</div>
-                        <div class="val">{{ $asset->location ?: '—' }}</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="meta-card">
-                        <div class="lbl">{{ __('Purchase date') }}</div>
-                        <div class="val">{{ $asset->purchase_date ? \Auth::user()->dateFormat($asset->purchase_date) : '—' }}</div>
-                    </div>
-                </div>
-                <div class="col-md-3">
-                    <div class="meta-card">
-                        <div class="lbl">{{ __('Support until') }}</div>
-                        <div class="val">{{ $asset->supported_date ? \Auth::user()->dateFormat($asset->supported_date) : '—' }}</div>
-                    </div>
-                </div>
-                @can('Manage Assets')
-                <div class="col-md-3">
-                    <div class="meta-card">
-                        <div class="lbl">{{ __('Amount') }}</div>
-                        <div class="val">{{ \Auth::user()->priceFormat($asset->amount) }}</div>
-                    </div>
-                </div>
-                @endcan
-                <div class="col-md-3">
-                    <div class="meta-card">
-                        <div class="lbl">{{ __('Notes') }}</div>
-                        <div class="val" style="font-weight:500">{{ $asset->description ?: '—' }}</div>
-                    </div>
-                </div>
-            </div>
+            @endif
         </div>
     </div>
 
-    @if(\App\Models\Asset::hasLifecycleSchema())
+    @if(\App\Models\Asset::hasLifecycleSchema() && Gate::check('Manage Assets'))
     <div class="card">
         <div class="card-header">
             <h6 class="mb-0"><i class="ti ti-history me-1"></i>{{ __('Movement history') }}</h6>

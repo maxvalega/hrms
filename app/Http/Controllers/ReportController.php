@@ -1244,9 +1244,12 @@ class ReportController extends Controller
             $data['totalLeave']      = $totalLeave;
             $data['curMonth']        = $curMonth;
 
-            $vicRegister = $isVicRegister
-                ? $this->buildVicMonthlyRegister($employeeModels, $year, $month, $dates, $holidayDates, $leaveDatesMap)
-                : [];
+            $vicRegister = [];
+            if ($isVicRegister) {
+                $vicMonth = sprintf('%04d-%02d', (int) $year, (int) $month);
+                $vicRegister = VicConsolidateAttendanceImport::loadSnapshot((int) \Auth::user()->creatorId(), $vicMonth)
+                    ?: $this->buildVicMonthlyRegister($employeeModels, $year, $month, $dates, $holidayDates, $leaveDatesMap);
+            }
             if ($isVicRegister && !empty($vicRegister['totals'])) {
                 $data['totalPresent'] = $vicRegister['totals']['present'];
                 $data['totalLeave'] = $vicRegister['totals']['leave'];

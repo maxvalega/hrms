@@ -391,9 +391,9 @@
                                             <td>{{ $row['branch'] }}</td>
                                             <td>{{ $row['department'] }}</td>
                                             <td>{{ $row['designation'] }}</td>
-                                            <td></td>
-                                            <td></td>
-                                            <td></td>
+                                            <td>{{ $row['division'] ?? '' }}</td>
+                                            <td>{{ $row['working_area'] ?? '' }}</td>
+                                            <td>{{ $row['project'] ?? '' }}</td>
                                             <td>{{ $row['counts']['present'] }}</td>
                                             <td>{{ $row['counts']['absent'] }}</td>
                                             <td>{{ $row['counts']['half_day'] }}</td>

@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\Utility;
 use Carbon\Carbon;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Maatwebsite\Excel\Facades\Excel;
 use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
 
@@ -55,6 +56,7 @@ class VicConsolidateAttendanceImport
         }
 
         $month = $this->monthFromDayColumns($dayColumns);
+        $cols = $this->identityColumns($header);
         $defaultIn = Utility::getValByName('company_start_time') ?: '09:00:00';
         $defaultOut = Utility::getValByName('company_end_time') ?: '18:00:00';
 
@@ -62,7 +64,7 @@ class VicConsolidateAttendanceImport
         $updated = 0;
         $skipped = 0;
         $errors = [];
-        $importedEmployees = 0;
+        $registerRows = [];
         $current = null;
 
         for ($r = $headerRowIndex + 1; $r < count($rows); $r++) {
@@ -77,14 +79,12 @@ class VicConsolidateAttendanceImport
 
             if ($label === 'status' || ($current === null && ($code !== '' || $name !== ''))) {
                 if ($current !== null) {
+                    $registerRows[] = $this->blockToRegisterRow($current, $cols, $dayColumns);
                     [$c, $u, $s, $err] = $this->persistEmployeeBlock($current, $creatorId, $dayColumns, $defaultIn, $defaultOut);
                     $created += $c;
                     $updated += $u;
                     $skipped += $s;
                     $errors = array_merge($errors, $err);
-                    if ($c + $u > 0) {
-                        $importedEmployees++;
-                    }
                 }
 
                 $current = [
@@ -92,8 +92,10 @@ class VicConsolidateAttendanceImport
                     'code' => $code,
                     'name' => $name,
                     'status' => $row,
+                    'shift' => [],
                     'in' => [],
                     'out' => [],
+                    'hours' => [],
                     'overtime' => [],
                 ];
                 continue;
@@ -103,25 +105,35 @@ class VicConsolidateAttendanceImport
                 continue;
             }
 
-            if ($label === 'in') {
+            if ($label === 'shift') {
+                $current['shift'] = $row;
+            } elseif ($label === 'in') {
                 $current['in'] = $row;
             } elseif ($label === 'out') {
                 $current['out'] = $row;
+            } elseif ($label === 'working_hours') {
+                $current['hours'] = $row;
             } elseif (in_array($label, ['overtime', 'overtime_hours', 'ot'], true)) {
                 $current['overtime'] = $row;
             }
         }
 
         if ($current !== null) {
+            $registerRows[] = $this->blockToRegisterRow($current, $cols, $dayColumns);
             [$c, $u, $s, $err] = $this->persistEmployeeBlock($current, $creatorId, $dayColumns, $defaultIn, $defaultOut);
             $created += $c;
             $updated += $u;
             $skipped += $s;
             $errors = array_merge($errors, $err);
-            if ($c + $u > 0) {
-                $importedEmployees++;
-            }
         }
+
+        $snapshot = [
+            'month' => $month,
+            'day_headers' => array_values(array_map(fn ($ymd) => date('d-m-Y', strtotime($ymd)), $dayColumns)),
+            'rows' => $registerRows,
+            'totals' => $this->totalsFromRegisterRows($registerRows),
+        ];
+        $this->saveSnapshot($creatorId, $month, $snapshot);
 
         return [
             'month' => $month,
@@ -129,8 +141,36 @@ class VicConsolidateAttendanceImport
             'updated' => $updated,
             'skipped' => $skipped,
             'errors' => $errors,
-            'employees' => $importedEmployees,
+            'employees' => count($registerRows),
         ];
+    }
+
+    /**
+     * @return array{rows:array<int,array<string,mixed>>,day_headers:array<int,string>,totals:array<string,float|int>}|null
+     */
+    public static function loadSnapshot(int $creatorId, string $month): ?array
+    {
+        $path = self::snapshotPath($creatorId, $month);
+        if (!Storage::disk('local')->exists($path)) {
+            return null;
+        }
+
+        $decoded = json_decode(Storage::disk('local')->get($path), true);
+
+        return is_array($decoded) && !empty($decoded['rows']) ? $decoded : null;
+    }
+
+    /**
+     * @param  array{month:string,day_headers:array,rows:array,totals:array}  $snapshot
+     */
+    protected function saveSnapshot(int $creatorId, string $month, array $snapshot): void
+    {
+        Storage::disk('local')->put(self::snapshotPath($creatorId, $month), json_encode($snapshot));
+    }
+
+    protected static function snapshotPath(int $creatorId, string $month): string
+    {
+        return 'vic_registers/' . $creatorId . '/' . $month . '.json';
     }
 
     /**
@@ -227,6 +267,158 @@ class VicConsolidateAttendanceImport
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<int,mixed>  $header
+     * @return array<string,?int>
+     */
+    protected function identityColumns(array $header): array
+    {
+        return [
+            'sr' => $this->findHeaderColumn($header, ['sr_no', 'sr', 'sno']),
+            'code' => $this->findHeaderColumn($header, ['employee_code', 'emp_code', 'emp_id', 'employee_id', 'code']),
+            'name' => $this->findHeaderColumn($header, ['employee_name', 'name', 'emp_name']),
+            'number' => $this->findHeaderColumn($header, ['employee_number', 'mobile_number', 'mobile', 'phone']),
+            'doj' => $this->findHeaderColumn($header, ['joining_date', 'doj', 'date_of_joining']),
+            'branch' => $this->findHeaderColumn($header, ['branch']),
+            'department' => $this->findHeaderColumn($header, ['department']),
+            'designation' => $this->findHeaderColumn($header, ['designation']),
+            'division' => $this->findHeaderColumn($header, ['division']),
+            'working_area' => $this->findHeaderColumn($header, ['working_area']),
+            'project' => $this->findHeaderColumn($header, ['project']),
+            'present' => $this->findHeaderColumn($header, ['present']),
+            'absent' => $this->findHeaderColumn($header, ['absent']),
+            'half_day' => $this->findHeaderColumn($header, ['half_day']),
+            'miss_punch' => $this->findHeaderColumn($header, ['miss_punch']),
+            'week_off' => $this->findHeaderColumn($header, ['week_off']),
+            'holiday' => $this->findHeaderColumn($header, ['holiday']),
+            'approved_leave' => $this->findHeaderColumn($header, ['approved_leave']),
+            'pending_leave' => $this->findHeaderColumn($header, ['pending_leave']),
+            'approved_outduty' => $this->findHeaderColumn($header, ['approved_outduty']),
+            'pending_outduty' => $this->findHeaderColumn($header, ['pending_outduty']),
+        ];
+    }
+
+    /**
+     * @param  array{row:int,code:string,name:string,status:array,shift:array,in:array,out:array,hours:array,overtime:array}  $block
+     * @param  array<string,?int>  $cols
+     * @param  array<int,string>  $dayColumns
+     * @return array<string,mixed>
+     */
+    protected function blockToRegisterRow(array $block, array $cols, array $dayColumns): array
+    {
+        $statusRow = $block['status'] ?? [];
+        $days = [];
+        foreach ($dayColumns as $col => $dateYmd) {
+            $days[] = [
+                'code' => $this->displayCell($block['status'][$col] ?? '', true),
+                'shift' => $this->displayCell($block['shift'][$col] ?? ''),
+                'in' => $this->displayDateTimeCell($block['in'][$col] ?? '', $dateYmd),
+                'out' => $this->displayDateTimeCell($block['out'][$col] ?? '', $dateYmd),
+                'hours' => $this->displayCell($block['hours'][$col] ?? ''),
+                'ot' => $this->displayCell($block['overtime'][$col] ?? '', false, true),
+            ];
+        }
+
+        return [
+            'sr' => $this->displayCell($this->colValue($statusRow, $cols['sr'])),
+            'code' => $this->displayCell($this->colValue($statusRow, $cols['code']) ?: $block['code']),
+            'name' => $this->displayCell($this->colValue($statusRow, $cols['name']) ?: $block['name']),
+            'number' => $this->displayCell($this->colValue($statusRow, $cols['number'])),
+            'doj' => $this->displayDateCell($this->colValue($statusRow, $cols['doj'])),
+            'branch' => $this->displayCell($this->colValue($statusRow, $cols['branch'])),
+            'department' => $this->displayCell($this->colValue($statusRow, $cols['department'])),
+            'designation' => $this->displayCell($this->colValue($statusRow, $cols['designation'])),
+            'division' => $this->displayCell($this->colValue($statusRow, $cols['division'])),
+            'working_area' => $this->displayCell($this->colValue($statusRow, $cols['working_area'])),
+            'project' => $this->displayCell($this->colValue($statusRow, $cols['project'])),
+            'counts' => [
+                'present' => $this->displayCell($this->colValue($statusRow, $cols['present'])),
+                'absent' => $this->displayCell($this->colValue($statusRow, $cols['absent'])),
+                'half_day' => $this->displayCell($this->colValue($statusRow, $cols['half_day'])),
+                'miss_punch' => $this->displayCell($this->colValue($statusRow, $cols['miss_punch'])),
+                'week_off' => $this->displayCell($this->colValue($statusRow, $cols['week_off'])),
+                'holiday' => $this->displayCell($this->colValue($statusRow, $cols['holiday'])),
+                'approved_leave' => $this->displayCell($this->colValue($statusRow, $cols['approved_leave'])),
+                'pending_leave' => $this->displayCell($this->colValue($statusRow, $cols['pending_leave'])),
+                'approved_outduty' => $this->displayCell($this->colValue($statusRow, $cols['approved_outduty'])),
+                'pending_outduty' => $this->displayCell($this->colValue($statusRow, $cols['pending_outduty'])),
+            ],
+            'days' => $days,
+        ];
+    }
+
+    /**
+     * @param  array<int,array<string,mixed>>  $rows
+     * @return array<string,float|int>
+     */
+    protected function totalsFromRegisterRows(array $rows): array
+    {
+        $totals = [
+            'present' => 0,
+            'leave' => 0,
+            'overtime_hours' => 0,
+            'early_hours' => 0,
+            'late_hours' => 0,
+        ];
+        foreach ($rows as $row) {
+            $totals['present'] += (float) ($row['counts']['present'] ?? 0);
+            $totals['leave'] += (float) ($row['counts']['approved_leave'] ?? 0);
+        }
+
+        return $totals;
+    }
+
+    protected function colValue(array $row, ?int $col)
+    {
+        return $col === null ? '' : ($row[$col] ?? '');
+    }
+
+    protected function displayCell($value, bool $status = false, bool $ot = false): string
+    {
+        if ($value === null || $value === '') {
+            return $ot ? '0' : '';
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return $status ? $value->format('d-m-Y') : $value->format('d-m-Y H:i:s');
+        }
+        $text = trim((string) $value);
+        if ($status && strcasecmp($text, 'status') === 0) {
+            return '';
+        }
+
+        return $text;
+    }
+
+    protected function displayDateCell($value): string
+    {
+        $date = $this->parseDateCell($value, null);
+        if ($date) {
+            return date('d-m-Y', strtotime($date));
+        }
+
+        return $this->displayCell($value);
+    }
+
+    protected function displayDateTimeCell($value, string $dateYmd): string
+    {
+        if ($value === null || $value === '' || $value === 0 || $value === '0') {
+            return '';
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('d-m-Y H:i:s');
+        }
+        $time = $this->parseTimeCell($value);
+        $text = trim((string) $value);
+        if (preg_match('/\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}/', $text) && preg_match('/\d{1,2}:\d{2}/', $text)) {
+            return $text;
+        }
+        if ($time) {
+            return date('d-m-Y', strtotime($dateYmd)) . ' ' . $time;
+        }
+
+        return $text;
     }
 
     /**

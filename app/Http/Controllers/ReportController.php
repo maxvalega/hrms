@@ -22,6 +22,9 @@ use App\Models\PaySlip;
 use App\Models\ReimbursementClaim;
 use App\Models\TimeSheet;
 use App\Services\LeavePolicyService;
+use App\Services\VicConsolidateAttendanceImport;
+use App\Support\TenantHost;
+use App\Models\Utility;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -1081,7 +1084,11 @@ class ReportController extends Controller
             $data['branch']     = __('All');
             $data['department'] = __('All');
 
-            $employees = Employee::select('id', 'name');
+            $isVicRegister = TenantHost::isVicPortal();
+
+            $employees = $isVicRegister
+                ? Employee::with(['branch', 'department', 'designation'])
+                : Employee::select('id', 'name');
             if (!empty($request->employee_id) && $request->employee_id[0] != 0) {
                 $employees->whereIn('id', $request->employee_id);
             }
@@ -1103,6 +1110,7 @@ class ReportController extends Controller
                 $data['employees'] = !empty(Employee::find($request->employees)) ? Employee::find($request->employees)->name : '';
             }
 
+            $employeeModels = $isVicRegister ? (clone $employees)->orderBy('name')->get() : collect();
             $employees = $employees->get()->pluck('name', 'id');
 
             // All employees for dropdown (unfiltered)
@@ -1236,8 +1244,18 @@ class ReportController extends Controller
             $data['totalLeave']      = $totalLeave;
             $data['curMonth']        = $curMonth;
 
-            // dd($employeesAttendance, $branch, $department, $employees, $dates, $data);
-            return view('report.monthlyAttendance', compact('employeesAttendance', 'branch', 'department', 'employees', 'allEmployees', 'dates', 'data'));
+            $vicRegister = $isVicRegister
+                ? $this->buildVicMonthlyRegister($employeeModels, $year, $month, $dates, $holidayDates, $leaveDatesMap)
+                : [];
+            if ($isVicRegister && !empty($vicRegister['totals'])) {
+                $data['totalPresent'] = $vicRegister['totals']['present'];
+                $data['totalLeave'] = $vicRegister['totals']['leave'];
+                $data['totalOvertime'] = $vicRegister['totals']['overtime_hours'];
+                $data['totalEarlyLeave'] = $vicRegister['totals']['early_hours'];
+                $data['totalLate'] = $vicRegister['totals']['late_hours'];
+            }
+
+            return view('report.monthlyAttendance', compact('employeesAttendance', 'branch', 'department', 'employees', 'allEmployees', 'dates', 'data', 'isVicRegister', 'vicRegister'));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
         }
@@ -1440,6 +1458,269 @@ class ReportController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    public function importVicMonthlyAttendance(Request $request)
+    {
+        if (!TenantHost::isVicPortal($request->getHost())) {
+            return redirect()->back()->with('error', __('This import is only available on the Vimal Industrial portal.'));
+        }
+        if (!\Auth::user()->can('Manage Report')) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+        if (!in_array(\Auth::user()->type, ['super admin', 'company'], true) && !\Auth::user()->can('Create Attendance')) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        $request->validate([
+            'file' => 'required|file|mimes:xlsx,xls',
+        ]);
+
+        try {
+            $result = (new VicConsolidateAttendanceImport())->import($request->file('file'), (int) \Auth::user()->creatorId());
+            $msg = __('Register imported.') . " Employees: {$result['employees']}, Created: {$result['created']}, Updated: {$result['updated']}, Skipped: {$result['skipped']}";
+            if (!empty($result['errors'])) {
+                $msg .= ' | ' . implode('; ', array_slice($result['errors'], 0, 5));
+            }
+
+            return redirect()
+                ->route('report.monthly.attendance', ['month' => $result['month']])
+                ->with($result['created'] + $result['updated'] > 0 ? 'success' : 'error', $msg);
+        } catch (\Throwable $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int,\App\Models\Employee>  $employeeModels
+     * @param  array<int,string>  $dates
+     * @param  array<int,string>  $holidayDates
+     * @param  array<int,array<int,string>>  $leaveDatesMap
+     * @return array{rows:array<int,array<string,mixed>>,day_headers:array<int,string>,totals:array<string,float|int>}
+     */
+    protected function buildVicMonthlyRegister($employeeModels, $year, $month, array $dates, array $holidayDates, array $leaveDatesMap): array
+    {
+        $monthStart = sprintf('%04d-%02d-01', (int) $year, (int) $month);
+        $monthEnd = date('Y-m-t', strtotime($monthStart));
+        $ids = $employeeModels->pluck('id')->all();
+        $allAttendance = $ids === []
+            ? collect()
+            : AttendanceEmployee::whereIn('employee_id', $ids)
+                ->whereBetween('date', [$monthStart, $monthEnd])
+                ->get()
+                ->groupBy('employee_id');
+
+        $defaultIn = Utility::getValByName('company_start_time') ?: '10:30:00';
+        $defaultOut = Utility::getValByName('company_end_time') ?: '19:00:00';
+        $shiftLabel = $this->formatVicShiftLabel($defaultIn, $defaultOut);
+
+        $dayHeaders = [];
+        foreach ($dates as $day) {
+            $dayHeaders[] = sprintf('%02d-%02d-%04d', (int) $day, (int) $month, (int) $year);
+        }
+
+        $totals = [
+            'present' => 0,
+            'leave' => 0,
+            'overtime_hours' => 0.0,
+            'early_hours' => 0.0,
+            'late_hours' => 0.0,
+        ];
+        $rows = [];
+        $sr = 0;
+
+        foreach ($employeeModels as $employee) {
+            $sr++;
+            $records = $allAttendance->get($employee->id, collect())->keyBy('date');
+            $leaveDays = $leaveDatesMap[$employee->id] ?? [];
+            $days = [];
+            $counts = [
+                'present' => 0,
+                'absent' => 0,
+                'half_day' => 0,
+                'miss_punch' => 0,
+                'week_off' => 0,
+                'holiday' => 0,
+                'approved_leave' => 0,
+                'pending_leave' => 0,
+                'approved_outduty' => 0,
+                'pending_outduty' => 0,
+            ];
+
+            foreach ($dates as $day) {
+                $dateYmd = sprintf('%04d-%02d-%s', (int) $year, (int) $month, $day);
+                $rec = $records->get($dateYmd);
+                $isSunday = ((int) date('w', strtotime($dateYmd))) === 0;
+                $isHoliday = in_array($day, $holidayDates, true);
+                $isOnLeave = in_array($day, $leaveDays, true);
+
+                $code = $this->vicStatusCode($rec, $dateYmd, $isSunday, $isHoliday, $isOnLeave);
+                $clockIn = ($rec && $rec->clock_in && $rec->clock_in !== '00:00:00') ? $rec->clock_in : '';
+                $clockOut = ($rec && $rec->clock_out && $rec->clock_out !== '00:00:00') ? $rec->clock_out : '';
+                $inLabel = $clockIn ? (date('d-m-Y', strtotime($dateYmd)) . ' ' . $clockIn) : '';
+                $outLabel = $clockOut ? (date('d-m-Y', strtotime($dateYmd)) . ' ' . $clockOut) : '';
+                $hours = ($clockIn && $clockOut) ? $this->vicWorkedHours($clockIn, $clockOut) : '';
+                $ot = $this->vicOvertimeLabel($rec->overtime ?? null);
+                $shift = in_array($code, ['P', 'HFD', 'P+LC', 'MP'], true) ? $shiftLabel : '';
+
+                $days[] = [
+                    'code' => $code,
+                    'shift' => $shift,
+                    'in' => $inLabel,
+                    'out' => $outLabel,
+                    'hours' => $hours,
+                    'ot' => $ot === '' ? '0' : $ot,
+                ];
+
+                if ($code === 'P' || $code === 'P+LC') {
+                    $counts['present']++;
+                    $totals['present']++;
+                    if ($code === 'P+LC') {
+                        $totals['late_hours'] += $this->vicHoursValue($rec->late ?? null);
+                    }
+                } elseif ($code === 'HFD') {
+                    $counts['half_day']++;
+                    $counts['present'] += 0.5;
+                    $counts['absent'] += 0.5;
+                    $totals['present'] += 0.5;
+                } elseif ($code === 'A') {
+                    $counts['absent']++;
+                } elseif ($code === 'MP') {
+                    $counts['miss_punch']++;
+                } elseif ($code === 'WO') {
+                    $counts['week_off']++;
+                } elseif ($code === 'H') {
+                    $counts['holiday']++;
+                } elseif (in_array($code, ['PL', 'L.W.P.', 'L.W.P. Applied'], true)) {
+                    $counts['approved_leave']++;
+                    $totals['leave']++;
+                }
+
+                if ($rec) {
+                    $totals['overtime_hours'] += $this->vicHoursValue($rec->overtime ?? null);
+                    $totals['early_hours'] += $this->vicHoursValue($rec->early_leaving ?? null);
+                }
+            }
+
+            $rows[] = [
+                'sr' => $sr,
+                'code' => $employee->employee_id,
+                'name' => $employee->name,
+                'number' => $employee->phone,
+                'doj' => $employee->company_doj ? date('d-m-Y', strtotime($employee->company_doj)) : '',
+                'branch' => $employee->branch->name ?? '',
+                'department' => $employee->department->name ?? '',
+                'designation' => $employee->designation->name ?? '',
+                'counts' => $counts,
+                'days' => $days,
+            ];
+        }
+
+        return [
+            'rows' => $rows,
+            'day_headers' => $dayHeaders,
+            'totals' => $totals,
+        ];
+    }
+
+    protected function vicStatusCode($rec, string $dateYmd, bool $isSunday, bool $isHoliday, bool $isOnLeave): string
+    {
+        if ($rec) {
+            $status = strtolower(trim((string) $rec->status));
+            if ($status === 'week off') {
+                return 'WO';
+            }
+            if ($status === 'miss punch') {
+                return 'MP';
+            }
+            if ($status === 'lwp') {
+                return 'L.W.P.';
+            }
+            if ($status === 'half day') {
+                return 'HFD';
+            }
+            if ($status === 'leave') {
+                return 'PL';
+            }
+            if ($status === 'absent') {
+                return 'A';
+            }
+            if (in_array($status, ['present', 'p'], true)) {
+                return !empty($rec->late_mark) ? 'P+LC' : 'P';
+            }
+        }
+
+        if ($dateYmd > date('Y-m-d')) {
+            return '';
+        }
+        if ($isSunday) {
+            return 'WO';
+        }
+        if ($isHoliday) {
+            return 'H';
+        }
+        if ($isOnLeave) {
+            return 'PL';
+        }
+        if ($rec) {
+            return 'A';
+        }
+
+        return '-';
+    }
+
+    protected function formatVicShiftLabel(string $start, string $end): string
+    {
+        $startTs = strtotime($start);
+        $endTs = strtotime($end);
+        if (!$startTs || !$endTs) {
+            return '';
+        }
+
+        return date('g:i A', $startTs) . ' - ' . date('g:i A', $endTs);
+    }
+
+    protected function vicWorkedHours(string $clockIn, string $clockOut): string
+    {
+        $in = strtotime($clockIn);
+        $out = strtotime($clockOut);
+        if (!$in || !$out || $out <= $in) {
+            return '';
+        }
+        $mins = (int) floor(($out - $in) / 60);
+
+        return sprintf('%02d:%02d', intdiv($mins, 60), $mins % 60);
+    }
+
+    protected function vicOvertimeLabel($value): string
+    {
+        if (empty($value) || $value === '00:00:00' || $value === '0') {
+            return '0';
+        }
+        if (is_numeric($value) && (float) $value <= 0) {
+            return '0';
+        }
+        if (preg_match('/^(\d{1,2}):(\d{2})/', (string) $value, $m)) {
+            if ((int) $m[1] === 0 && (int) $m[2] === 0) {
+                return '0';
+            }
+
+            return $m[1] . ':' . $m[2];
+        }
+
+        return (string) $value;
+    }
+
+    protected function vicHoursValue($value): float
+    {
+        if (empty($value) || $value === '00:00:00') {
+            return 0;
+        }
+        if (preg_match('/^(\d{1,2}):(\d{2})/', (string) $value, $m)) {
+            return ((int) $m[1]) + (((int) $m[2]) / 60);
+        }
+
+        return is_numeric($value) ? (float) $value : 0;
     }
 
     public function getdepartment(Request $request)

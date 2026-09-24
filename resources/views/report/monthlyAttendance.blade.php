@@ -8,7 +8,18 @@
     <li class="breadcrumb-item"><a href="{{ route('dashboard') }}">{{ __('Home') }}</a></li>
     <li class="breadcrumb-item">{{ __('Manage Monthly Attendance Report') }}</li>
 @endsection
+@php
+    $isVicRegister = $isVicRegister ?? false;
+    $vicRegister = $vicRegister ?? ['rows' => [], 'day_headers' => []];
+@endphp
+
 @section('action-button')
+    @if($isVicRegister)
+        <a href="#" class="btn btn-sm btn-dark me-1" data-bs-toggle="modal" data-bs-target="#vicRegisterUploadModal"
+            title="{{ __('Upload Consolidate Attendance Register') }}">
+            <span class="btn-inner--icon"><i class="ti ti-upload"></i></span>
+        </a>
+    @endif
     <a href="#" class="btn btn-sm btn-primary me-1" onclick="saveAsPDF()" data-bs-toggle="tooltip" title="{{ __('Download') }}"
         data-original-title="{{ __('Download') }}">
         <span class="btn-inner--icon"><i class="ti ti-download"></i></span>
@@ -25,6 +36,23 @@
     </a>
 @endsection
 
+
+@push('css-page')
+    <style>
+        .vic-register-wrap { max-height: 72vh; }
+        .vic-register-table { font-size: 11px; white-space: nowrap; }
+        .vic-register-table th, .vic-register-table td { padding: 4px 6px; vertical-align: middle; }
+        .vic-register-table thead th { position: sticky; top: 0; background: #f1f5f9; z-index: 2; }
+        .vic-status-row { background: #fff; font-weight: 600; }
+        .vic-detail-row { background: #fafafa; color: #475569; }
+        .vic-code-p, .vic-code-p-lc { color: #0f766e; }
+        .vic-code-a { color: #b91c1c; }
+        .vic-code-wo, .vic-code-h { color: #0369a1; }
+        .vic-code-hfd { color: #c2410c; }
+        .vic-code-mp { color: #7c3aed; }
+        .vic-code-pl, .vic-code-l-w-p- { color: #a16207; }
+    </style>
+@endpush
 
 @push('script-page')
     <script type="text/javascript" src="{{ asset('js/html2pdf.bundle.min.js') }}"></script>
@@ -311,6 +339,96 @@
         <div class="col">
             <div class="card">
                 <div class="card-body table-border-style">
+                    @if($isVicRegister)
+                        <div class="table-responsive py-3 vic-register-wrap">
+                            <table class="table table-bordered table-sm vic-register-table mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Sr No.</th>
+                                        <th>Employee Code</th>
+                                        <th>Employee Name</th>
+                                        <th>Employee Number</th>
+                                        <th>Joining Date</th>
+                                        <th>Branch</th>
+                                        <th>Department</th>
+                                        <th>Designation</th>
+                                        <th>Division</th>
+                                        <th>Working Area</th>
+                                        <th>Project</th>
+                                        <th>Present</th>
+                                        <th>Absent</th>
+                                        <th>Half Day</th>
+                                        <th>Miss Punch</th>
+                                        <th>Week Off</th>
+                                        <th>Holiday</th>
+                                        <th>Approved Leave</th>
+                                        <th>Pending Leave</th>
+                                        <th>Approved OutDuty</th>
+                                        <th>Pending OutDuty</th>
+                                        <th></th>
+                                        @foreach(($vicRegister['day_headers'] ?? []) as $dayHeader)
+                                            <th class="text-nowrap">{{ $dayHeader }}</th>
+                                        @endforeach
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @forelse(($vicRegister['rows'] ?? []) as $row)
+                                        @php
+                                            $detailRows = [
+                                                ['label' => 'Shift', 'key' => 'shift'],
+                                                ['label' => 'IN', 'key' => 'in'],
+                                                ['label' => 'OUT', 'key' => 'out'],
+                                                ['label' => 'Working Hours', 'key' => 'hours'],
+                                                ['label' => 'Overtime Hours', 'key' => 'ot'],
+                                            ];
+                                        @endphp
+                                        <tr class="vic-status-row">
+                                            <td>{{ $row['sr'] }}</td>
+                                            <td>{{ $row['code'] }}</td>
+                                            <td class="text-nowrap">{{ $row['name'] }}</td>
+                                            <td>{{ $row['number'] }}</td>
+                                            <td class="text-nowrap">{{ $row['doj'] }}</td>
+                                            <td>{{ $row['branch'] }}</td>
+                                            <td>{{ $row['department'] }}</td>
+                                            <td>{{ $row['designation'] }}</td>
+                                            <td></td>
+                                            <td></td>
+                                            <td></td>
+                                            <td>{{ $row['counts']['present'] }}</td>
+                                            <td>{{ $row['counts']['absent'] }}</td>
+                                            <td>{{ $row['counts']['half_day'] }}</td>
+                                            <td>{{ $row['counts']['miss_punch'] }}</td>
+                                            <td>{{ $row['counts']['week_off'] }}</td>
+                                            <td>{{ $row['counts']['holiday'] }}</td>
+                                            <td>{{ $row['counts']['approved_leave'] }}</td>
+                                            <td>{{ $row['counts']['pending_leave'] }}</td>
+                                            <td>{{ $row['counts']['approved_outduty'] }}</td>
+                                            <td>{{ $row['counts']['pending_outduty'] }}</td>
+                                            <td class="fw-semibold">Status</td>
+                                            @foreach($row['days'] as $day)
+                                                <td class="text-center vic-code vic-code-{{ strtolower(preg_replace('/[^a-z0-9]+/i', '-', $day['code'])) }}">{{ $day['code'] }}</td>
+                                            @endforeach
+                                        </tr>
+                                        @foreach($detailRows as $detail)
+                                            <tr class="vic-detail-row">
+                                                <td colspan="21"></td>
+                                                <td class="fw-semibold">{{ $detail['label'] }}</td>
+                                                @foreach($row['days'] as $day)
+                                                    <td class="text-nowrap">{{ $day[$detail['key']] }}</td>
+                                                @endforeach
+                                            </tr>
+                                        @endforeach
+                                    @empty
+                                        <tr>
+                                            <td colspan="{{ 22 + count($vicRegister['day_headers'] ?? []) }}" class="text-center text-muted py-4">
+                                                {{ __('No employees found. Upload the Consolidate Attendance Register to see this month.') }}
+                                            </td>
+                                        </tr>
+                                    @endforelse
+                                </tbody>
+                            </table>
+                        </div>
+                    @else
                     <div class="table-responsive py-4 attendance-table-responsive">
                         <table class="table ">
                             <thead>
@@ -346,10 +464,40 @@
                             </tbody>
                         </table>
                     </div>
+                    @endif
                 </div>
             </div>
         </div>
     </div>
+
+    @if($isVicRegister)
+    <div class="modal fade" id="vicRegisterUploadModal" tabindex="-1" aria-labelledby="vicRegisterUploadModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form action="{{ route('report.monthly.attendance.import') }}" method="post" enctype="multipart/form-data">
+                    @csrf
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="vicRegisterUploadModalLabel">{{ __('Upload Consolidate Attendance Register') }}</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-muted mb-3" style="font-size:.9rem;">
+                            {{ __('Upload the same Excel: one employee, then Status / Shift / IN / OUT / Working Hours / Overtime Hours, with day columns like 01-08-2026.') }}
+                        </p>
+                        <div class="mb-3">
+                            <label class="form-label">{{ __('Select Register File') }} <span class="text-danger">*</span></label>
+                            <input type="file" name="file" accept=".xlsx,.xls" class="form-control" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{{ __('Cancel') }}</button>
+                        <button type="submit" class="btn btn-dark"><i class="ti ti-upload"></i> {{ __('Upload & Show') }}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    @endif
 @endsection
 
 @push('script-page')

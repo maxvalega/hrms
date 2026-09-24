@@ -106,6 +106,14 @@ class TenantHost
     }
 
     /**
+     * Vimal Industrial portal only (vic.jemini.co.in, plus a legacy alias).
+     */
+    public static function isVicPortal(?string $host = null): bool
+    {
+        return in_array(self::subdomainFromHost($host), ['vic', 'vimalindustrial'], true);
+    }
+
+    /**
      * Extract company subdomain from host, e.g. spectal.jemini.co.in → spectal.
      */
     public static function subdomainFromHost(?string $host = null): ?string

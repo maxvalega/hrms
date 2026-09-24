@@ -1595,6 +1595,12 @@ Route::group(['middleware' => ['verified']], function () {
             'XSS',
         ]
     );
+    Route::post('report/monthly/attendance/import', [ReportController::class, 'importVicMonthlyAttendance'])->name('report.monthly.attendance.import')->middleware(
+        [
+            'auth',
+            'XSS',
+        ]
+    );
 
     Route::post('monthly/getdepartment', [ReportController::class, 'getdepartment'])->name('monthly.getdepartment')->middleware(
         [

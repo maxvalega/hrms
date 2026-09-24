@@ -1478,14 +1478,8 @@ class ReportController extends Controller
 
         try {
             $result = (new VicConsolidateAttendanceImport())->import($request->file('file'), (int) \Auth::user()->creatorId());
-            $msg = __('Register imported.') . " Employees: {$result['employees']}, Created: {$result['created']}, Updated: {$result['updated']}, Skipped: {$result['skipped']}";
-            if (!empty($result['errors'])) {
-                $msg .= ' | ' . implode('; ', array_slice($result['errors'], 0, 5));
-            }
-
             return redirect()
-                ->route('report.monthly.attendance', ['month' => $result['month']])
-                ->with($result['created'] + $result['updated'] > 0 ? 'success' : 'error', $msg);
+                ->route('report.monthly.attendance', ['month' => $result['month']]);
         } catch (\Throwable $e) {
             return redirect()->back()->with('error', $e->getMessage());
         }

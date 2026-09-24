@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "087ad217e43045c5cea82c41cefb9287",
+    "content-hash": "9de7a8ba64b881d08222cb6de33cfdef",
     "packages": [
         {
             "name": "anandsiddharth/laravel-paytm-wallet",
@@ -2938,17 +2938,11 @@
         },
         {
             "name": "lahirulhr/laravel-payhere",
-            "version": "v1.0.4",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/Visanduma/laravel-payhere.git",
-                "reference": "72ce0aa87b495517e3b2d66633e588c86d417e61"
-            },
+            "version": "1.0.4",
             "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/Visanduma/laravel-payhere/zipball/72ce0aa87b495517e3b2d66633e588c86d417e61",
-                "reference": "72ce0aa87b495517e3b2d66633e588c86d417e61",
-                "shasum": ""
+                "type": "path",
+                "url": "packages/lahirulhr/laravel-payhere",
+                "reference": "bbd3b26ea374c3067bcc4675eebcb030a9114eb0"
             },
             "require": {
                 "guzzlehttp/guzzle": "^7.8",
@@ -2981,7 +2975,19 @@
                     "Lahirulhr\\PayHere\\Database\\Factories\\": "database/factories"
                 }
             },
-            "notification-url": "https://packagist.org/downloads/",
+            "autoload-dev": {
+                "psr-4": {
+                    "Lahirulhr\\PayHere\\Tests\\": "tests"
+                }
+            },
+            "scripts": {
+                "test": [
+                    "vendor/bin/pest"
+                ],
+                "test-coverage": [
+                    "vendor/bin/pest coverage"
+                ]
+            },
             "license": [
                 "MIT"
             ],
@@ -2999,17 +3005,10 @@
                 "laravel",
                 "laravel-payhere"
             ],
-            "support": {
-                "issues": "https://github.com/Visanduma/laravel-payhere/issues",
-                "source": "https://github.com/Visanduma/laravel-payhere/tree/v1.0.4"
-            },
-            "funding": [
-                {
-                    "url": "https://github.com/lahirulhr",
-                    "type": "github"
-                }
-            ],
-            "time": "2024-08-01T06:51:29+00:00"
+            "transport-options": {
+                "symlink": false,
+                "relative": true
+            }
         },
         {
             "name": "laravel/framework",

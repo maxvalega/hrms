@@ -22,6 +22,14 @@
     </a>
 
     @can('Create Employee')
+        @if(\App\Support\TenantHost::isVicPortal())
+            <form action="{{ route('employee.vic.map') }}" method="post" class="d-inline">
+                @csrf
+                <button type="submit" class="btn btn-sm btn-dark me-1" title="{{ __('Map Vimal staff from the employee file') }}">
+                    <i class="ti ti-users"></i>
+                </button>
+            </form>
+        @endif
         <a href="{{ route('employee.create') }}" data-title="{{ __('Create New Employee') }}" data-bs-toggle="tooltip"
             title="" class="btn btn-sm btn-primary" data-bs-original-title="{{ __('Create') }}">
             <i class="ti ti-plus"></i>

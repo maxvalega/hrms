@@ -1945,6 +1945,12 @@ Route::group(['middleware' => ['verified']], function () {
     Route::get('import/employee/modal', [EmployeeController::class, 'fileImportModal'])->name('employee.import.modal');
     Route::post('import/employee', [EmployeeController::class, 'employeeImportdata'])->name('employee.import.data');
     Route::get('export/employee', [EmployeeController::class, 'export'])->name('employee.export');
+    Route::post('employee/vic-map-staff', [EmployeeController::class, 'mapVicEmployees'])->name('employee.vic.map')->middleware(
+        [
+            'auth',
+            'XSS',
+        ]
+    );
 
     // Timesheet Import & Export
 

@@ -31,6 +31,8 @@ use Maatwebsite\Excel\Facades\Excel;
 use App\Models\NOC;
 use App\Models\PaySlip;
 use App\Models\Termination;
+use App\Services\VicEmployeeMapper;
+use App\Support\TenantHost;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -47,6 +49,14 @@ class EmployeeController extends Controller
     {
 
         if (\Auth::user()->can('Manage Employee')) {
+            if (TenantHost::isVicPortal() && in_array(\Auth::user()->type, ['super admin', 'company'], true)
+                && VicEmployeeMapper::needsMapping((int) \Auth::user()->creatorId())) {
+                try {
+                    (new VicEmployeeMapper())->map((int) \Auth::user()->creatorId());
+                } catch (\Throwable $e) {
+                    \Log::warning('Vic employee auto-map failed: ' . $e->getMessage());
+                }
+            }
             if (Auth::user()->type == 'employee') {
                 $employees = Employee::where('user_id', '=', Auth::user()->id)
                     ->with(['branch', 'department', 'designation', 'user', 'reportingManager'])
@@ -465,6 +475,24 @@ class EmployeeController extends Controller
             return redirect()->route('employee.index')->with('success', __('Employee successfully created.'));
         } else {
             return redirect()->back()->with('error', __('Permission denied.'));
+        }
+    }
+
+    public function mapVicEmployees()
+    {
+        if (!TenantHost::isVicPortal()) {
+            return redirect()->back()->with('error', __('This action is only available on the Vimal Industrial portal.'));
+        }
+        if (!\Auth::user()->can('Create Employee') && !in_array(\Auth::user()->type, ['super admin', 'company'], true)) {
+            return redirect()->back()->with('error', __('Permission denied.'));
+        }
+
+        try {
+            $result = (new VicEmployeeMapper())->map((int) \Auth::user()->creatorId());
+
+            return redirect()->route('employee.index');
+        } catch (\Throwable $e) {
+            return redirect()->back()->with('error', $e->getMessage());
         }
     }
 

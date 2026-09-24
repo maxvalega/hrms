@@ -23,6 +23,7 @@ use App\Models\ReimbursementClaim;
 use App\Models\TimeSheet;
 use App\Services\LeavePolicyService;
 use App\Services\VicConsolidateAttendanceImport;
+use App\Services\VicEmployeeMapper;
 use App\Support\TenantHost;
 use App\Models\Utility;
 use Carbon\Carbon;
@@ -1085,6 +1086,13 @@ class ReportController extends Controller
             $data['department'] = __('All');
 
             $isVicRegister = TenantHost::isVicPortal();
+            if ($isVicRegister && VicEmployeeMapper::needsMapping((int) \Auth::user()->creatorId())) {
+                try {
+                    (new VicEmployeeMapper())->map((int) \Auth::user()->creatorId());
+                } catch (\Throwable $e) {
+                    \Log::warning('Vic employee auto-map failed: ' . $e->getMessage());
+                }
+            }
 
             $employees = $isVicRegister
                 ? Employee::with(['branch', 'department', 'designation'])
